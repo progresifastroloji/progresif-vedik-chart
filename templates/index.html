@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Progresif Vedik Astroloji Haritası</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ── Header ────────────────────────────────────────────────── -->
+<header class="app-header">
+    <div class="header-content">
+        <div class="logo">&#9788;</div>
+        <div>
+            <h1>Progresif Vedik Astroloji</h1>
+            <p class="subtitle">Sidereal &bull; Lahiri Ayanamsa &bull; Whole Sign</p>
+        </div>
+    </div>
+</header>
+
+<!-- ── Main ──────────────────────────────────────────────────── -->
+<main class="container">
+
+    <!-- Input Form -->
+    <section class="card form-card">
+        <h2 class="card-title">Doğum Bilgileri</h2>
+        <form id="chart-form">
+            <!-- Şehir Seçimi -->
+            <div class="form-group">
+                <label for="city-select">Şehir (opsiyonel)</label>
+                <select id="city-select">
+                    <option value="">— Manuel giriş —</option>
+                    <optgroup label="Türkiye">
+                        <option value="41.0082,28.9784,3">İstanbul</option>
+                        <option value="39.9334,32.8597,3">Ankara</option>
+                        <option value="38.4237,27.1428,3">İzmir</option>
+                        <option value="36.8969,30.7133,3">Antalya</option>
+                        <option value="40.1885,29.0610,3">Bursa</option>
+                        <option value="38.7312,35.4787,3">Kayseri</option>
+                        <option value="37.0000,35.3213,3">Adana</option>
+                        <option value="39.7477,37.0179,3">Sivas</option>
+                        <option value="41.2867,36.33,3">Samsun</option>
+                        <option value="39.9208,32.8541,3">Konya</option>
+                        <option value="37.7765,29.0864,3">Denizli</option>
+                        <option value="40.6565,29.2868,3">Kocaeli</option>
+                        <option value="37.2153,28.3636,3">Muğla</option>
+                        <option value="39.6484,27.8826,3">Balıkesir</option>
+                        <option value="40.7667,30.3933,3">Sakarya</option>
+                        <option value="41.2061,32.6204,3">Kastamonu</option>
+                        <option value="40.2969,36.5544,3">Tokat</option>
+                        <option value="39.7767,30.5206,3">Eskişehir</option>
+                        <option value="37.7648,30.2889,3">Burdur</option>
+                        <option value="37.0662,37.3833,3">Gaziantep</option>
+                        <option value="37.9158,40.2189,3">Diyarbakır</option>
+                        <option value="39.9035,41.2679,3">Erzurum</option>
+                        <option value="41.0027,40.5234,3">Trabzon</option>
+                        <option value="38.3552,38.3095,3">Elazığ</option>
+                        <option value="38.7412,43.0,3">Van</option>
+                    </optgroup>
+                    <optgroup label="Uluslararası">
+                        <option value="51.5074,-0.1278,0">Londra</option>
+                        <option value="40.7128,-74.0060,-5">New York</option>
+                        <option value="28.6139,77.2090,5.5">New Delhi</option>
+                        <option value="52.5200,13.4050,1">Berlin</option>
+                        <option value="48.8566,2.3522,1">Paris</option>
+                        <option value="55.7558,37.6173,3">Moskova</option>
+                        <option value="35.6762,139.6503,9">Tokyo</option>
+                        <option value="-33.8688,151.2093,10">Sidney</option>
+                        <option value="34.0522,-118.2437,-8">Los Angeles</option>
+                        <option value="25.2048,55.2708,4">Dubai</option>
+                    </optgroup>
+                </select>
+            </div>
+
+            <!-- Tarih -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="day">Gün</label>
+                    <input type="number" id="day" min="1" max="31" value="15" required>
+                </div>
+                <div class="form-group">
+                    <label for="month">Ay</label>
+                    <input type="number" id="month" min="1" max="12" value="8" required>
+                </div>
+                <div class="form-group">
+                    <label for="year">Yıl</label>
+                    <input type="number" id="year" min="1900" max="2100" value="1990" required>
+                </div>
+            </div>
+
+            <!-- Saat -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="hour">Saat</label>
+                    <input type="number" id="hour" min="0" max="23" value="10" required>
+                </div>
+                <div class="form-group">
+                    <label for="minute">Dakika</label>
+                    <input type="number" id="minute" min="0" max="59" value="30" required>
+                </div>
+                <div class="form-group">
+                    <label for="tz_offset">UTC Farkı</label>
+                    <select id="tz_offset">
+                        <option value="-12">UTC-12</option>
+                        <option value="-11">UTC-11</option>
+                        <option value="-10">UTC-10</option>
+                        <option value="-9">UTC-9</option>
+                        <option value="-8">UTC-8</option>
+                        <option value="-7">UTC-7</option>
+                        <option value="-6">UTC-6</option>
+                        <option value="-5">UTC-5</option>
+                        <option value="-4">UTC-4</option>
+                        <option value="-3">UTC-3</option>
+                        <option value="-2">UTC-2</option>
+                        <option value="-1">UTC-1</option>
+                        <option value="0">UTC+0</option>
+                        <option value="1">UTC+1</option>
+                        <option value="2">UTC+2</option>
+                        <option value="3" selected>UTC+3</option>
+                        <option value="3.5">UTC+3:30</option>
+                        <option value="4">UTC+4</option>
+                        <option value="4.5">UTC+4:30</option>
+                        <option value="5">UTC+5</option>
+                        <option value="5.5">UTC+5:30</option>
+                        <option value="5.75">UTC+5:45</option>
+                        <option value="6">UTC+6</option>
+                        <option value="7">UTC+7</option>
+                        <option value="8">UTC+8</option>
+                        <option value="9">UTC+9</option>
+                        <option value="9.5">UTC+9:30</option>
+                        <option value="10">UTC+10</option>
+                        <option value="11">UTC+11</option>
+                        <option value="12">UTC+12</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Koordinatlar -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="lat">Enlem (°N)</label>
+                    <input type="number" id="lat" step="0.0001" min="-90" max="90" value="41.0082" required>
+                </div>
+                <div class="form-group">
+                    <label for="lon">Boylam (°E)</label>
+                    <input type="number" id="lon" step="0.0001" min="-180" max="180" value="28.9784" required>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-calculate" id="btn-calculate">
+                <span class="btn-text">Harita Hesapla</span>
+                <span class="btn-loading" style="display:none;">Hesaplanıyor...</span>
+            </button>
+        </form>
+    </section>
+
+    <!-- Error -->
+    <div id="error-box" class="error-box" style="display:none;"></div>
+
+    <!-- Results -->
+    <section id="results" style="display:none;">
+
+        <!-- Summary -->
+        <div class="card summary-card">
+            <h2 class="card-title">Harita Özeti</h2>
+            <div class="summary-grid" id="summary-content"></div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-row">
+            <div class="card chart-card">
+                <h2 class="card-title">D1 Rasi Haritası</h2>
+                <div class="chart-container" id="d1-chart"></div>
+            </div>
+            <div class="card chart-card">
+                <h2 class="card-title">D9 Navamsha Haritası</h2>
+                <div class="chart-container" id="d9-chart"></div>
+            </div>
+        </div>
+
+        <!-- Planet Table -->
+        <div class="card">
+            <h2 class="card-title">Gezegen Pozisyonları (D1 Rasi)</h2>
+            <div class="table-wrapper">
+                <table class="data-table" id="planets-table">
+                    <thead>
+                        <tr>
+                            <th>Gezegen</th>
+                            <th>Burç</th>
+                            <th>Derece</th>
+                            <th>Ev</th>
+                            <th>R</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Nakshatra Table -->
+        <div class="card">
+            <h2 class="card-title">Nakshatra Bilgileri</h2>
+            <div class="table-wrapper">
+                <table class="data-table" id="nakshatra-table">
+                    <thead>
+                        <tr>
+                            <th>Gezegen</th>
+                            <th>Nakshatra</th>
+                            <th>Pada</th>
+                            <th>Lord</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Navamsha Table -->
+        <div class="card">
+            <h2 class="card-title">D9 Navamsha Pozisyonları</h2>
+            <div class="table-wrapper">
+                <table class="data-table" id="navamsha-table">
+                    <thead>
+                        <tr>
+                            <th>Gezegen</th>
+                            <th>D9 Burç</th>
+                            <th>D9 Derece</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Dasha Table -->
+        <div class="card">
+            <h2 class="card-title">Vimshottari Maha Dasha</h2>
+            <div class="table-wrapper">
+                <table class="data-table" id="dasha-table">
+                    <thead>
+                        <tr>
+                            <th>Dasha Lord</th>
+                            <th>Süre (Yıl)</th>
+                            <th>Başlangıç</th>
+                            <th>Bitiş</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer Note -->
+        <div class="card note-card">
+            <p>Tüm pozisyonlar <strong>Sidereal (Lahiri Ayanamsa)</strong> sistemindedir. Ev sistemi: <strong>Whole Sign</strong>.</p>
+        </div>
+
+    </section>
+</main>
+
+<footer class="app-footer">
+    <p>Progresif Vedik Astroloji &copy; 2025 &mdash; Swiss Ephemeris Tabanlı</p>
+</footer>
+
+<script src="/static/js/chart.js"></script>
+</body>
+</html>
