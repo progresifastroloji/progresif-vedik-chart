@@ -133,9 +133,9 @@ def jd_to_date(jd):
     return f"{d:02d}.{m:02d}.{y} {hour:02d}:{minute:02d}"
 
 
-def date_to_jd(year, month, day, hour, minute, tz_offset):
+def date_to_jd(year, month, day, hour, minute, tz_offset, second=0):
     """Tarih → Julian Day (UTC'ye çevrilerek)"""
-    ut_hour = hour + minute / 60.0 - tz_offset
+    ut_hour = hour + minute / 60.0 + second / 3600.0 - tz_offset
     jd = swe.julday(year, month, day, ut_hour)
     return jd
 
@@ -196,20 +196,20 @@ def calc_vimshottari_dasha(moon_longitude, birth_jd):
 
 # ── Ana Hesaplama ────────────────────────────────────────────────────────
 
-def calculate_chart(year, month, day, hour, minute, tz_offset, lat, lon):
+def calculate_chart(year, month, day, hour, minute, tz_offset, lat, lon, second=0):
     """
     Tam Vedik harita hesaplama.
 
     Parametreler:
         year, month, day: Doğum tarihi
-        hour, minute: Doğum saati (yerel saat)
+        hour, minute, second: Doğum saati (yerel saat)
         tz_offset: UTC farkı (örn. Türkiye için 3.0)
         lat, lon: Doğum yeri koordinatları
     """
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     flags = swe.FLG_SIDEREAL | swe.FLG_SPEED
 
-    jd = date_to_jd(year, month, day, hour, minute, tz_offset)
+    jd = date_to_jd(year, month, day, hour, minute, tz_offset, second)
 
     # Ascendant (Lagna)
     cusps, ascmc = swe.houses_ex(jd, lat, lon, b'W', flags)
@@ -307,7 +307,8 @@ def calculate_chart(year, month, day, hour, minute, tz_offset, lat, lon):
     result = {
         "birth_info": {
             "date": f"{day:02d}.{month:02d}.{year}",
-            "time": f"{hour:02d}:{minute:02d}",
+            "time": f"{hour:02d}:{minute:02d}:{second:02d}",
+            "second": second,
             "timezone": f"UTC{'+' if tz_offset >= 0 else ''}{tz_offset:g}",
             "latitude": lat,
             "longitude_geo": lon

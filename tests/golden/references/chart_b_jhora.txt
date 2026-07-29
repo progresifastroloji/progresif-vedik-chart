@@ -1,0 +1,240 @@
+# chart_b - Jagannatha Hora Reference
+
+Status: external_reference_pending
+
+Birth data:
+- Date: 2015-01-15
+- Time: 12:00
+- Timezone: Europe/Istanbul
+- UTC offset: +02:00
+- Place: Istanbul, Turkey
+- Latitude: 41.0082
+- Longitude: 28.9784
+
+Reference settings:
+- Ayanamsa: Lahiri
+- Node: True Rahu
+- Primary house system: Whole Sign
+- Captured external source: Jagannatha Hora screenshot set, 2026-07-09
+- Capture status: partial D1, Vimshottari and Sripati house reference captured;
+  D7 and D10 screenshots visually cross-checked; typed/exported confirmation is
+  still preferred before final expected use.
+
+Paste raw Jagannatha Hora output below this line.
+
+---
+
+## Capture Checklist
+
+- [x] Lahiri ayanamsa selected
+- [x] Sidereal zodiac selected
+- [x] True node / true Rahu selected
+- [x] Birth time entered as local time
+- [x] Timezone/DST checked against fixture
+- [x] Coordinates checked against fixture
+
+## D1 Lagna
+
+| Field | JHora Value | Notes |
+| --- | --- | --- |
+| Sign | Aries |  |
+| Sign Index | 0 | Aries = 0 |
+| Degree | 14 Ar 45' 37.65" | Sign-local degree |
+| Degree String | 14 Ar 45' 37.65" |  |
+
+## D1 Planets
+
+| Planet | Longitude | Sign | Sign Index | Degree | Degree String | Retrograde | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Sun | 0 Cp 52' 19.46" | Capricorn | 9 | 0 Cp 52' 19.46" | 0 Cp 52' 19.46" | false | DK; Nakshatra USha pada 2; Navamsa Capricorn |
+| Moon | 23 Li 56' 21.96" | Libra | 6 | 23 Li 56' 21.96" | 23 Li 56' 21.96" | false | AmK; Nakshatra Visa pada 2; Navamsa Taurus |
+| Mars | 8 Aq 17' 35.91" | Aquarius | 10 | 8 Aq 17' 35.91" | 8 Aq 17' 35.91" | false | PK; Nakshatra Sata pada 1; Navamsa Sagittarius |
+| Mercury | 19 Cp 45' 32.22" | Capricorn | 9 | 19 Cp 45' 32.22" | 19 Cp 45' 32.22" | false | MK; Nakshatra Srav pada 3; Navamsa Gemini |
+| Jupiter | 26 Cn 22' 17.96" | Cancer | 3 | 26 Cn 22' 17.96" | 26 Cn 22' 17.96" | true | AK; Nakshatra Asre pada 3; Navamsa Aquarius |
+| Venus | 20 Cp 43' 20.88" | Capricorn | 9 | 20 Cp 43' 20.88" | 20 Cp 43' 20.88" | false | BK; Nakshatra Srav pada 4; Navamsa Cancer |
+| Saturn | 8 Sc 10' 42.38" | Scorpio | 7 | 8 Sc 10' 42.38" | 8 Sc 10' 42.38" | false | GK; Nakshatra Anu pada 2; Navamsa Virgo |
+| Rahu (True) | 19 Vi 36' 21.08" | Virgo | 5 | 19 Vi 36' 21.08" | 19 Vi 36' 21.08" | true | PiK; Nakshatra Hast pada 3; Navamsa Gemini |
+| Ketu | 19 Pi 36' 21.08" | Pisces | 11 | 19 Pi 36' 21.08" | 19 Pi 36' 21.08" | true | Nakshatra Reva pada 1; Navamsa Sagittarius |
+
+## Bhava Chalit / Sripati
+
+Capture note:
+- Record the exact JHora bhava/cusp system used. If Sripati is not available,
+  write the chosen system and keep `expected.bhava_chalit` pending.
+- Do not use this section to collapse rectification candidate windows or
+  prediction ranges.
+
+### Cusp Table
+
+| House | Cusp Longitude | Cusp Sign | Cusp Sign Index | Cusp Degree | Start Longitude | End Longitude | Lord | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 14 Ar 45' 37.65" | Aries | 0 | 14 Ar 45' 37.65" | 26 Pi 54' 55.01" | 26 Ar 54' 55.01" | Mars | Porphyry houses (Sripathi) selected |
+| 2 | 9 Ta 04' 12.38" | Taurus | 1 | 9 Ta 04' 12.38" | 26 Ar 54' 55.01" | 21 Ta 13' 29.74" | Venus | Porphyry houses (Sripathi) selected |
+| 3 | 3 Ge 22' 47.10" | Gemini | 2 | 3 Ge 22' 47.10" | 21 Ta 13' 29.74" | 15 Ge 32' 04.46" | Mercury | Porphyry houses (Sripathi) selected |
+| 4 | 27 Ge 41' 21.83" | Gemini | 2 | 27 Ge 41' 21.83" | 15 Ge 32' 04.46" | 15 Cn 32' 04.46" | Mercury | Porphyry houses (Sripathi) selected |
+| 5 | 3 Le 22' 47.10" | Leo | 4 | 3 Le 22' 47.10" | 15 Cn 32' 04.46" | 21 Le 13' 29.74" | Sun | Porphyry houses (Sripathi) selected |
+| 6 | 9 Vi 04' 12.38" | Virgo | 5 | 9 Vi 04' 12.38" | 21 Le 13' 29.74" | 26 Vi 54' 55.01" | Mercury | Porphyry houses (Sripathi) selected |
+| 7 | 14 Li 45' 37.65" | Libra | 6 | 14 Li 45' 37.65" | 26 Vi 54' 55.01" | 26 Li 54' 55.01" | Venus | Porphyry houses (Sripathi) selected |
+| 8 | 9 Sc 04' 12.38" | Scorpio | 7 | 9 Sc 04' 12.38" | 26 Li 54' 55.01" | 21 Sc 13' 29.74" | Mars | Porphyry houses (Sripathi) selected |
+| 9 | 3 Sg 22' 47.10" | Sagittarius | 8 | 3 Sg 22' 47.10" | 21 Sc 13' 29.74" | 15 Sg 32' 04.46" | Jupiter | Porphyry houses (Sripathi) selected |
+| 10 | 27 Sg 41' 21.83" | Sagittarius | 8 | 27 Sg 41' 21.83" | 15 Sg 32' 04.46" | 15 Cp 32' 04.46" | Jupiter | Porphyry houses (Sripathi) selected |
+| 11 | 3 Aq 22' 47.10" | Aquarius | 10 | 3 Aq 22' 47.10" | 15 Cp 32' 04.46" | 21 Aq 13' 29.74" | Saturn | Porphyry houses (Sripathi) selected |
+| 12 | 9 Pi 04' 12.38" | Pisces | 11 | 9 Pi 04' 12.38" | 21 Aq 13' 29.74" | 26 Pi 54' 55.01" | Jupiter | Porphyry houses (Sripathi) selected |
+
+### Planet House Assignment
+
+| Planet | Whole Sign House | Bhava Chalit House | House Changed | Distance From Cusp | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Sun | 10 | 10 | false |  | Derived from captured Sripati cusp intervals |
+| Moon | 7 | 7 | false |  | Derived from captured Sripati cusp intervals |
+| Mars | 11 | 11 | false |  | Derived from captured Sripati cusp intervals |
+| Mercury | 10 | 11 | true |  | Derived from captured Sripati cusp intervals |
+| Jupiter | 4 | 5 | true |  | Derived from captured Sripati cusp intervals |
+| Venus | 10 | 11 | true |  | Derived from captured Sripati cusp intervals |
+| Saturn | 8 | 8 | false |  | Derived from captured Sripati cusp intervals |
+| Rahu (True) | 6 | 6 | false |  | Derived from captured Sripati cusp intervals |
+| Ketu | 12 | 12 | false |  | Derived from captured Sripati cusp intervals |
+
+## Moon Nakshatra
+
+| Field | JHora Value | Notes |
+| --- | --- | --- |
+| Name | Vishakha |  |
+| Number | 16 | 1-27 |
+| Pada | 2 | 1-4 |
+| Lord | Jupiter |  |
+| Degree in Nakshatra | 3 Li 56' 21.96" | Vishakha starts at Libra 20deg |
+
+## Vimshottari Active at Birth
+
+| Level | Lord | Start | End | Notes |
+| --- | --- | --- | --- | --- |
+| Maha | Jupiter | 2010-04-23 08:47:47 | 2026-04-23 11:21:03 | JHora quick info |
+| Antara | Mercury | 2014-12-25 01:39:43 | 2017-03-29 17:03:58 | JHora quick info |
+| Pratyantar | Mercury | 2014-12-25 01:39:43 | 2015-04-19 03:26:24 | JHora quick info |
+
+Additional visible sub-periods:
+
+| Level | Lord | Start | End | Notes |
+| --- | --- | --- | --- | --- |
+| Sookshma | Ketu | 2015-01-10 03:24:25 | 2015-01-16 18:16:05 | Visible in screenshot |
+| Prana | Saturn | 2015-01-14 18:36:24 | 2015-01-15 19:45:39 | Visible in screenshot |
+
+Deha-antardashas visible within Saturn Prana:
+
+| Lord | Start | End |
+| --- | --- | --- |
+| Saturn | 2015-01-14 18:36:24 | 2015-01-14 22:35:22 |
+| Mercury | 2015-01-14 22:35:22 | 2015-01-15 02:09:10 |
+| Ketu | 2015-01-15 02:09:10 | 2015-01-15 03:37:12 |
+| Venus | 2015-01-15 03:37:12 | 2015-01-15 07:48:45 |
+| Sun | 2015-01-15 07:48:45 | 2015-01-15 09:04:12 |
+| Moon | 2015-01-15 09:04:12 | 2015-01-15 11:09:59 |
+| Mars | 2015-01-15 11:09:59 | 2015-01-15 12:38:01 |
+| Rahu | 2015-01-15 12:38:01 | 2015-01-15 16:24:24 |
+| Jupiter | 2015-01-15 16:24:24 | 2015-01-15 19:45:39 |
+
+## Chara Antardasha Reference
+
+Capture note:
+- Fill only from JHora or another named external source.
+- Record the Chara variant/settings used before promoting any expected value.
+- Keep `expected.chara_antardasha` null until active path and date windows are
+  checked against the API.
+
+| Level | Rashi | Start | End | Direction | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Maha |  |  |  |  |  |
+| Antara |  |  |  |  |  |
+
+| Field | External Value | Notes |
+| --- | --- | --- |
+| Active path at birth |  | Example: Aries > Leo |
+| Source / variant |  |  |
+| Difference decision |  |  |
+
+## Yogini Pratyantardasha Reference
+
+Capture note:
+- Fill only from JHora or another named external source.
+- Record the Yogini rule/variant used before promoting any expected value.
+- Keep `expected.yogini_pratyantardasha` null until active path and date windows
+  are checked against the API.
+
+| Level | Yogini | Lord | Start | End | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Maha |  |  |  |  |  |
+| Antara |  |  |  |  |  |
+| Pratyantar |  |  |  |  |  |
+
+| Field | External Value | Notes |
+| --- | --- | --- |
+| Active path at birth |  | Example: Mangala > Dhanya > Siddha |
+| Source / variant |  |  |
+| Difference decision |  |  |
+
+## Vargas
+
+### D9
+
+| Point | Sign | Sign Index | Notes |
+| --- | --- | --- | --- |
+| Lagna | Leo | 4 | From JHora Navamsa column |
+| Sun | Capricorn | 9 | From JHora Navamsa column |
+| Moon | Taurus | 1 | From JHora Navamsa column |
+| Mars | Sagittarius | 8 | From JHora Navamsa column |
+| Mercury | Gemini | 2 | From JHora Navamsa column |
+| Jupiter | Aquarius | 10 | From JHora Navamsa column |
+| Venus | Cancer | 3 | From JHora Navamsa column |
+| Saturn | Virgo | 5 | From JHora Navamsa column |
+| Rahu (True) | Gemini | 2 | From JHora Navamsa column |
+| Ketu | Sagittarius | 8 | From JHora Navamsa column |
+
+### D10
+
+| Point | Sign | Sign Index | Notes |
+| --- | --- | --- | --- |
+| Lagna | Leo | 4 | Visual JHora D10 screenshot cross-check |
+| Sun | Virgo | 5 | Visual JHora D10 screenshot cross-check |
+| Moon | Taurus | 1 | Visual JHora D10 screenshot cross-check |
+| Mars | Aries | 0 | Visual JHora D10 screenshot cross-check |
+| Mercury | Pisces | 11 | Visual JHora D10 screenshot cross-check |
+| Jupiter | Scorpio | 7 | Visual JHora D10 screenshot cross-check |
+| Venus | Pisces | 11 | Visual JHora D10 screenshot cross-check |
+| Saturn | Virgo | 5 | Visual JHora D10 screenshot cross-check |
+| Rahu (True) | Scorpio | 7 | Visual JHora D10 screenshot cross-check |
+| Ketu | Taurus | 1 | Visual JHora D10 screenshot cross-check |
+
+Visual D10 screenshot captured and sign groups are readable. Keep as visual
+cross-check until typed/exported JHora output is available for final expected
+promotion.
+
+### D7
+
+| Point | Sign | Sign Index | Notes |
+| --- | --- | --- | --- |
+| Lagna | Cancer | 3 | Visual JHora D7 screenshot cross-check |
+| Sun | Cancer | 3 | Visual JHora D7 screenshot cross-check |
+| Moon | Pisces | 11 | Visual JHora D7 screenshot cross-check |
+| Mars | Pisces | 11 | Visual JHora D7 screenshot cross-check |
+| Mercury | Scorpio | 7 | Visual JHora D7 screenshot cross-check |
+| Jupiter | Cancer | 3 | Visual JHora D7 screenshot cross-check |
+| Venus | Scorpio | 7 | Visual JHora D7 screenshot cross-check |
+| Saturn | Gemini | 2 | Visual JHora D7 screenshot cross-check |
+| Rahu (True) | Cancer | 3 | Visual JHora D7 screenshot cross-check |
+| Ketu | Capricorn | 9 | Visual JHora D7 screenshot cross-check |
+
+Visual D7 screenshot captured and sign groups are readable. Keep as visual
+cross-check until typed/exported JHora output is available for final expected
+promotion.
+
+## Difference Notes
+
+- Field: D1/Lagna/planet longitudes
+- Swiss value: existing fixture values from Swiss Ephemeris
+- JHora value: screenshot values captured above
+- Difference: small systematic differences visible in degrees/seconds; detailed
+  tolerance comparison pending before expected.source_status update
+- Likely cause: Lahiri ayanamsa/version precision and JHora display rounding
+- Decision: keep fixture expected.source_status as swiss_only_pending_jhora
+  until chart_a is also captured and chart_b tolerance comparison is automated

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Progresif Vedik Beta</title>
+    <link rel="stylesheet" href="/static/css/beta.css">
+</head>
+<body>
+    <main class="beta-shell">
+        <section class="profile-panel" aria-label="Doğum bilgisi">
+            <div class="brand-row">
+                <div class="brand-mark">&#9788;</div>
+                <div>
+                    <h1>Progresif Vedik Beta</h1>
+                    <p>Kapalı kişisel beta</p>
+                </div>
+            </div>
+
+            <form id="beta-profile-form" class="profile-form">
+                <div class="field-grid two">
+                    <label>
+                        <span>Kişi</span>
+                        <input id="beta-person-name" type="text" value="Beta Kullanıcı" required>
+                    </label>
+                    <label>
+                        <span>Grup</span>
+                        <input id="beta-group-name" type="text" value="Beta">
+                    </label>
+                </div>
+
+                <div class="field-grid three">
+                    <label>
+                        <span>Gün</span>
+                        <input id="beta-day" type="number" min="1" max="31" value="15" required>
+                    </label>
+                    <label>
+                        <span>Ay</span>
+                        <input id="beta-month" type="number" min="1" max="12" value="8" required>
+                    </label>
+                    <label>
+                        <span>Yıl</span>
+                        <input id="beta-year" type="number" min="1900" max="2100" value="1990" required>
+                    </label>
+                </div>
+
+                <div class="field-grid three">
+                    <label>
+                        <span>Saat</span>
+                        <input id="beta-hour" type="number" min="0" max="23" value="10" required>
+                    </label>
+                    <label>
+                        <span>Dakika</span>
+                        <input id="beta-minute" type="number" min="0" max="59" value="30" required>
+                    </label>
+                    <label>
+                        <span>UTC</span>
+                        <input id="beta-tz-offset" type="number" step="0.5" value="3" required>
+                    </label>
+                </div>
+
+                <label>
+                    <span>Türkiye / İl Merkezi</span>
+                    <select id="beta-place-select">
+                        <option value="">Manuel giriş</option>
+                    </select>
+                    <small class="field-hint">81 il merkezi listelenir. Seçim yapınca yer, enlem, boylam ve UTC+3 birlikte güncellenir.</small>
+                </label>
+
+                <div class="field-grid two">
+                    <label>
+                        <span>Enlem</span>
+                        <input id="beta-lat" type="number" step="0.0001" value="41.0082" required>
+                    </label>
+                    <label>
+                        <span>Boylam</span>
+                        <input id="beta-lon" type="number" step="0.0001" value="28.9784" required>
+                    </label>
+                </div>
+
+                <div class="field-grid two">
+                    <label>
+                        <span>Yer</span>
+                        <input id="beta-place" type="text" value="İstanbul, Türkiye">
+                    </label>
+                    <label>
+                        <span>Saat Güveni</span>
+                        <select id="beta-time-confidence">
+                            <option value="unknown">Rektifikasyonsuz</option>
+                            <option value="high" selected>Biliniyor</option>
+                            <option value="rectified">Rektifikasyonlu</option>
+                        </select>
+                    </label>
+                </div>
+
+                <button class="primary-button" type="submit" id="beta-save-profile">Haritayı Hazırla</button>
+            </form>
+
+            <div class="summary-panel" id="beta-summary" aria-live="polite"></div>
+        </section>
+
+        <section class="chat-panel" aria-label="Sohbet">
+            <div class="chat-header">
+                <div>
+                    <p class="eyebrow">Sohbet Taslağı</p>
+                    <h2>Kanıta dayalı yanıt paketi</h2>
+                </div>
+                <a class="expert-link" href="/">Uzman Paneli</a>
+            </div>
+
+            <div class="message-list" id="beta-messages" aria-live="polite">
+                <div class="message system">
+                    <strong>Hazır</strong>
+                    <p>Haritayı hazırla, sonra sorunu yaz.</p>
+                </div>
+            </div>
+
+            <form id="beta-chat-form" class="chat-form">
+                <label for="beta-question">Soru</label>
+                <textarea id="beta-question" rows="3" placeholder="Örn. kariyer açısından hangi teknik kanıtlar var?" required></textarea>
+                <div class="chat-actions">
+                    <button class="secondary-button" type="button" id="beta-feedback-good" disabled>İyi</button>
+                    <button class="secondary-button" type="button" id="beta-feedback-bad" disabled>Eksik</button>
+                    <button class="primary-button" type="submit" id="beta-send" disabled>Kanıt Paketini Getir</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <script src="/static/js/beta.js"></script>
+</body>
+</html>

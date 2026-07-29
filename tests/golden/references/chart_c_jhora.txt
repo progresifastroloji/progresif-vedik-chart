@@ -1,0 +1,209 @@
+# chart_c - Jagannatha Hora Reference
+
+Status: external_reference_pending
+
+Birth data:
+- Date: 1961-08-04
+- Time: 19:24
+- Timezone: Pacific/Honolulu
+- UTC offset: -10:00
+- Place: Honolulu, Hawaii, United States
+- Latitude: 21.3069
+- Longitude: -157.8583
+
+Reference settings:
+- Ayanamsa: Lahiri
+- Node: True Rahu
+- Primary house system: Whole Sign
+
+Source note:
+- Public birth certificate reference: Obama White House Archives long-form birth certificate PDF.
+- Coordinates use Honolulu city coordinates. Hospital coordinates can be used later for cusp-sensitive tests.
+
+Paste raw Jagannatha Hora output below this line.
+
+---
+
+## Capture Checklist
+
+- [ ] Lahiri ayanamsa selected
+- [ ] Sidereal zodiac selected
+- [ ] True node / true Rahu selected
+- [ ] Birth time entered as local time
+- [ ] Timezone/DST checked against fixture
+- [ ] Coordinates checked against fixture
+
+## D1 Lagna
+
+| Field | JHora Value | Notes |
+| --- | --- | --- |
+| Sign |  |  |
+| Sign Index |  | Aries = 0 |
+| Degree |  | Sign-local degree |
+| Degree String |  |  |
+
+## D1 Planets
+
+| Planet | Longitude | Sign | Sign Index | Degree | Degree String | Retrograde | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Sun |  |  |  |  |  |  |  |
+| Moon |  |  |  |  |  |  |  |
+| Mars |  |  |  |  |  |  |  |
+| Mercury |  |  |  |  |  |  |  |
+| Jupiter |  |  |  |  |  |  |  |
+| Venus |  |  |  |  |  |  |  |
+| Saturn |  |  |  |  |  |  |  |
+| Rahu (True) |  |  |  |  |  |  |  |
+| Ketu |  |  |  |  |  |  |  |
+
+## Bhava Chalit / Sripati
+
+Capture note:
+- Record the exact JHora bhava/cusp system used. If Sripati is not available,
+  write the chosen system and keep `expected.bhava_chalit` pending.
+- Do not use this section to collapse rectification candidate windows or
+  prediction ranges.
+
+### Cusp Table
+
+| House | Cusp Longitude | Cusp Sign | Cusp Sign Index | Cusp Degree | Start Longitude | End Longitude | Lord | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 |  |  |  |  |  |  |  |  |
+| 2 |  |  |  |  |  |  |  |  |
+| 3 |  |  |  |  |  |  |  |  |
+| 4 |  |  |  |  |  |  |  |  |
+| 5 |  |  |  |  |  |  |  |  |
+| 6 |  |  |  |  |  |  |  |  |
+| 7 |  |  |  |  |  |  |  |  |
+| 8 |  |  |  |  |  |  |  |  |
+| 9 |  |  |  |  |  |  |  |  |
+| 10 |  |  |  |  |  |  |  |  |
+| 11 |  |  |  |  |  |  |  |  |
+| 12 |  |  |  |  |  |  |  |  |
+
+### Planet House Assignment
+
+| Planet | Whole Sign House | Bhava Chalit House | House Changed | Distance From Cusp | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Sun |  |  |  |  |  |
+| Moon |  |  |  |  |  |
+| Mars |  |  |  |  |  |
+| Mercury |  |  |  |  |  |
+| Jupiter |  |  |  |  |  |
+| Venus |  |  |  |  |  |
+| Saturn |  |  |  |  |  |
+| Rahu (True) |  |  |  |  |  |
+| Ketu |  |  |  |  |  |
+
+## Moon Nakshatra
+
+| Field | JHora Value | Notes |
+| --- | --- | --- |
+| Name |  |  |
+| Number |  | 1-27 |
+| Pada |  | 1-4 |
+| Lord |  |  |
+| Degree in Nakshatra |  |  |
+
+## Vimshottari Active at Birth
+
+| Level | Lord | Start | End | Notes |
+| --- | --- | --- | --- | --- |
+| Maha |  |  |  |  |
+| Antara |  |  |  |  |
+| Pratyantar |  |  |  |  |
+
+## Chara Antardasha Reference
+
+Capture note:
+- Fill only from JHora or another named external source.
+- Record the Chara variant/settings used before promoting any expected value.
+- Keep `expected.chara_antardasha` null until active path and date windows are
+  checked against the API.
+
+| Level | Rashi | Start | End | Direction | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Maha |  |  |  |  |  |
+| Antara |  |  |  |  |  |
+
+| Field | External Value | Notes |
+| --- | --- | --- |
+| Active path at birth |  | Example: Aries > Leo |
+| Source / variant |  |  |
+| Difference decision |  |  |
+
+## Yogini Pratyantardasha Reference
+
+Capture note:
+- Fill only from JHora or another named external source.
+- Record the Yogini rule/variant used before promoting any expected value.
+- Keep `expected.yogini_pratyantardasha` null until active path and date windows
+  are checked against the API.
+
+| Level | Yogini | Lord | Start | End | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Maha |  |  |  |  |  |
+| Antara |  |  |  |  |  |
+| Pratyantar |  |  |  |  |  |
+
+| Field | External Value | Notes |
+| --- | --- | --- |
+| Active path at birth |  | Example: Mangala > Dhanya > Siddha |
+| Source / variant |  |  |
+| Difference decision |  |  |
+
+## Vargas
+
+### D9
+
+| Point | Sign | Sign Index | Notes |
+| --- | --- | --- | --- |
+| Lagna |  |  |  |
+| Sun |  |  |  |
+| Moon |  |  |  |
+| Mars |  |  |  |
+| Mercury |  |  |  |
+| Jupiter |  |  |  |
+| Venus |  |  |  |
+| Saturn |  |  |  |
+| Rahu (True) |  |  |  |
+| Ketu |  |  |  |
+
+### D10
+
+| Point | Sign | Sign Index | Notes |
+| --- | --- | --- | --- |
+| Lagna |  |  |  |
+| Sun |  |  |  |
+| Moon |  |  |  |
+| Mars |  |  |  |
+| Mercury |  |  |  |
+| Jupiter |  |  |  |
+| Venus |  |  |  |
+| Saturn |  |  |  |
+| Rahu (True) |  |  |  |
+| Ketu |  |  |  |
+
+### D7
+
+| Point | Sign | Sign Index | Notes |
+| --- | --- | --- | --- |
+| Lagna |  |  |  |
+| Sun |  |  |  |
+| Moon |  |  |  |
+| Mars |  |  |  |
+| Mercury |  |  |  |
+| Jupiter |  |  |  |
+| Venus |  |  |  |
+| Saturn |  |  |  |
+| Rahu (True) |  |  |  |
+| Ketu |  |  |  |
+
+## Difference Notes
+
+- Field:
+- Swiss value:
+- JHora value:
+- Difference:
+- Likely cause:
+- Decision:

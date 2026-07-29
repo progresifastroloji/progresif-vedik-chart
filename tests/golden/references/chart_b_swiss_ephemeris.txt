@@ -1,0 +1,94 @@
+# chart_b - Swiss Ephemeris Reference
+
+Status: generated_with_python_swisseph
+
+Important note:
+- This is a Swiss Ephemeris raw reference, not an independent JHora cross-check.
+- It must not fill fixtures.json expected values alone if JHora disagrees.
+
+Birth data:
+- Date: 2015-01-15
+- Time: 12:00
+- Timezone: Europe/Istanbul
+- UTC offset fixture value: 2
+- Place: Istanbul, Turkey
+- Latitude: 41.0082
+- Longitude: 28.9784
+
+Computed reference:
+- Local datetime: 2015-01-15T12:00:00+02:00
+- UTC datetime: 2015-01-15T10:00:00+00:00
+- Time source: timezone_id
+- Julian day UT: 2457037.91666667
+- Swiss Ephemeris version: 20230604
+- Ayanamsa: Lahiri / 24.06717429
+- Node: True Rahu; Ketu derived as opposite point
+- House system for ascendant call: Whole Sign (`houses_ex` code `W`)
+- Bhava Chalit raw reference: Sripati/Porphyry (`houses_ex` code `O`)
+
+## Lagna
+
+| Longitude | Sign | Sign Index | Degree | Degree String | Nakshatra | Pada |
+| --- | --- | --- | --- | --- | --- | --- |
+| 14.779438 | Aries | 0 | 14.779438 | 14deg 46' 45.98" | Bharani | 1 |
+
+## Planets
+
+| Planet | Longitude | Sign | Sign Index | Degree | Degree String | Nakshatra | Pada | Speed | Retrograde |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Sun | 270.850382 | Capricorn | 9 | 0.850382 | 00deg 51' 01.38" | Uttara Ashadha | 2 | 1.01870029 | False |
+| Moon | 203.923391 | Libra | 6 | 23.923391 | 23deg 55' 24.21" | Vishakha | 2 | 12.88496015 | False |
+| Mars | 308.268223 | Aquarius | 10 | 8.268223 | 08deg 16' 05.60" | Shatabhisha | 1 | 0.78243493 | False |
+| Mercury | 289.737686 | Capricorn | 9 | 19.737686 | 19deg 44' 15.67" | Shravana | 3 | 0.96474811 | False |
+| Jupiter | 116.358561 | Cancer | 3 | 26.358561 | 26deg 21' 30.82" | Ashlesha | 3 | -0.10941962 | True |
+| Venus | 290.695235 | Capricorn | 9 | 20.695235 | 20deg 41' 42.85" | Shravana | 4 | 1.24986027 | False |
+| Saturn | 218.157237 | Scorpio | 7 | 8.157237 | 08deg 09' 26.05" | Anuradha | 2 | 0.08697469 | False |
+| Rahu (True) | 169.588878 | Virgo | 5 | 19.588878 | 19deg 35' 19.96" | Hasta | 3 | -0.05235513 | True |
+| Ketu | 349.588878 | Pisces | 11 | 19.588878 | 19deg 35' 19.96" | Revati | 1 | -0.05235513 | True |
+
+## Bhava Chalit / Sripati Raw Reference
+
+Status: swiss_only_pending_jhora
+
+Important note:
+- This section is a raw Swiss reference for later cross-check.
+- It does not make `fixtures.json` expected.bhava_chalit final.
+- Whole Sign remains the primary house system in the application.
+- Rectification candidate windows and prediction ranges must not be collapsed by this table.
+
+### Sripati Cusps
+
+| House | Cusp Longitude | Cusp Sign | Cusp Sign Index | Cusp Degree | Cusp Degree String | Start Longitude | End Longitude | Lord |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 14.779438 | Aries | 0 | 14.779438 | 14deg 46' 45.98" | 356.932664 | 26.932664 | Mars |
+| 2 | 39.085891 | Taurus | 1 | 9.085891 | 09deg 05' 09.21" | 26.932664 | 51.239117 | Venus |
+| 3 | 63.392343 | Gemini | 2 | 3.392343 | 03deg 23' 32.43" | 51.239117 | 75.545569 | Mercury |
+| 4 | 87.698795 | Gemini | 2 | 27.698795 | 27deg 41' 55.66" | 75.545569 | 105.545569 | Mercury |
+| 5 | 123.392343 | Leo | 4 | 3.392343 | 03deg 23' 32.43" | 105.545569 | 141.239117 | Sun |
+| 6 | 159.085891 | Virgo | 5 | 9.085891 | 09deg 05' 09.21" | 141.239117 | 176.932664 | Mercury |
+| 7 | 194.779438 | Libra | 6 | 14.779438 | 14deg 46' 45.98" | 176.932664 | 206.932664 | Venus |
+| 8 | 219.085891 | Scorpio | 7 | 9.085891 | 09deg 05' 09.21" | 206.932664 | 231.239117 | Mars |
+| 9 | 243.392343 | Sagittarius | 8 | 3.392343 | 03deg 23' 32.43" | 231.239117 | 255.545569 | Jupiter |
+| 10 | 267.698795 | Sagittarius | 8 | 27.698795 | 27deg 41' 55.66" | 255.545569 | 285.545569 | Jupiter |
+| 11 | 303.392343 | Aquarius | 10 | 3.392343 | 03deg 23' 32.43" | 285.545569 | 321.239117 | Saturn |
+| 12 | 339.085891 | Pisces | 11 | 9.085891 | 09deg 05' 09.21" | 321.239117 | 356.932664 | Jupiter |
+
+### Planet House Assignment
+
+| Planet | Longitude | Whole Sign House | Sripati Bhava House | House Changed | Distance From Cusp |
+| --- | --- | --- | --- | --- | --- |
+| Sun | 270.850382 | 10 | 10 | False | 3.151587 |
+| Moon | 203.923391 | 7 | 7 | False | 9.143953 |
+| Mars | 308.268223 | 11 | 11 | False | 4.875881 |
+| Mercury | 289.737686 | 10 | 11 | True | 13.654656 |
+| Jupiter | 116.358561 | 4 | 5 | True | 7.033781 |
+| Venus | 290.695235 | 10 | 11 | True | 12.697108 |
+| Saturn | 218.157237 | 8 | 8 | False | 0.928653 |
+| Rahu (True) | 169.588878 | 6 | 6 | False | 10.502987 |
+| Ketu | 349.588878 | 12 | 12 | False | 10.502987 |
+
+## Not Included
+
+- Vimshottari dasha validation still needs the project dasha formula plus JHora cross-check.
+- D9/D10/D7 validation still needs a separate varga reference pass.
+- This output does not modify fixtures.json expected values.

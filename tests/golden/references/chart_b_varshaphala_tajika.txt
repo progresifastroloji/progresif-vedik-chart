@@ -1,0 +1,108 @@
+# chart_b - Varshaphala / Tajika Reference
+
+Status: external_reference_pending
+
+Birth data:
+- Date: 2015-01-15
+- Time: 12:00
+- Timezone: Europe/Istanbul
+- UTC offset: +02:00
+- Place: Istanbul, Turkey
+- Latitude: 41.0082
+- Longitude: 28.9784
+
+Reference settings:
+- Ayanamsa: Lahiri
+- Node: True Rahu
+- Zodiac: Sidereal
+- Annual chart location: birth location
+- Varshaphala year rule: sidereal solar return to natal Sun longitude
+
+Paste raw Jagannatha Hora or trusted Varshaphala/Tajika output below this line.
+
+---
+
+## Capture Checklist
+
+- [ ] Lahiri ayanamsa selected
+- [ ] Sidereal zodiac selected
+- [ ] True node / true Rahu selected
+- [ ] Solar return year and event reference date recorded
+- [ ] Annual chart cast for birth location
+- [ ] Timezone/DST checked against fixture and event date
+- [ ] Parampara/source for Varshesha and Tajika rules recorded
+
+## Varsha Year
+
+| Field | Reference Value | Notes |
+| --- | --- | --- |
+| Event Reference Date |  | Required before scoring |
+| Varsha Start UTC |  |  |
+| Varsha End UTC |  |  |
+| Completed Years |  |  |
+| Solar Return Error |  | If available |
+
+## Varsha Lagna / Muntha
+
+| Field | Reference Value | Notes |
+| --- | --- | --- |
+| Varsha Lagna Sign |  |  |
+| Varsha Lagna Degree |  |  |
+| Muntha Sign |  |  |
+| Muntha House From Varsha Lagna |  |  |
+| Muntha Lord |  |  |
+
+## Varshesha Candidates
+
+| Role | Planet | Reference Strength Notes | Final Arbitration Status | Notes |
+| --- | --- | --- | --- | --- |
+| Weekday Lord |  |  | pending |  |
+| Varsha Lagna Lord |  |  | pending |  |
+| Muntha Lord |  |  | pending |  |
+| Sun Sign Lord |  |  | pending |  |
+| Moon Sign Lord |  |  | pending |  |
+
+## Mudda Dasha
+
+| Field | Reference Value | Notes |
+| --- | --- | --- |
+| Starting Lord |  |  |
+| Active Mudda Lord |  | Event date specific |
+| Active Period Start |  |  |
+| Active Period End |  |  |
+
+## Sahams
+
+| Saham | Formula Variant | Longitude | Sign | House | Day/Night Rule | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Punya Saham |  |  |  |  | pending |  |
+| Karma Saham |  |  |  |  | pending |  |
+| Vivaha Saham |  |  |  |  | pending |  |
+
+## Tajika Aspects / Deeptamsa
+
+| Planet A | Planet B | Contact | Orb | Deeptamsa / Orb Rule | Applying/Separating | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  | pending |  |  |
+
+## Tajika Yoga Candidates
+
+| Yoga / Condition | Planets | Reference Status | Required Missing Rule | Notes |
+| --- | --- | --- | --- | --- |
+| Ithasala |  | pending | deeptamsa_or_classical_orb_table_validation |  |
+| Isarapha |  | pending | deeptamsa_or_classical_orb_table_validation |  |
+
+## Rectification Use Decision
+
+| Layer | Reference Ready | Score Use Decision | Notes |
+| --- | --- | --- | --- |
+| Muntha | pending | existing_core_only |  |
+| Technical Varshesha Candidate | pending | existing_core_only |  |
+| Active Mudda Lord | pending | existing_core_only |  |
+| Sahams | pending | not_used_for_rectification_score |  |
+| Tajika Starter Layers | pending | not_used_for_rectification_score |  |
+
+## Difference Notes
+
+- Keep `expected.varshaphala_tajika_rectification` pending until this file and at least two other fixtures agree on the same rule set.
+

@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Progresif Vedik Astroloji Haritası</title>
+    <script>
+        if (window.location.protocol === 'file:') {
+            window.location.replace('http://127.0.0.1:5000/');
+        }
+    </script>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -16,92 +21,123 @@
             <h1>Progresif Vedik Astroloji</h1>
             <p class="subtitle">Sidereal &bull; Lahiri Ayanamsa &bull; Whole Sign</p>
         </div>
+        <div class="header-actions">
+            <button
+                class="header-link-button"
+                id="btn-open-rectification"
+                type="button"
+            >Rektifikasyona Geç</button>
+        </div>
     </div>
 </header>
 
 <!-- ── Main ──────────────────────────────────────────────────── -->
 <main class="container">
 
-    <!-- Input Form -->
-    <section class="card form-card">
-        <h2 class="card-title">Doğum Bilgileri</h2>
-        <form id="chart-form">
-            <!-- Şehir Seçimi -->
-            <div class="form-group">
-                <label for="city-select">Şehir (opsiyonel)</label>
-                <select id="city-select">
-                    <option value="">— Manuel giriş —</option>
-                    <optgroup label="Türkiye">
-                        <option value="41.0082,28.9784,3">İstanbul</option>
-                        <option value="39.9334,32.8597,3">Ankara</option>
-                        <option value="38.4237,27.1428,3">İzmir</option>
-                        <option value="36.8969,30.7133,3">Antalya</option>
-                        <option value="40.1885,29.0610,3">Bursa</option>
-                        <option value="38.7312,35.4787,3">Kayseri</option>
-                        <option value="37.0000,35.3213,3">Adana</option>
-                        <option value="39.7477,37.0179,3">Sivas</option>
-                        <option value="41.2867,36.33,3">Samsun</option>
-                        <option value="39.9208,32.8541,3">Konya</option>
-                        <option value="37.7765,29.0864,3">Denizli</option>
-                        <option value="40.6565,29.2868,3">Kocaeli</option>
-                        <option value="37.2153,28.3636,3">Muğla</option>
-                        <option value="39.6484,27.8826,3">Balıkesir</option>
-                        <option value="40.7667,30.3933,3">Sakarya</option>
-                        <option value="41.2061,32.6204,3">Kastamonu</option>
-                        <option value="40.2969,36.5544,3">Tokat</option>
-                        <option value="39.7767,30.5206,3">Eskişehir</option>
-                        <option value="37.7648,30.2889,3">Burdur</option>
-                        <option value="37.0662,37.3833,3">Gaziantep</option>
-                        <option value="37.9158,40.2189,3">Diyarbakır</option>
-                        <option value="39.9035,41.2679,3">Erzurum</option>
-                        <option value="41.0027,40.5234,3">Trabzon</option>
-                        <option value="38.3552,38.3095,3">Elazığ</option>
-                        <option value="38.7412,43.0,3">Van</option>
-                    </optgroup>
-                    <optgroup label="Uluslararası">
-                        <option value="51.5074,-0.1278,0">Londra</option>
-                        <option value="40.7128,-74.0060,-5">New York</option>
-                        <option value="28.6139,77.2090,5.5">New Delhi</option>
-                        <option value="52.5200,13.4050,1">Berlin</option>
-                        <option value="48.8566,2.3522,1">Paris</option>
-                        <option value="55.7558,37.6173,3">Moskova</option>
-                        <option value="35.6762,139.6503,9">Tokyo</option>
-                        <option value="-33.8688,151.2093,10">Sidney</option>
-                        <option value="34.0522,-118.2437,-8">Los Angeles</option>
-                        <option value="25.2048,55.2708,4">Dubai</option>
-                    </optgroup>
-                </select>
-            </div>
+    <div class="workspace-grid">
+        <!-- Input Form -->
+        <aside class="control-panel">
+            <section class="card form-card">
+                <h2 class="card-title">Doğum Bilgileri</h2>
+                <form id="chart-form">
+                    <!-- Kişi -->
+                    <div class="form-row compact">
+                        <div class="form-group">
+                            <label for="person-name">Kişi Adı</label>
+                            <input type="text" id="person-name" placeholder="Örn. Levent">
+                        </div>
+                        <div class="form-group">
+                            <label for="group-name">Grup</label>
+                            <input type="text" id="group-name" value="Grup-01">
+                        </div>
+                    </div>
 
-            <!-- Tarih -->
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="day">Gün</label>
-                    <input type="number" id="day" min="1" max="31" value="15" required>
-                </div>
-                <div class="form-group">
-                    <label for="month">Ay</label>
-                    <input type="number" id="month" min="1" max="12" value="8" required>
-                </div>
-                <div class="form-group">
-                    <label for="year">Yıl</label>
-                    <input type="number" id="year" min="1900" max="2100" value="1990" required>
-                </div>
-            </div>
+                    <!-- Şehir Seçimi -->
+                    <div class="form-group">
+                        <label for="birth-place-search">Doğum Yeri Ara</label>
+                        <input type="text" id="birth-place-search" list="birth-place-options" placeholder="Örn. İstanbul Merkez, Türkiye">
+                        <datalist id="birth-place-options"></datalist>
+                    </div>
 
-            <!-- Saat -->
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="hour">Saat</label>
-                    <input type="number" id="hour" min="0" max="23" value="10" required>
-                </div>
-                <div class="form-group">
-                    <label for="minute">Dakika</label>
-                    <input type="number" id="minute" min="0" max="59" value="30" required>
-                </div>
-                <div class="form-group">
-                    <label for="tz_offset">UTC Farkı</label>
-                    <select id="tz_offset">
+                    <div class="form-group">
+                        <label for="city-select">Hızlı Seçim</label>
+                        <select id="city-select">
+                            <option value="">— Manuel giriş —</option>
+                            <optgroup label="Türkiye">
+                                <option value="41.0082,28.9784,3">İstanbul</option>
+                                <option value="39.9334,32.8597,3">Ankara</option>
+                                <option value="38.4237,27.1428,3">İzmir</option>
+                                <option value="36.8969,30.7133,3">Antalya</option>
+                                <option value="40.1885,29.0610,3">Bursa</option>
+                                <option value="38.7312,35.4787,3">Kayseri</option>
+                                <option value="37.0000,35.3213,3">Adana</option>
+                                <option value="39.7477,37.0179,3">Sivas</option>
+                                <option value="41.2867,36.33,3">Samsun</option>
+                                <option value="39.9208,32.8541,3">Konya</option>
+                                <option value="37.7765,29.0864,3">Denizli</option>
+                                <option value="40.6565,29.2868,3">Kocaeli</option>
+                                <option value="37.2153,28.3636,3">Muğla</option>
+                                <option value="39.6484,27.8826,3">Balıkesir</option>
+                                <option value="40.7667,30.3933,3">Sakarya</option>
+                                <option value="41.2061,32.6204,3">Kastamonu</option>
+                                <option value="40.2969,36.5544,3">Tokat</option>
+                                <option value="39.7767,30.5206,3">Eskişehir</option>
+                                <option value="37.7648,30.2889,3">Burdur</option>
+                                <option value="37.0662,37.3833,3">Gaziantep</option>
+                                <option value="37.9158,40.2189,3">Diyarbakır</option>
+                                <option value="39.9035,41.2679,3">Erzurum</option>
+                                <option value="41.0027,40.5234,3">Trabzon</option>
+                                <option value="38.3552,38.3095,3">Elazığ</option>
+                                <option value="38.7412,43.0,3">Van</option>
+                            </optgroup>
+                            <optgroup label="Uluslararası">
+                                <option value="51.5074,-0.1278,0">Londra</option>
+                                <option value="40.7128,-74.0060,-5">New York</option>
+                                <option value="28.6139,77.2090,5.5">New Delhi</option>
+                                <option value="52.5200,13.4050,1">Berlin</option>
+                                <option value="48.8566,2.3522,1">Paris</option>
+                                <option value="55.7558,37.6173,3">Moskova</option>
+                                <option value="35.6762,139.6503,9">Tokyo</option>
+                                <option value="-33.8688,151.2093,10">Sidney</option>
+                                <option value="34.0522,-118.2437,-8">Los Angeles</option>
+                                <option value="25.2048,55.2708,4">Dubai</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <!-- Tarih -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="day">Gün</label>
+                            <input type="number" id="day" min="1" max="31" value="15" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="month">Ay</label>
+                            <input type="number" id="month" min="1" max="12" value="8" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="year">Yıl</label>
+                            <input type="number" id="year" min="1900" max="2100" value="1990" required>
+                        </div>
+                    </div>
+
+                    <!-- Saat -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hour">Saat</label>
+                            <input type="number" id="hour" min="0" max="23" value="10" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="minute">Dakika</label>
+                            <input type="number" id="minute" min="0" max="59" value="30" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="second">Saniye</label>
+                            <input type="number" id="second" min="0" max="59" value="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="tz_offset">UTC Farkı</label>
+                            <select id="tz_offset">
                         <option value="-12">UTC-12</option>
                         <option value="-11">UTC-11</option>
                         <option value="-10">UTC-10</option>
@@ -132,132 +168,435 @@
                         <option value="10">UTC+10</option>
                         <option value="11">UTC+11</option>
                         <option value="12">UTC+12</option>
-                    </select>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Koordinatlar -->
+                    <div class="form-row compact">
+                        <div class="form-group">
+                            <label for="lat">Enlem</label>
+                            <input type="number" id="lat" step="0.0001" min="-90" max="90" value="41.0082" required>
+                            <select id="lat_direction">
+                                <option value="N" selected>N</option>
+                                <option value="S">S</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="lon">Boylam</label>
+                            <input type="number" id="lon" step="0.0001" min="-180" max="180" value="28.9784" required>
+                            <select id="lon_direction">
+                                <option value="E" selected>E</option>
+                                <option value="W">W</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row compact">
+                        <div class="form-group">
+                            <label for="birth-sex">Doğum Cinsiyeti</label>
+                            <select id="birth-sex">
+                                <option value="">Belirtilmedi</option>
+                                <option value="female">Kadın</option>
+                                <option value="male">Erkek</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="birth-time-status">Saat Durumu</label>
+                            <select id="birth-time-status">
+                                <option value="unknown">Rektifikasyonsuz</option>
+                                <option value="known" selected>Biliniyor</option>
+                                <option value="rectified">Rektifikasyonlu</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Transit Referansı -->
+                    <div class="form-row compact">
+                        <div class="form-group">
+                            <label for="transit-start-date">Transit Başlangıç</label>
+                            <input type="date" id="transit-start-date">
+                        </div>
+                        <div class="form-group">
+                            <label for="transit-end-date">Transit Bitiş</label>
+                            <input type="date" id="transit-end-date">
+                        </div>
+                    </div>
+
+                    <!-- Panchanga Referansı -->
+                    <div class="form-row compact">
+                        <div class="form-group">
+                            <label for="panchanga-date">Panchanga Tarihi</label>
+                            <input type="date" id="panchanga-date">
+                        </div>
+                        <div class="form-group">
+                            <label for="panchanga-time">Panchanga Saati</label>
+                            <input type="time" id="panchanga-time" value="12:00">
+                        </div>
+                    </div>
+                    <div class="form-row compact">
+                        <div class="form-group">
+                            <label for="panchanga-place">Panchanga İlçe / İl</label>
+                            <input type="text" id="panchanga-place" list="panchanga-place-options" placeholder="Örn. Kadıköy, İstanbul">
+                            <datalist id="panchanga-place-options"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="panchanga-timezone-id">Panchanga Saat Dilimi</label>
+                            <input type="text" id="panchanga-timezone-id" value="Europe/Istanbul">
+                        </div>
+                    </div>
+                    <div class="form-row compact">
+                        <div class="form-group">
+                            <label for="panchanga-lat">Panchanga Enlem</label>
+                            <input type="number" id="panchanga-lat" step="0.0001" min="-90" max="90" placeholder="Doğum enlemi">
+                        </div>
+                        <div class="form-group">
+                            <label for="panchanga-lon">Panchanga Boylam</label>
+                            <input type="number" id="panchanga-lon" step="0.0001" min="-180" max="180" placeholder="Doğum boylamı">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-calculate" id="btn-calculate">
+                        <span class="btn-text">Harita Hesapla</span>
+                        <span class="btn-loading" style="display:none;">Hesaplanıyor...</span>
+                    </button>
+                </form>
+            </section>
+
+            <section class="card recent-saves-card">
+                <h2 class="card-title">Son Kaydedilen Haritalar</h2>
+                <div class="recent-saves-list" id="recent-saves-list" aria-live="polite">
+                    <p class="recent-empty">Henüz kayıt yok.</p>
                 </div>
-            </div>
+            </section>
+        </aside>
 
-            <!-- Koordinatlar -->
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="lat">Enlem (°N)</label>
-                    <input type="number" id="lat" step="0.0001" min="-90" max="90" value="41.0082" required>
+        <div class="dashboard-area">
+            <!-- Error -->
+            <div id="error-box" class="error-box" style="display:none;"></div>
+
+            <!-- Results -->
+            <section id="results" style="display:none;">
+                <div class="dashboard-header">
+                    <div>
+                        <p class="eyebrow">Hesaplanan Harita</p>
+                        <h2>Okuma Paneli</h2>
+                    </div>
+                    <div class="result-tabs" role="tablist" aria-label="Harita bölümleri">
+                        <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="panel-basic" data-tab="basic">Temel Harita</button>
+                        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-strengths" data-tab="strengths">Gezegen Güçleri</button>
+                        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-dashas" data-tab="dashas">Dasha Ağacı</button>
+                        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-yogas" data-tab="yogas">Yogalar</button>
+                        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-special-lagnas" data-tab="special-lagnas">Özel Lagnalar</button>
+                        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-transits" data-tab="transits">Transitler</button>
+                        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-rectification" data-tab="rectification">Rektifikasyon</button>
+                        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-expert-copy" data-tab="expert-copy">Uzman Kopya Paketi</button>
+                    </div>
+                    <div class="result-actions">
+                        <button class="btn-save" type="button" id="btn-save-vault">Vault’a Kaydet</button>
+                        <div class="vault-status" id="vault-status" aria-live="polite"></div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="lon">Boylam (°E)</label>
-                    <input type="number" id="lon" step="0.0001" min="-180" max="180" value="28.9784" required>
+
+                <div class="tab-panel active" id="panel-basic" role="tabpanel" data-panel="basic">
+                    <!-- Summary -->
+                    <div class="card summary-card">
+                        <h2 class="card-title">Harita Özeti</h2>
+                        <div class="summary-grid" id="summary-content"></div>
+                    </div>
+
+                    <!-- Data Quality -->
+                    <div class="card quality-card">
+                        <h2 class="card-title">Veri Kalitesi ve Eksik Katmanlar</h2>
+                        <div class="quality-content" id="quality-content"></div>
+                    </div>
+
+                    <!-- Charts -->
+                    <div class="charts-row">
+                        <div class="card chart-card">
+                            <h2 class="card-title">D1 Rasi Haritası</h2>
+                            <div class="chart-container" id="d1-chart"></div>
+                        </div>
+                        <div class="card chart-card">
+                            <h2 class="card-title">D9 Navamsha Haritası</h2>
+                            <div class="chart-container" id="d9-chart"></div>
+                        </div>
+                    </div>
+
+                    <div class="card varga-detail-card">
+                        <div class="varga-card-header">
+                            <h2 class="card-title">Varga Detayı</h2>
+                            <div class="varga-tabs" role="tablist" aria-label="Varga haritaları">
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D1">D1</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D2">D2</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D3">D3</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D4">D4</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D6">D6</button>
+                                <button class="varga-tab active" type="button" role="tab" aria-selected="true" data-varga="D7">D7</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D9">D9</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D10">D10</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D11">D11</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D12">D12</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D20">D20</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D24">D24</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D30">D30</button>
+                                <button class="varga-tab" type="button" role="tab" aria-selected="false" data-varga="D60">D60</button>
+                            </div>
+                        </div>
+                        <div class="varga-detail-layout">
+                            <div class="chart-container" id="varga-detail-chart"></div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="varga-detail-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nokta</th>
+                                            <th>Burç</th>
+                                            <th>Derece</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-grid">
+                        <!-- Nakshatra Table -->
+                        <div class="card">
+                            <h2 class="card-title">Nakshatra Bilgileri</h2>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="nakshatra-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Gezegen</th>
+                                            <th>Nakshatra</th>
+                                            <th>Pada</th>
+                                            <th>Lord</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Navamsha Table -->
+                        <div class="card">
+                            <h2 class="card-title">D9 Navamsha Pozisyonları</h2>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="navamsha-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Gezegen</th>
+                                            <th>D9 Burç</th>
+                                            <th>D9 Derece</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <button type="submit" class="btn-calculate" id="btn-calculate">
-                <span class="btn-text">Harita Hesapla</span>
-                <span class="btn-loading" style="display:none;">Hesaplanıyor...</span>
-            </button>
-        </form>
-    </section>
+                <div class="tab-panel" id="panel-strengths" role="tabpanel" data-panel="strengths" hidden>
+                    <!-- Planet Table -->
+                    <div class="card">
+                        <h2 class="card-title">D1 Noktaları ve Gezegen Güçleri</h2>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="planets-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nokta / Gezegen</th>
+                                        <th>Burç</th>
+                                        <th>Derece</th>
+                                        <th>Ev</th>
+                                        <th>D9</th>
+                                        <th>Dignity</th>
+                                        <th>Yanıklık</th>
+                                        <th>Graha Yuddha</th>
+                                        <th>Vargottama</th>
+                                        <th>R</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
 
-    <!-- Error -->
-    <div id="error-box" class="error-box" style="display:none;"></div>
+                    <!-- Graha Drishti Table -->
+                    <div class="card">
+                        <h2 class="card-title">Graha Drishti</h2>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="aspects-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kaynak</th>
+                                        <th>Aspekt</th>
+                                        <th>Hedef Ev</th>
+                                        <th>Hedef Burç</th>
+                                        <th>Hedef Gezegenler</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
 
-    <!-- Results -->
-    <section id="results" style="display:none;">
+                    <div class="panel-grid">
+                        <div class="card">
+                            <h2 class="card-title">Shadbala</h2>
+                            <div id="shadbala-content"></div>
+                        </div>
+                        <div class="card">
+                            <h2 class="card-title">Ashtakavarga</h2>
+                            <div id="ashtakavarga-content"></div>
+                        </div>
+                    </div>
+                </div>
 
-        <!-- Summary -->
-        <div class="card summary-card">
-            <h2 class="card-title">Harita Özeti</h2>
-            <div class="summary-grid" id="summary-content"></div>
+                <div class="tab-panel" id="panel-dashas" role="tabpanel" data-panel="dashas" hidden>
+                    <!-- Dasha Table -->
+                    <div class="card">
+                        <h2 class="card-title">Vimshottari Dasha Ağacı (Maha 2050'ye kadar)</h2>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="dasha-table">
+                                <thead>
+                                    <tr>
+                                        <th>Seviye</th>
+                                        <th>Dasha Lord</th>
+                                        <th>Süre (Yıl)</th>
+                                        <th>Başlangıç</th>
+                                        <th>Bitiş</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-panel" id="panel-yogas" role="tabpanel" data-panel="yogas" hidden>
+                    <div class="card">
+                        <h2 class="card-title">Yogalar</h2>
+                        <div class="yoga-list" id="yogas-list"></div>
+                    </div>
+                    <div class="card">
+                        <h2 class="card-title">Doshalar</h2>
+                        <div id="doshas-content"></div>
+                    </div>
+                </div>
+
+                <div class="tab-panel" id="panel-special-lagnas" role="tabpanel" data-panel="special-lagnas" hidden>
+                    <div class="card">
+                        <h2 class="card-title">Özel Lagnalar</h2>
+                        <div class="special-lagnas-content" id="special-lagnas-content"></div>
+                    </div>
+                    <div class="card">
+                        <h2 class="card-title">Jaimini Detayları</h2>
+                        <div id="jaimini-content"></div>
+                    </div>
+                </div>
+
+                <div class="tab-panel" id="panel-transits" role="tabpanel" data-panel="transits" hidden>
+                    <div class="advanced-layer-grid">
+                        <div class="card">
+                            <h2 class="card-title">Varshaphala</h2>
+                            <div id="varshaphala-content"></div>
+                        </div>
+                        <div class="card">
+                            <div class="expert-package-header">
+                                <h2 class="card-title">Transitler</h2>
+                                <button class="btn-copy" type="button" id="btn-copy-transits">Kopyala</button>
+                            </div>
+                            <div id="transits-content"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-panel" id="panel-expert-copy" role="tabpanel" data-panel="expert-copy" hidden>
+                    <div class="card">
+                        <div class="expert-package-header">
+                            <h2 class="card-title">Uzman Kopya Paketi</h2>
+                            <label class="compact-control" for="analysis-mode">
+                                <span>Analiz Modu</span>
+                                <select id="analysis-mode">
+                                    <option value="client">Danışan</option>
+                                    <option value="astrolog">Astrolog</option>
+                                    <option value="technical">Teknik</option>
+                                </select>
+                            </label>
+                            <button class="btn-copy" type="button" id="btn-copy-expert-package">Kopyala</button>
+                        </div>
+                        <pre class="expert-copy-view" id="expert-copy-content"></pre>
+                    </div>
+                </div>
+
+                <div class="tab-panel" id="panel-rectification" role="tabpanel" data-panel="rectification" hidden>
+                    <div class="card">
+                        <h2 class="card-title">KP Sistemi</h2>
+                        <div id="kp-content"></div>
+                    </div>
+                    <div class="card">
+                        <h2 class="card-title">Rektifikasyon</h2>
+                        <div class="rectification-controls">
+                            <div class="form-row compact">
+                                <div class="form-group">
+                                    <label for="rect-start-time">Başlangıç</label>
+                                    <input type="time" id="rect-start-time" value="00:00:00" step="1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="rect-end-time">Bitiş</label>
+                                    <input type="time" id="rect-end-time" value="02:00:00" step="1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="rect-step-minutes">Step dk</label>
+                                    <input type="number" id="rect-step-minutes" min="0" max="60" value="5">
+                                </div>
+                                <div class="form-group">
+                                    <label for="rect-step-seconds">Step sn</label>
+                                    <input type="number" id="rect-step-seconds" min="0" max="59" value="0">
+                                </div>
+                            </div>
+                            <div class="form-row compact">
+                                <div class="form-group">
+                                    <label for="rect-judgement-date">Değerlendirme Tarihi</label>
+                                    <input type="date" id="rect-judgement-date">
+                                </div>
+                                <div class="form-group">
+                                    <label for="rect-judgement-time">Değerlendirme Saati</label>
+                                    <input type="time" id="rect-judgement-time" value="12:00:00" step="1">
+                                </div>
+                            </div>
+                            <div class="rectification-events-header">
+                                <span>Yaşam Olayları</span>
+                                <button class="btn-copy" type="button" id="btn-rectification-add-event">Olay Ekle</button>
+                            </div>
+                            <div class="rectification-events" id="rectification-events"></div>
+                            <div class="rectification-actions">
+                                <button class="btn-calculate rectification-run" type="button" id="btn-rectification-run">
+                                    Rektifikasyon Analiz Et
+                                </button>
+                                <div class="rectified-time-control">
+                                    <label for="rectified-time">Rektifiye Saat</label>
+                                    <input type="time" id="rectified-time" step="1">
+                                    <button class="btn-copy" type="button" id="btn-rectification-save-time">OK</button>
+                                </div>
+                                <span class="rectification-hint" id="rectification-hint">Profesyonel tarama için 8-20 olay önerilir.</span>
+                            </div>
+                        </div>
+                        <div class="rectification-result" id="rectification-result"></div>
+                    </div>
+                </div>
+
+                <!-- Footer Note -->
+                <div class="system-note">
+                    <p>Tüm pozisyonlar <strong>Sidereal (Lahiri Ayanamsa)</strong> sistemindedir. Ev sistemi: <strong>Whole Sign</strong>.</p>
+                </div>
+
+            </section>
         </div>
-
-        <!-- Charts -->
-        <div class="charts-row">
-            <div class="card chart-card">
-                <h2 class="card-title">D1 Rasi Haritası</h2>
-                <div class="chart-container" id="d1-chart"></div>
-            </div>
-            <div class="card chart-card">
-                <h2 class="card-title">D9 Navamsha Haritası</h2>
-                <div class="chart-container" id="d9-chart"></div>
-            </div>
-        </div>
-
-        <!-- Planet Table -->
-        <div class="card">
-            <h2 class="card-title">Gezegen Pozisyonları (D1 Rasi)</h2>
-            <div class="table-wrapper">
-                <table class="data-table" id="planets-table">
-                    <thead>
-                        <tr>
-                            <th>Gezegen</th>
-                            <th>Burç</th>
-                            <th>Derece</th>
-                            <th>Ev</th>
-                            <th>R</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Nakshatra Table -->
-        <div class="card">
-            <h2 class="card-title">Nakshatra Bilgileri</h2>
-            <div class="table-wrapper">
-                <table class="data-table" id="nakshatra-table">
-                    <thead>
-                        <tr>
-                            <th>Gezegen</th>
-                            <th>Nakshatra</th>
-                            <th>Pada</th>
-                            <th>Lord</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Navamsha Table -->
-        <div class="card">
-            <h2 class="card-title">D9 Navamsha Pozisyonları</h2>
-            <div class="table-wrapper">
-                <table class="data-table" id="navamsha-table">
-                    <thead>
-                        <tr>
-                            <th>Gezegen</th>
-                            <th>D9 Burç</th>
-                            <th>D9 Derece</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Dasha Table -->
-        <div class="card">
-            <h2 class="card-title">Vimshottari Maha Dasha</h2>
-            <div class="table-wrapper">
-                <table class="data-table" id="dasha-table">
-                    <thead>
-                        <tr>
-                            <th>Dasha Lord</th>
-                            <th>Süre (Yıl)</th>
-                            <th>Başlangıç</th>
-                            <th>Bitiş</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Footer Note -->
-        <div class="card note-card">
-            <p>Tüm pozisyonlar <strong>Sidereal (Lahiri Ayanamsa)</strong> sistemindedir. Ev sistemi: <strong>Whole Sign</strong>.</p>
-        </div>
-
-    </section>
+    </div>
 </main>
 
 <footer class="app-footer">

@@ -1,0 +1,686 @@
+{
+  "meta": {
+    "status": "planning_skeleton",
+    "purpose": "Golden reference fixtures for external validation of calculation layers.",
+    "engine_settings": {
+      "ayanamsa": "Lahiri",
+      "node": "true_rahu",
+      "house_system_primary": "whole_sign"
+    },
+    "reference_tools": [
+      "swiss_ephemeris",
+      "jagannatha_hora"
+    ]
+  },
+  "default_tolerances": {
+    "planet_longitude_deg": 0.05,
+    "moon_longitude_deg": 0.03,
+    "lagna_deg": 0.1,
+    "house_cusp_deg": 0.15,
+    "dasha_date_days": 1,
+    "ingress_hours": 2,
+    "nakshatra": "exact",
+    "pada": "exact",
+    "varga_sign": "exact",
+    "panchanga_anga": "exact"
+  },
+  "fixtures": [
+    {
+      "id": "chart_a",
+      "label": "Basic D1 and lagna validation chart",
+      "selection_purpose": "Temel D1, gezegen boylami ve lagna dogrulama.",
+      "birth": {
+        "date": "2000-01-15",
+        "time": "12:00",
+        "timezone_id": "Europe/London",
+        "tz_offset": 0,
+        "place": "London, United Kingdom",
+        "lat": 51.5074,
+        "lon": -0.1278
+      },
+      "settings": {
+        "ayanamsa": "Lahiri",
+        "node": "true_rahu",
+        "house_system_primary": "whole_sign",
+        "reference_tools": [
+          "swiss_ephemeris",
+          "jagannatha_hora"
+        ]
+      },
+      "expected": {
+        "source_status": "swiss_and_jhora_matched",
+        "cross_check_note": "Swiss Ephemeris ve JHora ekranlari D1, lagna, Moon nakshatra, D9/D10/D7 ve Sripati referansinda tolerans icinde uyumlu goruldu; D7/D10 JHora fotograf tabanli gorsel dogrulamadir.",
+        "lagna": {
+          "longitude": 26.630963,
+          "sign": "Aries",
+          "sign_index": 0,
+          "degree": 26.630963,
+          "degree_str": "26deg 37' 51.47\""
+        },
+        "planets": {
+          "Sun": {
+            "longitude": 270.78564,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 0.78564,
+            "degree_str": "00deg 47' 08.30\"",
+            "retrograde": false
+          },
+          "Moon": {
+            "longitude": 12.718052,
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 12.718052,
+            "degree_str": "12deg 43' 04.99\"",
+            "retrograde": false
+          },
+          "Mars": {
+            "longitude": 314.962291,
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 14.962291,
+            "degree_str": "14deg 57' 44.25\"",
+            "retrograde": false
+          },
+          "Mercury": {
+            "longitude": 270.433493,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 0.433493,
+            "degree_str": "00deg 26' 00.58\"",
+            "retrograde": false
+          },
+          "Jupiter": {
+            "longitude": 2.290992,
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 2.290992,
+            "degree_str": "02deg 17' 27.57\"",
+            "retrograde": false
+          },
+          "Venus": {
+            "longitude": 234.729974,
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 24.729974,
+            "degree_str": "24deg 43' 47.90\"",
+            "retrograde": false
+          },
+          "Saturn": {
+            "longitude": 16.444813,
+            "sign": "Aries",
+            "sign_index": 0,
+            "degree": 16.444813,
+            "degree_str": "16deg 26' 41.33\"",
+            "retrograde": false
+          },
+          "Rahu (True)": {
+            "longitude": 99.884243,
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 9.884243,
+            "degree_str": "09deg 53' 03.27\"",
+            "retrograde": true
+          },
+          "Ketu": {
+            "longitude": 279.884243,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 9.884243,
+            "degree_str": "09deg 53' 03.27\"",
+            "retrograde": true
+          }
+        },
+        "moon_nakshatra": {
+          "name": "Ashwini",
+          "number": 1,
+          "pada": 4,
+          "lord": "Ketu",
+          "degree_in_nakshatra": 12.718052
+        },
+        "vimshottari_active": {
+          "reference_datetime_local": "2000-01-15T12:00:00+00:00",
+          "maha": "Ketu",
+          "antara": "Mercury",
+          "pratyantar": "Rahu",
+          "levels_verified": ["maha", "antara", "pratyantar"],
+          "fine_level_status": "aligned_in_external_reference",
+          "external_alignment_sidereal_mode": "SIDM_TRUE_CITRA",
+          "jhora_visible_fine_levels": {
+            "sookshma": "Sun",
+            "prana": "Jupiter",
+            "deha": "Sun"
+          },
+          "source": "jagannatha_hora_quick_info_screenshot",
+          "note": "JHora ekraninda dogum ani Ketu/Mercury/Rahu ile uyumlu. Sookshma/Prana degerleri API dashas.vimshottari.external_reference_alignment alaninda SIDM_TRUE_CITRA pasif referans zinciriyle hizalanir. Deha API'de pasif aday olarak gorunur, ancak JHora zaman penceresiyle ayrica dogrulanana kadar hizali/final kabul edilmez; ana Lahiri dasha zinciri degismez."
+        },
+        "chara_antardasha": null,
+        "yogini_pratyantardasha": null,
+        "vargas": {
+          "D9": {
+            "source": "jagannatha_hora_navamsa_column",
+            "Lagna": "Scorpio",
+            "Sun": "Capricorn",
+            "Moon": "Cancer",
+            "Mars": "Aquarius",
+            "Mercury": "Capricorn",
+            "Jupiter": "Aries",
+            "Venus": "Aquarius",
+            "Saturn": "Leo",
+            "Rahu (True)": "Virgo",
+            "Ketu": "Pisces"
+          },
+          "D10": {
+            "source": "jagannatha_hora_visual_screenshot",
+            "cross_check": "JHora D10 fotograf ekranindan okunmus gorsel referans.",
+            "Lagna": "Sagittarius",
+            "Sun": "Virgo",
+            "Moon": "Leo",
+            "Mars": "Gemini",
+            "Mercury": "Virgo",
+            "Jupiter": "Aries",
+            "Venus": "Pisces",
+            "Saturn": "Virgo",
+            "Rahu (True)": "Gemini",
+            "Ketu": "Sagittarius"
+          },
+          "D7": {
+            "source": "jagannatha_hora_visual_screenshot",
+            "cross_check": "JHora D7 fotograf ekranindan okunmus gorsel referans.",
+            "Lagna": "Libra",
+            "Sun": "Cancer",
+            "Moon": "Gemini",
+            "Mars": "Taurus",
+            "Mercury": "Cancer",
+            "Jupiter": "Aries",
+            "Venus": "Libra",
+            "Saturn": "Cancer",
+            "Rahu (True)": "Pisces",
+            "Ketu": "Virgo"
+          }
+        },
+        "bhava_chalit": {
+          "system": "Sripati",
+          "source": "jagannatha_hora_houses_tab_screenshot",
+          "cross_check": "Porphyry houses (Sripathi) secili ekran goruntusunden alindi.",
+          "houses": [
+            { "house": 1, "start": "6 Ar 57' 35.99\"", "cusp": "26 Ar 39' 00.48\"", "end": "6 Ta 57' 35.99\"", "lord": "Mars" },
+            { "house": 2, "start": "6 Ta 57' 35.99\"", "cusp": "17 Ta 16' 11.51\"", "end": "27 Ta 34' 47.02\"", "lord": "Venus" },
+            { "house": 3, "start": "27 Ta 34' 47.02\"", "cusp": "7 Ge 53' 22.54\"", "end": "18 Ge 11' 58.06\"", "lord": "Mercury" },
+            { "house": 4, "start": "18 Ge 11' 58.06\"", "cusp": "28 Ge 30' 33.57\"", "end": "18 Cn 11' 58.06\"", "lord": "Mercury" },
+            { "house": 5, "start": "18 Cn 11' 58.06\"", "cusp": "7 Le 53' 22.54\"", "end": "27 Le 34' 47.02\"", "lord": "Sun" },
+            { "house": 6, "start": "27 Le 34' 47.02\"", "cusp": "17 Vi 16' 11.51\"", "end": "6 Li 57' 35.99\"", "lord": "Mercury" },
+            { "house": 7, "start": "6 Li 57' 35.99\"", "cusp": "26 Li 39' 00.48\"", "end": "6 Sc 57' 35.99\"", "lord": "Venus" },
+            { "house": 8, "start": "6 Sc 57' 35.99\"", "cusp": "17 Sc 16' 11.51\"", "end": "27 Sc 34' 47.02\"", "lord": "Mars" },
+            { "house": 9, "start": "27 Sc 34' 47.02\"", "cusp": "7 Sg 53' 22.54\"", "end": "18 Sg 11' 58.06\"", "lord": "Jupiter" },
+            { "house": 10, "start": "18 Sg 11' 58.06\"", "cusp": "28 Sg 30' 33.57\"", "end": "18 Cp 11' 58.06\"", "lord": "Jupiter" },
+            { "house": 11, "start": "18 Cp 11' 58.06\"", "cusp": "7 Aq 53' 22.54\"", "end": "27 Aq 34' 47.02\"", "lord": "Saturn" },
+            { "house": 12, "start": "27 Aq 34' 47.02\"", "cusp": "17 Pi 16' 11.51\"", "end": "6 Ar 57' 35.99\"", "lord": "Jupiter" }
+          ],
+          "planets": {
+            "Sun": { "whole_sign_house": 10, "bhava_chalit_house": 10, "house_changed": false },
+            "Moon": { "whole_sign_house": 1, "bhava_chalit_house": 1, "house_changed": false },
+            "Mars": { "whole_sign_house": 11, "bhava_chalit_house": 11, "house_changed": false },
+            "Mercury": { "whole_sign_house": 10, "bhava_chalit_house": 10, "house_changed": false },
+            "Jupiter": { "whole_sign_house": 1, "bhava_chalit_house": 12, "house_changed": true },
+            "Venus": { "whole_sign_house": 8, "bhava_chalit_house": 8, "house_changed": false },
+            "Saturn": { "whole_sign_house": 1, "bhava_chalit_house": 1, "house_changed": false },
+            "Rahu (True)": { "whole_sign_house": 4, "bhava_chalit_house": 4, "house_changed": false },
+            "Ketu": { "whole_sign_house": 10, "bhava_chalit_house": 10, "house_changed": false }
+          },
+          "summary": {
+            "changed_house_count": 1,
+            "changed_planets": ["Jupiter"],
+            "birth_time_sensitive": true
+          }
+        },
+        "bhava_bala": null,
+        "vimshopaka_bala": null,
+        "avasthas": null,
+        "varshaphala_tajika_rectification": null
+      },
+      "flags": {
+        "boundary_case": false,
+        "timezone_sensitive": false,
+        "external_reference_pending": false
+      }
+    },
+    {
+      "id": "chart_b",
+      "label": "Turkey timezone validation chart",
+      "selection_purpose": "Turkiye timezone ve tarih bazli UTC farki dogrulama.",
+      "birth": {
+        "date": "2015-01-15",
+        "time": "12:00",
+        "timezone_id": "Europe/Istanbul",
+        "tz_offset": 2,
+        "place": "Istanbul, Turkey",
+        "lat": 41.0082,
+        "lon": 28.9784
+      },
+      "settings": {
+        "ayanamsa": "Lahiri",
+        "node": "true_rahu",
+        "house_system_primary": "whole_sign",
+        "reference_tools": [
+          "swiss_ephemeris",
+          "jagannatha_hora"
+        ]
+      },
+      "expected": {
+        "source_status": "swiss_and_jhora_matched",
+        "cross_check_note": "Swiss Ephemeris ve JHora ekranlari D1, lagna, Moon nakshatra, D9/D10/D7 ve Sripati referansinda tolerans icinde uyumlu goruldu; D7/D10 JHora fotograf tabanli gorsel dogrulamadir.",
+        "lagna": {
+          "longitude": 14.779438,
+          "sign": "Aries",
+          "sign_index": 0,
+          "degree": 14.779438,
+          "degree_str": "14deg 46' 45.98\""
+        },
+        "planets": {
+          "Sun": {
+            "longitude": 270.850382,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 0.850382,
+            "degree_str": "00deg 51' 01.38\"",
+            "retrograde": false
+          },
+          "Moon": {
+            "longitude": 203.923391,
+            "sign": "Libra",
+            "sign_index": 6,
+            "degree": 23.923391,
+            "degree_str": "23deg 55' 24.21\"",
+            "retrograde": false
+          },
+          "Mars": {
+            "longitude": 308.268223,
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 8.268223,
+            "degree_str": "08deg 16' 05.60\"",
+            "retrograde": false
+          },
+          "Mercury": {
+            "longitude": 289.737686,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 19.737686,
+            "degree_str": "19deg 44' 15.67\"",
+            "retrograde": false
+          },
+          "Jupiter": {
+            "longitude": 116.358561,
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 26.358561,
+            "degree_str": "26deg 21' 30.82\"",
+            "retrograde": true
+          },
+          "Venus": {
+            "longitude": 290.695235,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 20.695235,
+            "degree_str": "20deg 41' 42.85\"",
+            "retrograde": false
+          },
+          "Saturn": {
+            "longitude": 218.157237,
+            "sign": "Scorpio",
+            "sign_index": 7,
+            "degree": 8.157237,
+            "degree_str": "08deg 09' 26.05\"",
+            "retrograde": false
+          },
+          "Rahu (True)": {
+            "longitude": 169.588878,
+            "sign": "Virgo",
+            "sign_index": 5,
+            "degree": 19.588878,
+            "degree_str": "19deg 35' 19.96\"",
+            "retrograde": true
+          },
+          "Ketu": {
+            "longitude": 349.588878,
+            "sign": "Pisces",
+            "sign_index": 11,
+            "degree": 19.588878,
+            "degree_str": "19deg 35' 19.96\"",
+            "retrograde": true
+          }
+        },
+        "moon_nakshatra": {
+          "name": "Vishakha",
+          "number": 16,
+          "pada": 2,
+          "lord": "Jupiter",
+          "degree_in_nakshatra": 3.923391
+        },
+        "vimshottari_active": {
+          "reference_datetime_local": "2015-01-15T12:00:00+02:00",
+          "maha": "Jupiter",
+          "antara": "Mercury",
+          "pratyantar": "Mercury",
+          "levels_verified": ["maha", "antara", "pratyantar"],
+          "fine_level_status": "aligned_in_external_reference",
+          "external_alignment_sidereal_mode": "SIDM_TRUE_CITRA",
+          "jhora_visible_fine_levels": {
+            "sookshma": "Ketu",
+            "prana": "Saturn",
+            "deha": "Mars"
+          },
+          "source": "jagannatha_hora_quick_info_screenshot",
+          "note": "JHora ekraninda dogum ani Jupiter/Mercury/Mercury ile uyumlu. Sookshma/Prana degerleri API dashas.vimshottari.external_reference_alignment alaninda SIDM_TRUE_CITRA pasif referans zinciriyle hizalanir. Deha API'de pasif aday olarak gorunur, ancak JHora zaman penceresiyle ayrica dogrulanana kadar hizali/final kabul edilmez; ana Lahiri dasha zinciri degismez."
+        },
+        "chara_antardasha": null,
+        "yogini_pratyantardasha": null,
+        "vargas": {
+          "D9": {
+            "source": "jagannatha_hora_navamsa_column",
+            "Lagna": "Leo",
+            "Sun": "Capricorn",
+            "Moon": "Taurus",
+            "Mars": "Sagittarius",
+            "Mercury": "Gemini",
+            "Jupiter": "Aquarius",
+            "Venus": "Cancer",
+            "Saturn": "Virgo",
+            "Rahu (True)": "Gemini",
+            "Ketu": "Sagittarius"
+          },
+          "D10": {
+            "source": "jagannatha_hora_visual_screenshot",
+            "cross_check": "JHora D10 fotograf ekranindan okunmus gorsel referans.",
+            "Lagna": "Leo",
+            "Sun": "Virgo",
+            "Moon": "Taurus",
+            "Mars": "Aries",
+            "Mercury": "Pisces",
+            "Jupiter": "Scorpio",
+            "Venus": "Pisces",
+            "Saturn": "Virgo",
+            "Rahu (True)": "Scorpio",
+            "Ketu": "Taurus"
+          },
+          "D7": {
+            "source": "jagannatha_hora_visual_screenshot",
+            "cross_check": "JHora D7 fotograf ekranindan okunmus gorsel referans.",
+            "Lagna": "Cancer",
+            "Sun": "Cancer",
+            "Moon": "Pisces",
+            "Mars": "Pisces",
+            "Mercury": "Scorpio",
+            "Jupiter": "Cancer",
+            "Venus": "Scorpio",
+            "Saturn": "Gemini",
+            "Rahu (True)": "Cancer",
+            "Ketu": "Capricorn"
+          }
+        },
+        "bhava_chalit": {
+          "system": "Sripati",
+          "source": "jagannatha_hora_houses_tab_screenshot",
+          "cross_check": "Porphyry houses (Sripathi) secili ekran goruntusunden alindi.",
+          "houses": [
+            { "house": 1, "start": "26 Pi 54' 55.01\"", "cusp": "14 Ar 45' 37.65\"", "end": "26 Ar 54' 55.01\"", "lord": "Mars" },
+            { "house": 2, "start": "26 Ar 54' 55.01\"", "cusp": "9 Ta 04' 12.38\"", "end": "21 Ta 13' 29.74\"", "lord": "Venus" },
+            { "house": 3, "start": "21 Ta 13' 29.74\"", "cusp": "3 Ge 22' 47.10\"", "end": "15 Ge 32' 04.46\"", "lord": "Mercury" },
+            { "house": 4, "start": "15 Ge 32' 04.46\"", "cusp": "27 Ge 41' 21.83\"", "end": "15 Cn 32' 04.46\"", "lord": "Mercury" },
+            { "house": 5, "start": "15 Cn 32' 04.46\"", "cusp": "3 Le 22' 47.10\"", "end": "21 Le 13' 29.74\"", "lord": "Sun" },
+            { "house": 6, "start": "21 Le 13' 29.74\"", "cusp": "9 Vi 04' 12.38\"", "end": "26 Vi 54' 55.01\"", "lord": "Mercury" },
+            { "house": 7, "start": "26 Vi 54' 55.01\"", "cusp": "14 Li 45' 37.65\"", "end": "26 Li 54' 55.01\"", "lord": "Venus" },
+            { "house": 8, "start": "26 Li 54' 55.01\"", "cusp": "9 Sc 04' 12.38\"", "end": "21 Sc 13' 29.74\"", "lord": "Mars" },
+            { "house": 9, "start": "21 Sc 13' 29.74\"", "cusp": "3 Sg 22' 47.10\"", "end": "15 Sg 32' 04.46\"", "lord": "Jupiter" },
+            { "house": 10, "start": "15 Sg 32' 04.46\"", "cusp": "27 Sg 41' 21.83\"", "end": "15 Cp 32' 04.46\"", "lord": "Jupiter" },
+            { "house": 11, "start": "15 Cp 32' 04.46\"", "cusp": "3 Aq 22' 47.10\"", "end": "21 Aq 13' 29.74\"", "lord": "Saturn" },
+            { "house": 12, "start": "21 Aq 13' 29.74\"", "cusp": "9 Pi 04' 12.38\"", "end": "26 Pi 54' 55.01\"", "lord": "Jupiter" }
+          ],
+          "planets": {
+            "Sun": { "whole_sign_house": 10, "bhava_chalit_house": 10, "house_changed": false },
+            "Moon": { "whole_sign_house": 7, "bhava_chalit_house": 7, "house_changed": false },
+            "Mars": { "whole_sign_house": 11, "bhava_chalit_house": 11, "house_changed": false },
+            "Mercury": { "whole_sign_house": 10, "bhava_chalit_house": 11, "house_changed": true },
+            "Jupiter": { "whole_sign_house": 4, "bhava_chalit_house": 5, "house_changed": true },
+            "Venus": { "whole_sign_house": 10, "bhava_chalit_house": 11, "house_changed": true },
+            "Saturn": { "whole_sign_house": 8, "bhava_chalit_house": 8, "house_changed": false },
+            "Rahu (True)": { "whole_sign_house": 6, "bhava_chalit_house": 6, "house_changed": false },
+            "Ketu": { "whole_sign_house": 12, "bhava_chalit_house": 12, "house_changed": false }
+          },
+          "summary": {
+            "changed_house_count": 3,
+            "changed_planets": ["Mercury", "Jupiter", "Venus"],
+            "birth_time_sensitive": true
+          }
+        },
+        "bhava_bala": null,
+        "vimshopaka_bala": null,
+        "avasthas": null,
+        "varshaphala_tajika_rectification": null
+      },
+      "flags": {
+        "boundary_case": false,
+        "timezone_sensitive": true,
+        "external_reference_pending": false
+      }
+    },
+    {
+      "id": "chart_c",
+      "label": "Dasha and varga validation chart",
+      "selection_purpose": "Dasha zinciri ve D9/D10/D7 varga dogrulama.",
+      "birth": {
+        "date": "1961-08-04",
+        "time": "19:24",
+        "timezone_id": "America/Phoenix",
+        "tz_offset": -7,
+        "place": "Phoenix, Arizona, USA",
+        "lat": 33.4483,
+        "lon": -112.0733,
+        "location_note": "Honolulu yerine degistirildi (JHora atlasinda bulunamadi). Arizona 1961'de DST uygulamiyordu (ilk kez 1967'de denendi), bu yuzden offset tum yil -7 sabit, DST belirsizligi yok."
+      },
+      "settings": {
+        "ayanamsa": "Lahiri",
+        "node": "true_rahu",
+        "house_system_primary": "whole_sign",
+        "reference_tools": [
+          "swiss_ephemeris",
+          "jagannatha_hora",
+          "astro_seek"
+        ]
+      },
+      "expected": {
+        "source_status": "swiss_and_jhora_matched",
+        "cross_check_note": "3 bagimsiz kaynak (Swiss Ephemeris, JHora, astro-seek.com) lagna ve ASC/MC acilarinda 0.02 derecelik tutarli/sistematik bir farkla (muhtemelen Lahiri ayanamsa'nin son ondalik hanesi) birbirini dogruladi; tolerans (0.1 derece) icinde.",
+        "lagna": {
+          "longitude": 290.028378,
+          "sign": "Capricorn",
+          "sign_index": 9,
+          "degree": 20.028378,
+          "degree_str": "20deg 01' 42.16\"",
+          "jhora_value": "20deg 02' 28.75\"",
+          "astro_seek_value": "20deg 01'"
+        },
+        "planets": {
+          "Sun": {
+            "longitude": 109.109844,
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 19.109844,
+            "degree_str": "19deg 06' 35.44\"",
+            "retrograde": false,
+            "jhora_value": "19deg 07' 50.64\""
+          },
+          "Moon": {
+            "longitude": 38.451936,
+            "sign": "Taurus",
+            "sign_index": 1,
+            "degree": 8.451936,
+            "degree_str": "08deg 27' 06.97\"",
+            "retrograde": false,
+            "jhora_value": "08deg 28' 02.05\""
+          },
+          "Mars": {
+            "longitude": 149.180333,
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 29.180333,
+            "degree_str": "29deg 10' 49.20\"",
+            "retrograde": false,
+            "jhora_value": "29deg 12' 13.56\""
+          },
+          "Mercury": {
+            "longitude": 98.762887,
+            "sign": "Cancer",
+            "sign_index": 3,
+            "degree": 8.762887,
+            "degree_str": "08deg 45' 46.39\"",
+            "retrograde": false,
+            "jhora_value": "08deg 47' 33.22\""
+          },
+          "Jupiter": {
+            "longitude": 277.555809,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 7.555809,
+            "degree_str": "07deg 33' 20.91\"",
+            "retrograde": true,
+            "jhora_value": "07deg 34' 05.38\""
+          },
+          "Venus": {
+            "longitude": 68.329308,
+            "sign": "Gemini",
+            "sign_index": 2,
+            "degree": 8.329308,
+            "degree_str": "08deg 19' 45.51\"",
+            "retrograde": false,
+            "jhora_value": "08deg 21' 05.46\""
+          },
+          "Saturn": {
+            "longitude": 272.021033,
+            "sign": "Capricorn",
+            "sign_index": 9,
+            "degree": 2.021033,
+            "degree_str": "02deg 01' 15.72\"",
+            "retrograde": true,
+            "jhora_value": "02deg 01' 57.69\""
+          },
+          "Rahu (True)": {
+            "longitude": 123.984337,
+            "sign": "Leo",
+            "sign_index": 4,
+            "degree": 3.984337,
+            "degree_str": "03deg 59' 03.61\"",
+            "retrograde": true,
+            "jhora_value": "04deg 00' 15.87\""
+          },
+          "Ketu": {
+            "longitude": 303.984337,
+            "sign": "Aquarius",
+            "sign_index": 10,
+            "degree": 3.984337,
+            "degree_str": "03deg 59' 03.61\"",
+            "retrograde": true,
+            "jhora_value": "04deg 00' 15.87\""
+          }
+        },
+        "moon_nakshatra": {
+          "name": "Krittika",
+          "number": 3,
+          "pada": 4,
+          "lord": "Sun",
+          "degree_in_nakshatra": 11.785269
+        },
+        "vimshottari_active": {
+          "reference_datetime_local": "1961-08-04T19:24:00-07:00",
+          "maha": "Sun",
+          "antara": "Venus",
+          "pratyantar": "Mars",
+          "levels_verified": ["maha", "antara", "pratyantar"],
+          "fine_level_status": "pending_jhora_alignment",
+          "jhora_visible_fine_levels": {
+            "sookshma": "Rahu",
+            "prana": "Venus",
+            "deha": "Mercury"
+          },
+          "source": "jagannatha_hora_quick_info",
+          "note": "JHora ekraninda dogum ani Sun/Venus/Mars ile uyumlu. Sookshma/Prana/Deha degerleri referans icin tutulur, ancak API fine-level hizalamasi ayrica dogrulanana kadar final expected sayilmaz."
+        },
+        "chara_antardasha": null,
+        "yogini_pratyantardasha": null,
+        "vargas": {
+          "D9": {
+            "source": "jagannatha_hora_direct_read",
+            "Lagna": "Cancer",
+            "Sun": "Sagittarius",
+            "Moon": "Pisces",
+            "Mars": "Sagittarius",
+            "Mercury": "Virgo",
+            "Jupiter": "Pisces",
+            "Venus": "Sagittarius",
+            "Saturn": "Capricorn",
+            "Rahu (True)": "Taurus",
+            "Ketu": "Scorpio"
+          },
+          "D10": {
+            "source": "computed_from_verified_d1_swiss_ephemeris_longitudes_parashari_rule",
+            "cross_check": "JHora D-10 diyagramindaki gezegen gruplamalariyla (As+Mo+Ke birlikte, Ma+Me birlikte, Su+Sa+Ra birlikte, Ve tek, Ju tek) birebir eslesti.",
+            "Lagna": "Pisces",
+            "Sun": "Virgo",
+            "Moon": "Pisces",
+            "Mars": "Taurus",
+            "Mercury": "Taurus",
+            "Jupiter": "Scorpio",
+            "Venus": "Leo",
+            "Saturn": "Virgo",
+            "Rahu (True)": "Virgo",
+            "Ketu": "Pisces"
+          },
+          "D7": {
+            "source": "computed_from_verified_d1_swiss_ephemeris_longitudes_parashari_rule",
+            "cross_check": "JHora D-7 diyagramindaki gezegen gruplamalariyla (Ke+Ma birlikte, Ra+Ju birlikte, Ve+Sa birlikte, Me tek, Su tek) birebir eslesti.",
+            "Lagna": "Scorpio",
+            "Sun": "Taurus",
+            "Moon": "Sagittarius",
+            "Mars": "Aquarius",
+            "Mercury": "Pisces",
+            "Jupiter": "Leo",
+            "Venus": "Cancer",
+            "Saturn": "Cancer",
+            "Rahu (True)": "Leo",
+            "Ketu": "Aquarius"
+          }
+        },
+        "bhava_chalit": {
+          "system": "Sripati",
+          "source": "jagannatha_hora_houses_tab",
+          "cross_check": "1. ev cusp (ASC) ve 10. ev cusp (MC) astro-seek.com Sripati sistemiyle dogrulandi.",
+          "houses": [
+            { "house": 1, "start": "07deg 44' 19.07\" Cp", "cusp": "20deg 02' 28.75\" Cp", "end": "07deg 44' 19.07\" Aq", "planets": ["Ascendant", "Ketu"] },
+            { "house": 2, "start": "07deg 44' 19.07\" Aq", "cusp": "25deg 26' 09.39\" Aq", "end": "13deg 07' 59.70\" Pi", "planets": [] },
+            { "house": 3, "start": "13deg 07' 59.70\" Pi", "cusp": "00deg 49' 50.02\" Ar", "end": "18deg 31' 40.34\" Ar", "planets": [] },
+            { "house": 4, "start": "18deg 31' 40.34\" Ar", "cusp": "06deg 13' 30.66\" Ta", "end": "18deg 31' 40.34\" Ta", "planets": ["Moon"] },
+            { "house": 5, "start": "18deg 31' 40.34\" Ta", "cusp": "00deg 49' 50.02\" Ge", "end": "13deg 07' 59.70\" Ge", "planets": ["Venus"] },
+            { "house": 6, "start": "13deg 07' 59.70\" Ge", "cusp": "25deg 26' 09.39\" Ge", "end": "07deg 44' 19.07\" Cn", "planets": [] },
+            { "house": 7, "start": "07deg 44' 19.07\" Cn", "cusp": "20deg 02' 28.75\" Cn", "end": "07deg 44' 19.07\" Le", "planets": ["Sun", "Mercury", "Rahu (True)", "Uranus"] },
+            { "house": 8, "start": "07deg 44' 19.07\" Le", "cusp": "25deg 26' 09.39\" Le", "end": "13deg 07' 59.70\" Vi", "planets": ["Mars", "Pluto"] },
+            { "house": 9, "start": "13deg 07' 59.70\" Vi", "cusp": "00deg 49' 50.02\" Li", "end": "18deg 31' 40.34\" Li", "planets": ["Neptune"] },
+            { "house": 10, "start": "18deg 31' 40.34\" Li", "cusp": "06deg 13' 30.66\" Sc", "end": "18deg 31' 40.34\" Sc", "planets": [] },
+            { "house": 11, "start": "18deg 31' 40.34\" Sc", "cusp": "00deg 49' 50.02\" Sg", "end": "13deg 07' 59.70\" Sg", "planets": [] },
+            { "house": 12, "start": "13deg 07' 59.70\" Sg", "cusp": "25deg 26' 09.39\" Sg", "end": "07deg 44' 19.07\" Cp", "planets": ["Jupiter", "Saturn"] }
+          ],
+          "note": "Uranus/Neptune/Pluto JHora tablosunda goruntuleniyor ama klasik Vedik 9-graha semasinin disinda; sadece referans icin tutuluyor."
+        },
+        "bhava_bala": null,
+        "vimshopaka_bala": null,
+        "avasthas": null,
+        "varshaphala_tajika_rectification": null
+      },
+      "flags": {
+        "boundary_case": false,
+        "timezone_sensitive": false,
+        "external_reference_pending": false
+      }
+    }
+  ]
+}
