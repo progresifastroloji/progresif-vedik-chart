@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+*.sqlite3
+*.db
+*.log
+.env
+.env.*
+.DS_Store
+VEDIK_CHART_API_BILGI_PAKETI
+VEDIK_CHART_API_BILGI_PAKETI.zip
+*.yedek*
+tests

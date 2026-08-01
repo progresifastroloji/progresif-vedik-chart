@@ -3,6 +3,7 @@
 Progresif Vedik Astroloji — Flask Web Uygulaması
 """
 
+import hmac
 import json
 import os
 import re
@@ -57,6 +58,7 @@ app.config["LOCAL_ACCESS_ONLY"] = os.environ.get(
     "PROGRESIF_LOCAL_ACCESS_ONLY",
     "1",
 ).strip().lower() not in {"0", "false", "no"}
+app.config["API_TOKEN"] = os.environ.get("VEDIC_API_TOKEN", "").strip()
 app.config["MAX_CONTENT_LENGTH"] = int(
     os.environ.get("PROGRESIF_MAX_REQUEST_BYTES", 10 * 1024 * 1024)
 )
@@ -104,20 +106,45 @@ def _require_local_access():
             "error": "İstek güvenli boyut sınırını aşıyor.",
         }), 413
 
-    if not app.config["LOCAL_ACCESS_ONLY"]:
+    if request.path == "/healthz":
         return None
 
-    remote_addr = request.remote_addr
-    try:
-        is_local = bool(remote_addr) and ip_address(remote_addr).is_loopback
-    except ValueError:
-        is_local = False
+    if app.config["LOCAL_ACCESS_ONLY"]:
+        remote_addr = request.remote_addr
+        try:
+            is_local = bool(remote_addr) and ip_address(remote_addr).is_loopback
+        except ValueError:
+            is_local = False
 
-    if not is_local:
+        if not is_local:
+            return jsonify({
+                "ok": False,
+                "error": "Bu API yalnızca yerel cihazdan kullanılabilir.",
+            }), 403
+        return None
+
+    expected_token = app.config.get("API_TOKEN", "")
+    if not expected_token:
         return jsonify({
             "ok": False,
-            "error": "Bu API yalnızca yerel cihazdan kullanılabilir.",
-        }), 403
+            "error": "Sunucu erişim anahtarı yapılandırılmamış.",
+        }), 503
+
+    authorization = request.headers.get("Authorization", "")
+    scheme, separator, supplied_token = authorization.partition(" ")
+    authorized = (
+        separator == " "
+        and scheme.casefold() == "bearer"
+        and bool(supplied_token)
+        and hmac.compare_digest(supplied_token, expected_token)
+    )
+    if not authorized:
+        response = jsonify({
+            "ok": False,
+            "error": "Geçerli servis erişim anahtarı gerekli.",
+        })
+        response.headers["WWW-Authenticate"] = "Bearer"
+        return response, 401
     return None
 
 
@@ -139,6 +166,33 @@ def _request_too_large(_error):
         "ok": False,
         "error": "İstek güvenli boyut sınırını aşıyor.",
     }), 413
+
+
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    catalog_path = Path(app.config["PLACES_DB_PATH"])
+    catalog_ready = False
+    place_count = 0
+    if catalog_path.is_file():
+        try:
+            uri = f"file:{catalog_path.resolve()}?mode=ro"
+            with closing(sqlite3.connect(uri, uri=True)) as conn:
+                place_count = int(
+                    conn.execute(
+                        "SELECT value FROM catalog_metadata WHERE key = 'place_count'"
+                    ).fetchone()[0]
+                )
+            catalog_ready = place_count > 0
+        except (sqlite3.Error, TypeError, ValueError, IndexError):
+            catalog_ready = False
+    status_code = 200 if catalog_ready else 503
+    return jsonify({
+        "ok": catalog_ready,
+        "service": "vedic-chart-api",
+        "status": "ready" if catalog_ready else "not_ready",
+        "catalog_ready": catalog_ready,
+        "place_count": place_count,
+    }), status_code
 
 
 SUPPORTED_V2_OPTIONS = {
