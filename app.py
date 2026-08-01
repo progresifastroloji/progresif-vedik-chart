@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import swisseph as swe
 from flask import Flask, render_template, request, jsonify
+from place_catalog import PlaceCatalogUnavailable, search_places
 from topic_pack_contract import (
     package_contract_markdown,
     package_data_gate_markdown,
@@ -48,6 +49,10 @@ app.config["BETA_DB_PATH"] = os.environ.get(
 )
 app.config["BETA_DAILY_CHAT_LIMIT"] = 20
 app.config["BETA_DAILY_HEAVY_LIMIT"] = 3
+app.config["PLACES_DB_PATH"] = os.environ.get(
+    "VEDIC_PLACES_DB",
+    str(Path(__file__).resolve().parent / "data" / "places" / "places.sqlite3"),
+)
 app.config["LOCAL_ACCESS_ONLY"] = os.environ.get(
     "PROGRESIF_LOCAL_ACCESS_ONLY",
     "1",
@@ -28818,6 +28823,35 @@ def _beta_load_chart(conn, chart_id=None, profile_id=None):
     if not row:
         raise ValueError("Chart referansı bulunamadı")
     return row["id"], row["profile_id"], _beta_load_json(row["chart_json"])
+
+
+@app.route("/api/v1/places/search", methods=["GET"])
+def api_v1_places_search():
+    try:
+        query = str(request.args.get("q") or "").strip()
+        country_code = str(request.args.get("country") or "").strip() or None
+        limit = int(request.args.get("limit") or 8)
+        places = search_places(
+            app.config["PLACES_DB_PATH"],
+            query,
+            country_code=country_code,
+            limit=limit,
+        )
+        return jsonify({
+            "query": query,
+            "count": len(places),
+            "places": places,
+            "source": {
+                "name": "GeoNames",
+                "dataset": "cities500",
+                "license": "CC BY 4.0",
+                "attribution_url": "https://www.geonames.org/",
+            },
+        })
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": f"Geçersiz doğum yeri araması: {exc}"}), 400
+    except PlaceCatalogUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
 
 
 @app.route("/api/calculate", methods=["POST"])
