@@ -17,6 +17,7 @@ class AccountDeletionTest(unittest.TestCase):
         self._old_user_data_root = app.config["USER_DATA_ROOT"]
         self._old_local_access_only = app.config["LOCAL_ACCESS_ONLY"]
         self._old_api_token = app.config["API_TOKEN"]
+        self._old_account_delete_token = app.config["ACCOUNT_DELETE_TOKEN"]
         self._tmp = tempfile.TemporaryDirectory()
         root = Path(self._tmp.name)
         app.config["BETA_DB_PATH"] = str(root / "beta.sqlite3")
@@ -28,6 +29,7 @@ class AccountDeletionTest(unittest.TestCase):
         app.config["USER_DATA_ROOT"] = self._old_user_data_root
         app.config["LOCAL_ACCESS_ONLY"] = self._old_local_access_only
         app.config["API_TOKEN"] = self._old_api_token
+        app.config["ACCOUNT_DELETE_TOKEN"] = self._old_account_delete_token
         self._tmp.cleanup()
 
     def _seed_user(self, user_id):
@@ -104,17 +106,26 @@ class AccountDeletionTest(unittest.TestCase):
     def test_delete_endpoint_requires_service_bearer_token(self):
         self._seed_user(USER_ID)
         app.config["LOCAL_ACCESS_ONLY"] = False
-        app.config["API_TOKEN"] = "test-service-token"
+        app.config["API_TOKEN"] = "different-general-api-token"
+        app.config["ACCOUNT_DELETE_TOKEN"] = "test-account-delete-token"
         payload = {"user_id": USER_ID, "request_id": "delete-user-test-3"}
 
         unauthorized = self.client.post("/api/v2/account/delete-data", json=payload)
         self.assertEqual(unauthorized.status_code, 401)
         self.assertTrue(Path(app.config["USER_DATA_ROOT"], USER_ID).exists())
 
+        general_token = self.client.post(
+            "/api/v2/account/delete-data",
+            json=payload,
+            headers={"Authorization": "Bearer different-general-api-token"},
+        )
+        self.assertEqual(general_token.status_code, 401)
+        self.assertTrue(Path(app.config["USER_DATA_ROOT"], USER_ID).exists())
+
         authorized = self.client.post(
             "/api/v2/account/delete-data",
             json=payload,
-            headers={"Authorization": "Bearer test-service-token"},
+            headers={"Authorization": "Bearer test-account-delete-token"},
         )
 
         self.assertEqual(authorized.status_code, 200)

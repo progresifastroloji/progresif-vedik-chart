@@ -65,6 +65,10 @@ app.config["LOCAL_ACCESS_ONLY"] = os.environ.get(
     "1",
 ).strip().lower() not in {"0", "false", "no"}
 app.config["API_TOKEN"] = os.environ.get("VEDIC_API_TOKEN", "").strip()
+app.config["ACCOUNT_DELETE_TOKEN"] = os.environ.get(
+    "VEDIC_ACCOUNT_DELETE_TOKEN",
+    "",
+).strip()
 app.config["MAX_CONTENT_LENGTH"] = int(
     os.environ.get("PROGRESIF_MAX_REQUEST_BYTES", 10 * 1024 * 1024)
 )
@@ -129,7 +133,11 @@ def _require_local_access():
             }), 403
         return None
 
-    expected_token = app.config.get("API_TOKEN", "")
+    expected_token = (
+        app.config.get("ACCOUNT_DELETE_TOKEN", "")
+        if request.path == "/api/v2/account/delete-data"
+        else app.config.get("API_TOKEN", "")
+    )
     if not expected_token:
         return jsonify({
             "ok": False,
