@@ -29239,8 +29239,8 @@ def _beta_chart_summary(chart):
             active_periods.append({
                 "level": level,
                 "lord": period.get("lord"),
-                "start_date": period.get("start_date"),
-                "end_date": period.get("end_date"),
+                "start_date": period.get("actual_start") or period.get("start"),
+                "end_date": period.get("actual_end") or period.get("end"),
                 "actual_start_jd": period.get("actual_start_jd"),
                 "actual_end_jd": period.get("actual_end_jd"),
             })

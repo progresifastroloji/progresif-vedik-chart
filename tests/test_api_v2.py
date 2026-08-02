@@ -3115,6 +3115,8 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertEqual(data["chart_summary"]["display_name"], "Beta Kisi")
         self.assertGreaterEqual(len(data["chart_summary"]["planets"]), 9)
         self.assertIn("D9", data["chart_summary"]["vargas"])
+        self.assertTrue(data["chart_summary"]["active_dasha_periods"][0]["start_date"])
+        self.assertTrue(data["chart_summary"]["active_dasha_periods"][0]["end_date"])
         self.assertEqual(data["usage"]["chat"]["limit"], 20)
 
     def test_beta_chart_summary_returns_only_owned_browser_summary(self):
