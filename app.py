@@ -25,6 +25,7 @@ from topic_pack_contract import (
     package_surface_audit_markdown,
     package_counter_evidence_markdown,
 )
+from vertex_bridge_client import VertexBridgeClientError, call_vertex_bridge
 from vedic_chart import (
     DASHA_ORDER,
     DASHA_TOTAL,
@@ -29428,6 +29429,44 @@ def api_v2_beta_chat_draft():
         return jsonify({"error": f"Geçersiz beta sohbet verisi: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Beta sohbet hatası: {str(e)}"}), 500
+
+
+@app.route("/api/v2/ai/generate", methods=["POST"])
+def api_v2_ai_generate():
+    """Server-only handoff from the Vedik API to the fixed Vertex bridge."""
+
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise VertexBridgeClientError("vertex_request_invalid", 400)
+        request_id, model_response = call_vertex_bridge(
+            data.get("request_id"),
+            data.get("request"),
+        )
+        return jsonify({
+            "ok": True,
+            "request_id": request_id,
+            "response": model_response,
+        })
+    except VertexBridgeClientError as exc:
+        messages = {
+            "vertex_request_id_invalid": "Geçerli request_id gerekli.",
+            "vertex_request_invalid": "Geçerli model isteği gerekli.",
+            "vertex_contents_required": "Model isteğinde contents gerekli.",
+            "vertex_request_too_large": "Model isteği güvenli boyut sınırını aşıyor.",
+            "vertex_bridge_unavailable": "Vedik model geçidi yapılandırılmamış.",
+            "vertex_bridge_config_invalid": "Vedik model geçidi ayarı geçersiz.",
+            "vertex_bridge_rejected": "Vedik model geçidi isteği reddetti.",
+            "vertex_bridge_unreachable": "Vedik model geçidine ulaşılamadı.",
+            "vertex_bridge_response_too_large": "Vedik model geçidi yanıtı çok büyük.",
+            "vertex_bridge_response_invalid": "Vedik model geçidi geçersiz yanıt verdi.",
+        }
+        return jsonify({
+            "ok": False,
+            "status": "model_unavailable" if exc.http_status >= 500 else "invalid_request",
+            "error": messages.get(exc.code, "Vedik model isteği tamamlanamadı."),
+            "error_code": exc.code,
+        }), exc.http_status
 
 
 @app.route("/api/v2/beta/feedback", methods=["POST"])
