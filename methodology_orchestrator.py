@@ -183,9 +183,17 @@ def _response_text(payload):
 def _evidence_path_exists(evidence, evidence_path):
     current = evidence
     for key in evidence_path.split(".")[1:]:
-        if not isinstance(current, dict) or key not in current:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+            continue
+        if isinstance(current, list) and key.isdigit():
+            index = int(key)
+            if index >= len(current):
+                return False
+            current = current[index]
+            continue
+        else:
             return False
-        current = current[key]
     return True
 
 

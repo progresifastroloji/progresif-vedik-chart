@@ -135,6 +135,24 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "methodology_model_schema_invalid")
 
+    def test_response_accepts_only_existing_list_index_paths(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"][0]["evidence_path"] = "evidence.topic_packet.supporting_factors.0.code"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {"topic_packet": {"supporting_factors": [{"code": "career-support"}]}}
+
+        validated = validate_methodology_response(payload, evidence)
+        self.assertEqual(
+            validated["supporting_evidence"][0]["evidence_path"],
+            "evidence.topic_packet.supporting_factors.0.code",
+        )
+
+        value["supporting_evidence"][0]["evidence_path"] = "evidence.topic_packet.supporting_factors.1.code"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        with self.assertRaises(MethodologyOrchestrationError):
+            validate_methodology_response(payload, evidence)
+
     def test_checksum_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
