@@ -6,6 +6,7 @@ from pathlib import Path
 from methodology_orchestrator import (
     CANDIDATE_MANIFEST,
     MethodologyOrchestrationError,
+    _model_request,
     load_methodology_candidates,
     run_methodology_comparison,
     validate_methodology_response,
@@ -152,6 +153,46 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
         with self.assertRaises(MethodologyOrchestrationError):
             validate_methodology_response(payload, evidence)
+
+    def test_response_canonicalizes_topic_evidence_shorthand_only_when_it_exists(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"][0]["evidence_path"] = "evidence.topic_packet.houses.0.occupants"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic_packet": {
+                "evidence": {
+                    "houses": [{"occupants": ["Moon"]}],
+                },
+            },
+        }
+
+        validated = validate_methodology_response(payload, evidence)
+        self.assertEqual(
+            validated["supporting_evidence"][0]["evidence_path"],
+            "evidence.topic_packet.evidence.houses.0.occupants",
+        )
+
+        value["supporting_evidence"][0]["evidence_path"] = "evidence.topic_packet.houses.1.occupants"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        with self.assertRaises(MethodologyOrchestrationError):
+            validate_methodology_response(payload, evidence)
+
+    def test_model_request_includes_only_real_canonical_evidence_paths(self):
+        candidate = load_methodology_candidates()[0]
+        evidence = {
+            "topic_packet": {
+                "evidence": {
+                    "houses": [{"occupants": ["Moon"]}],
+                },
+            },
+        }
+
+        request, _ = _model_request(candidate, evidence)
+        prompt = request["contents"][0]["parts"][0]["text"]
+
+        self.assertIn("evidence.topic_packet.evidence.houses.0.occupants", prompt)
+        self.assertNotIn('"evidence.topic_packet.houses.0.occupants"', prompt)
 
     def test_checksum_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:

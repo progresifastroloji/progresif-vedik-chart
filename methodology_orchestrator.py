@@ -129,8 +129,28 @@ def compact_evidence(draft):
     return evidence
 
 
+def _evidence_path_catalog(evidence):
+    paths = []
+
+    def walk(value, prefix):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                path = f"{prefix}.{key}"
+                paths.append(path)
+                walk(child, path)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                path = f"{prefix}.{index}"
+                paths.append(path)
+                walk(child, path)
+
+    walk(evidence, "evidence")
+    return sorted(paths)
+
+
 def _model_request(candidate, evidence):
     evidence_json = _canonical_json(evidence)
+    evidence_path_catalog_json = _canonical_json(_evidence_path_catalog(evidence))
     system_text = (
         "Yalnız aşağıdaki tek Vedik/Jyotisha metodoloji adayını uygula. "
         "Başka metodoloji, Batı/Tropical astroloji veya hesap uydurma kullanma. "
@@ -146,7 +166,12 @@ def _model_request(candidate, evidence):
         "summary (string), supporting_evidence (claim ve evidence_path içeren array), "
         "challenging_evidence (claim ve evidence_path içeren array), missing_layers (string array), "
         "confidence (low|medium|high), limitations (string array). "
-        "Her evidence_path evidence. ile başlamalı ve paketteki gerçek alana işaret etmelidir.\n\n"
+        "Her evidence_path evidence. ile başlamalı ve paketteki gerçek alana işaret etmelidir. "
+        "Konu paketindeki houses, planets, lordships, yogas, vargas ve active_dasha alanları "
+        "evidence.topic_packet.evidence altında bulunur; örneğin "
+        "evidence.topic_packet.evidence.houses.0.occupants. "
+        "Alan yolunu aşağıdaki geçerli yol kataloğundan eksiksiz kopyala; katalog dışında yol üretme.\n\n"
+        f"GEÇERLİ EVIDENCE_PATH KATALOĞU:\n{evidence_path_catalog_json}\n\n"
         f"KANIT PAKETİ:\n{evidence_json}"
     )
     request = {
@@ -197,6 +222,20 @@ def _evidence_path_exists(evidence, evidence_path):
     return True
 
 
+def _canonical_evidence_path(evidence, evidence_path):
+    if _evidence_path_exists(evidence, evidence_path):
+        return evidence_path
+
+    topic_prefix = "evidence.topic_packet."
+    topic_evidence_prefix = "evidence.topic_packet.evidence."
+    if evidence_path.startswith(topic_prefix) and not evidence_path.startswith(topic_evidence_prefix):
+        suffix = evidence_path[len(topic_prefix):]
+        candidate = f"{topic_evidence_prefix}{suffix}"
+        if _evidence_path_exists(evidence, candidate):
+            return candidate
+    return None
+
+
 def _evidence_rows(value, evidence):
     if not isinstance(value, list):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
@@ -206,13 +245,17 @@ def _evidence_rows(value, evidence):
             raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
         claim = str(item.get("claim") or "").strip()
         evidence_path = str(item.get("evidence_path") or "").strip()
+        canonical_path = (
+            _canonical_evidence_path(evidence, evidence_path)
+            if EVIDENCE_PATH_PATTERN.fullmatch(evidence_path)
+            else None
+        )
         if (
             not claim
-            or not EVIDENCE_PATH_PATTERN.fullmatch(evidence_path)
-            or not _evidence_path_exists(evidence, evidence_path)
+            or not canonical_path
         ):
             raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
-        rows.append({"claim": claim, "evidence_path": evidence_path})
+        rows.append({"claim": claim, "evidence_path": canonical_path})
     return rows
 
 
