@@ -221,6 +221,24 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("evidence.topic_packet.evidence.houses.0.occupants", prompt)
         self.assertNotIn('"evidence.topic_packet.houses.0.occupants"', prompt)
 
+    def test_long_time_series_catalog_is_bounded_and_keeps_array_root(self):
+        candidate = load_methodology_candidates()[0]
+        evidence = {
+            "transits": {
+                "daily_timing": [
+                    {"date": f"2026-08-{(index % 28) + 1:02d}", "value": index}
+                    for index in range(92)
+                ],
+            },
+        }
+
+        request, _ = _model_request(candidate, evidence)
+        prompt = request["contents"][0]["parts"][0]["text"]
+
+        self.assertIn("evidence.transits.daily_timing", prompt)
+        self.assertIn("evidence.transits.daily_timing.0.date", prompt)
+        self.assertNotIn("evidence.transits.daily_timing.91.date", prompt)
+
     def test_checksum_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

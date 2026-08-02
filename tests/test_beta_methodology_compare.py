@@ -4,7 +4,16 @@ import unittest
 from contextlib import closing
 from unittest.mock import patch
 
-from app import app, _beta_db, _beta_json, _beta_now
+from app import (
+    app,
+    _beta_build_chat_draft,
+    _beta_db,
+    _beta_detect_subject_topic,
+    _beta_detect_topic,
+    _beta_json,
+    _beta_now,
+)
+from methodology_orchestrator import MAX_PROMPT_BYTES, _canonical_json, _model_request, compact_evidence, load_methodology_candidates
 
 
 PROFILE_ID = "33333333-3333-4333-8333-333333333333"
@@ -131,6 +140,59 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.get_json()["status"], "heavy_limit_exceeded")
         bridge_call.assert_not_called()
+
+    def test_three_month_career_question_uses_transit_with_career_subject(self):
+        question = "Önümüzdeki üç ay kariyerimde hangi dönemler öne çıkıyor?"
+
+        self.assertEqual(_beta_detect_topic(question), "transit")
+        self.assertEqual(_beta_detect_subject_topic(question), "career")
+
+    @patch("app._pwa_transit_pack")
+    def test_transit_draft_keeps_subject_packet_and_bounded_daily_evidence(self, transit_pack):
+        transit_pack.return_value = {
+            "period": {
+                "type": "three_month",
+                "range_start": "2026-08-01",
+                "range_end": "2026-08-02",
+                "day_count": 2,
+            },
+            "natal": {"lagna_sign": "Aries", "moon_sign": "Taurus"},
+            "days": [
+                {
+                    "date": f"2026-08-0{day}",
+                    "active_dasha_path": ["Saturn", "Venus", "Jupiter"],
+                    "planets": [
+                        {"name": "Moon", "sign": "Aries", "nakshatra": "Ashwini", "nakshatra_pada": 1, "house_from_lagna": 1, "house_from_moon": 12},
+                        {"name": "Saturn", "sign": "Pisces", "degree_str": "10°", "house_from_lagna": 12, "house_from_moon": 11, "retrograde": True, "ashtakavarga": {"sav": 30, "bav": 4}},
+                    ],
+                    "natal_contacts": [
+                        {"transit_planet": "Saturn", "natal_planet": "Moon", "contact_type": "degree_orb", "orb": 0.5 + day, "sign": "Pisces", "house_from_lagna": 12, "house_from_moon": 11},
+                    ],
+                }
+                for day in (1, 2)
+            ],
+        }
+        chart = {
+            "birth": {"person": {"name": "Test"}},
+            "lagna": {"sign": "Aries"},
+            "dashas": {"vimshottari": {"current_active": {"path": ["Saturn", "Venus", "Jupiter"]}}},
+            "topic_packets": {"career": {"confidence": "medium", "missing_factors": [], "required_but_missing": []}},
+            "missing": [],
+            "data_quality": {"status": "complete"},
+        }
+
+        draft = _beta_build_chat_draft(
+            "Önümüzdeki üç ay kariyerimde hangi dönemler öne çıkıyor?",
+            chart,
+        )
+        evidence = compact_evidence(draft)
+        request, _ = _model_request(load_methodology_candidates()[0], evidence)
+
+        self.assertEqual(draft["topic"], "transit")
+        self.assertEqual(draft["subject_topic"], "career")
+        self.assertIs(draft["evidence"]["topic_packet"], chart["topic_packets"]["career"])
+        self.assertEqual(len(evidence["transits"]["daily_timing"]), 2)
+        self.assertLess(len(_canonical_json(request).encode("utf-8")), MAX_PROMPT_BYTES)
 
 
 if __name__ == "__main__":

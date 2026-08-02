@@ -28630,6 +28630,27 @@ BETA_TOPIC_KEYWORDS = {
     "transit": {"transit", "güncel", "bugün", "bugun", "şimdi", "simdi"},
 }
 
+BETA_TIMING_KEYWORDS = {
+    "transit",
+    "güncel",
+    "bugün",
+    "bugun",
+    "şimdi",
+    "simdi",
+    "önümüzdeki",
+    "onumuzdeki",
+    "gelecek hafta",
+    "gelecek ay",
+    "bu hafta",
+    "bu ay",
+    "üç ay",
+    "uc ay",
+    "3 ay",
+    "üç aylık",
+    "uc aylik",
+    "3 aylık",
+}
+
 
 def _beta_now():
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -29175,10 +29196,156 @@ def _beta_chart_summary(chart):
 
 def _beta_detect_topic(question):
     normalized = str(question or "").casefold()
+    if any(keyword.casefold() in normalized for keyword in BETA_TIMING_KEYWORDS):
+        return "transit"
     for topic, keywords in BETA_TOPIC_KEYWORDS.items():
         if any(keyword.casefold() in normalized for keyword in keywords):
             return topic
     return "general"
+
+
+def _beta_detect_subject_topic(question):
+    normalized = str(question or "").casefold()
+    for topic, keywords in BETA_TOPIC_KEYWORDS.items():
+        if topic == "transit":
+            continue
+        if any(keyword.casefold() in normalized for keyword in keywords):
+            return topic
+    return "general"
+
+
+def _beta_compact_transit_planet(planet):
+    if not planet:
+        return None
+    ashtakavarga = planet.get("ashtakavarga") or {}
+    return {
+        "name": planet.get("name"),
+        "sign": planet.get("sign"),
+        "degree": planet.get("degree_str"),
+        "house_from_lagna": planet.get("house_from_lagna"),
+        "house_from_moon": planet.get("house_from_moon"),
+        "retrograde": bool(planet.get("retrograde")),
+        "sav": ashtakavarga.get("sav"),
+        "bav": ashtakavarga.get("bav"),
+    }
+
+
+def _beta_compact_transit_contact(contact):
+    return {
+        "transit_planet": contact.get("transit_planet"),
+        "natal_planet": contact.get("natal_planet"),
+        "contact_type": contact.get("contact_type"),
+        "orb": round(contact.get("orb"), 3)
+        if isinstance(contact.get("orb"), (int, float))
+        else None,
+        "sign": contact.get("sign"),
+        "house_from_lagna": contact.get("house_from_lagna"),
+        "house_from_moon": contact.get("house_from_moon"),
+    }
+
+
+def _beta_compact_transit_evidence(transit_pack):
+    """Bounded three-month evidence: every day for timing, sparse slow-planet snapshots."""
+
+    days = (transit_pack or {}).get("days") or []
+    slow_planets = ("Saturn", "Jupiter", "Rahu (True)", "Ketu", "Mars", "Venus")
+    daily_timing = []
+    slow_planet_snapshots = []
+    previous_states = None
+    closest_contacts = {}
+
+    for index, day in enumerate(days):
+        degree_contacts = sorted(
+            (
+                contact
+                for contact in day.get("natal_contacts", [])
+                if contact.get("contact_type") == "degree_orb"
+            ),
+            key=lambda contact: contact.get("orb")
+            if isinstance(contact.get("orb"), (int, float))
+            else 99,
+        )
+        selected_contacts = degree_contacts[:3]
+        moon = _transit_pack_planet(day, "Moon")
+        daily_timing.append({
+            "date": day.get("date"),
+            "active_dasha_path": day.get("active_dasha_path") or [],
+            "moon": {
+                "sign": moon.get("sign"),
+                "nakshatra": moon.get("nakshatra"),
+                "pada": moon.get("nakshatra_pada"),
+                "house_from_lagna": moon.get("house_from_lagna"),
+                "house_from_moon": moon.get("house_from_moon"),
+            },
+            "closest_degree_contacts": [
+                _beta_compact_transit_contact(contact)
+                for contact in selected_contacts
+            ],
+        })
+
+        current_states = {
+            planet_name: (
+                (_transit_pack_planet(day, planet_name) or {}).get("sign"),
+                bool((_transit_pack_planet(day, planet_name) or {}).get("retrograde")),
+            )
+            for planet_name in slow_planets
+        }
+        is_weekly_snapshot = index % 7 == 0 or index == len(days) - 1
+        has_state_change = previous_states is not None and current_states != previous_states
+        if is_weekly_snapshot or has_state_change:
+            slow_planet_snapshots.append({
+                "date": day.get("date"),
+                "reason": "state_change" if has_state_change else "weekly_snapshot",
+                "planets": [
+                    _beta_compact_transit_planet(_transit_pack_planet(day, planet_name))
+                    for planet_name in slow_planets
+                ],
+            })
+        previous_states = current_states
+
+        for contact in degree_contacts:
+            key = (
+                contact.get("transit_planet"),
+                contact.get("natal_planet"),
+                contact.get("contact_type"),
+            )
+            previous = closest_contacts.get(key)
+            orb = contact.get("orb")
+            if previous is None or (
+                isinstance(orb, (int, float))
+                and orb < previous[0]
+            ):
+                closest_contacts[key] = (
+                    orb if isinstance(orb, (int, float)) else 99,
+                    day.get("date"),
+                    contact,
+                )
+
+    closest_approaches = [
+        {
+            "date": date,
+            **_beta_compact_transit_contact(contact),
+        }
+        for _, date, contact in sorted(
+            closest_contacts.values(),
+            key=lambda item: (item[1] or "", item[0]),
+        )
+    ]
+    return {
+        "contract_version": "vedic-compact-transit-evidence-v1",
+        "calculation_policy": "api_only_no_model_calculation",
+        "period": (transit_pack or {}).get("period") or {},
+        "natal_reference": (transit_pack or {}).get("natal") or {},
+        "daily_timing": daily_timing,
+        "slow_planet_snapshots": slow_planet_snapshots,
+        "closest_approaches": closest_approaches,
+        "interpretation_limits": [
+            "daily_timing contains every covered calendar day",
+            "slow_planet_snapshots are weekly plus sign or retrograde state changes",
+            "closest_approaches are the minimum exact-degree orbs per transit-natal pair",
+            "dates are technical evidence, not guaranteed event dates",
+        ],
+    }
 
 
 def _beta_missing_for_topic(chart, packet):
@@ -29228,13 +29395,23 @@ def _beta_safety_notes(topic):
 
 def _beta_build_chat_draft(question, chart):
     topic = _beta_detect_topic(question)
+    subject_topic = _beta_detect_subject_topic(question) if topic == "transit" else topic
     packets = chart.get("topic_packets") or {}
-    packet = packets.get(topic)
+    packet = packets.get(subject_topic)
+    transits = chart.get("transits")
+    if topic == "transit":
+        person = ((chart.get("birth") or {}).get("person") or {})
+        transit_pack = _pwa_transit_pack(
+            chart,
+            person.get("name") or person.get("id") or "PWA User",
+            "PWA",
+        )
+        transits = _beta_compact_transit_evidence(transit_pack)
     evidence = {
         "chart_summary": _beta_chart_summary(chart),
         "active_dasha": _beta_active_dasha_evidence(chart),
         "topic_packet": packet,
-        "transits": chart.get("transits"),
+        "transits": transits,
         "data_quality": chart.get("data_quality"),
     }
     missing = _beta_missing_for_topic(chart, packet)
@@ -29247,6 +29424,7 @@ def _beta_build_chat_draft(question, chart):
         "status": status,
         "question": question,
         "topic": topic,
+        "subject_topic": subject_topic,
         "evidence": evidence,
         "missing": missing,
         "confidence": confidence,

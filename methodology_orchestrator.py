@@ -120,6 +120,7 @@ def compact_evidence(draft):
         "contract_version": "vedic-evidence-package-v1",
         "question": draft.get("question"),
         "topic": draft.get("topic"),
+        "subject_topic": draft.get("subject_topic"),
         "status": draft.get("status"),
         "confidence": draft.get("confidence"),
         "chart_summary": source.get("chart_summary"),
@@ -144,7 +145,11 @@ def _evidence_path_catalog(evidence):
                 paths.append(path)
                 walk(child, path)
         elif isinstance(value, list):
-            for index, child in enumerate(value):
+            # Long repeated time-series would make the path catalogue larger than
+            # the evidence itself. The array root remains a valid citation path;
+            # one representative row documents its shape.
+            children = value[:1] if len(value) > 20 else value
+            for index, child in enumerate(children):
                 path = f"{prefix}.{index}"
                 paths.append(path)
                 walk(child, path)
@@ -172,6 +177,8 @@ def _model_request(candidate, evidence):
         "challenging_evidence (claim ve evidence_path içeren array), missing_layers (string array), "
         "confidence (low|medium|high), limitations (string array). "
         "Her evidence_path evidence. ile başlamalı ve paketteki gerçek alana işaret etmelidir. "
+        "Uzun zaman serilerindeki birden fazla satırı destekleyen iddia için dizinin kök yolunu "
+        "(örneğin evidence.transits.daily_timing) kullan. "
         "Konu paketindeki houses, planets, lordships, yogas, vargas ve active_dasha alanları "
         "evidence.topic_packet.evidence altında bulunur; örneğin "
         "evidence.topic_packet.evidence.houses.0.occupants. "
