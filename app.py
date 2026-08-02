@@ -24,7 +24,7 @@ from methodology_orchestrator import (
     new_comparison_id,
     run_methodology_comparison,
 )
-from place_catalog import PlaceCatalogUnavailable, search_places
+from place_catalog import PlaceCatalogUnavailable, get_place, search_places
 from topic_pack_contract import (
     package_contract_markdown,
     package_data_gate_markdown,
@@ -28690,6 +28690,22 @@ def _beta_init_db(conn):
         );
         """
     )
+    for table, column in (
+        ("beta_profiles", "owner_user_id"),
+        ("beta_charts", "owner_user_id"),
+    ):
+        existing_columns = {
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in existing_columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS beta_profiles_owner_user_id_idx ON beta_profiles(owner_user_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS beta_charts_owner_user_id_idx ON beta_charts(owner_user_id)"
+    )
     conn.commit()
 
 
@@ -28762,7 +28778,22 @@ def _account_deletion_request_id(value):
 
 
 def _delete_beta_user_records(conn, user_id):
-    counts = {}
+    profile_ids = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT id FROM beta_profiles WHERE id = ? OR owner_user_id = ?",
+            (user_id, user_id),
+        ).fetchall()
+    }
+    profile_ids.add(user_id)
+    counts = {
+        "methodology_comparisons": 0,
+        "feedback": 0,
+        "chat_messages": 0,
+        "charts": 0,
+        "profiles": 0,
+        "usage_events": 0,
+    }
     statements = (
         (
             "methodology_comparisons",
@@ -28802,9 +28833,16 @@ def _delete_beta_user_records(conn, user_id):
         ),
     )
     try:
-        for key, statement, params in statements:
-            cursor = conn.execute(statement, params)
-            counts[key] = max(int(cursor.rowcount), 0)
+        for profile_id in profile_ids:
+            for key, statement, params in statements:
+                scoped_params = tuple(profile_id if value == user_id else value for value in params)
+                cursor = conn.execute(statement, scoped_params)
+                counts[key] += max(int(cursor.rowcount), 0)
+        orphan_charts = conn.execute(
+            "DELETE FROM beta_charts WHERE owner_user_id = ?",
+            (user_id,),
+        )
+        counts["charts"] += max(int(orphan_charts.rowcount), 0)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -29041,6 +29079,28 @@ def api_v1_places_search():
         })
     except (TypeError, ValueError) as exc:
         return jsonify({"error": f"Geçersiz doğum yeri araması: {exc}"}), 400
+    except PlaceCatalogUnavailable as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@app.route("/api/v1/places/<place_id>", methods=["GET"])
+def api_v1_place_detail(place_id):
+    try:
+        place = get_place(app.config["PLACES_DB_PATH"], place_id)
+        if not place:
+            return jsonify({"error": "Doğum yeri bulunamadı."}), 404
+        return jsonify({
+            "ok": True,
+            "place": place,
+            "source": {
+                "name": "GeoNames",
+                "dataset": "cities500",
+                "license": "CC BY 4.0",
+                "attribution_url": "https://www.geonames.org/",
+            },
+        })
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": f"Geçersiz doğum yeri kimliği: {exc}"}), 400
     except PlaceCatalogUnavailable as exc:
         return jsonify({"error": str(exc)}), 503
 
@@ -29439,7 +29499,12 @@ def api_v2_beta_profile():
         birth = data["birth"]
         options = _beta_options(data.get("options") or {})
         profile_id = str(data.get("profile_id") or uuid.uuid4())
-        chart_id = str(uuid.uuid4())
+        owner_user_id = data.get("owner_user_id")
+        if owner_user_id is not None:
+            owner_user_id = _account_deletion_user_id(owner_user_id)
+        chart_id = str(data.get("chart_id") or uuid.uuid4()).strip()
+        if not re.fullmatch(r"[0-9A-Za-z._:-]{1,200}", chart_id):
+            raise ValueError("Geçerli chart_id gerekli")
         person = {
             "id": profile_id,
             "name": str(person_input.get("name") or "Beta Kullanıcı").strip(),
@@ -29455,16 +29520,17 @@ def api_v2_beta_profile():
         with closing(_beta_db()) as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO beta_charts (id, profile_id, chart_json, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO beta_charts
+                    (id, profile_id, chart_json, created_at, owner_user_id)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (chart_id, profile_id, _beta_json(chart), created_at),
+                (chart_id, profile_id, _beta_json(chart), created_at, owner_user_id),
             )
             conn.execute(
                 """
                 INSERT OR REPLACE INTO beta_profiles
-                    (id, name, group_name, birth_json, options_json, chart_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (id, name, group_name, birth_json, options_json, chart_id, created_at, owner_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     profile_id,
@@ -29474,6 +29540,7 @@ def api_v2_beta_profile():
                     _beta_json(options),
                     chart_id,
                     created_at,
+                    owner_user_id,
                 ),
             )
             conn.commit()

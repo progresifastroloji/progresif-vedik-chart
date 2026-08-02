@@ -32,37 +32,38 @@ class AccountDeletionTest(unittest.TestCase):
         app.config["ACCOUNT_DELETE_TOKEN"] = self._old_account_delete_token
         self._tmp.cleanup()
 
-    def _seed_user(self, user_id):
+    def _seed_user(self, user_id, profile_id=None):
+        profile_id = profile_id or user_id
         with closing(_beta_db()) as conn:
             conn.execute(
-                "INSERT INTO beta_profiles (id, name, group_name, birth_json, options_json, chart_id, created_at) VALUES (?, ?, ?, '{}', '{}', ?, '2026-08-02')",
-                (user_id, f"User {user_id[:4]}", "Beta", f"chart-{user_id}"),
+                "INSERT INTO beta_profiles (id, name, group_name, birth_json, options_json, chart_id, created_at, owner_user_id) VALUES (?, ?, ?, '{}', '{}', ?, '2026-08-02', ?)",
+                (profile_id, f"User {user_id[:4]}", "Beta", f"chart-{profile_id}", user_id),
             )
             conn.execute(
-                "INSERT INTO beta_charts (id, profile_id, chart_json, created_at) VALUES (?, ?, '{}', '2026-08-02')",
-                (f"chart-{user_id}", user_id),
+                "INSERT INTO beta_charts (id, profile_id, chart_json, created_at, owner_user_id) VALUES (?, ?, '{}', '2026-08-02', ?)",
+                (f"chart-{profile_id}", profile_id, user_id),
             )
             conn.execute(
                 "INSERT INTO beta_chat_messages (id, profile_id, chart_id, question, response_json, created_at) VALUES (?, ?, ?, 'question', '{}', '2026-08-02')",
-                (f"message-{user_id}", user_id, f"chart-{user_id}"),
+                (f"message-{profile_id}", profile_id, f"chart-{profile_id}"),
             )
             conn.execute(
                 "INSERT INTO beta_feedback (id, message_id, profile_id, rating, comment, created_at) VALUES (?, ?, ?, 'good', '', '2026-08-02')",
-                (f"feedback-{user_id}", f"message-{user_id}", user_id),
+                (f"feedback-{profile_id}", f"message-{profile_id}", profile_id),
             )
             conn.execute(
                 "INSERT INTO beta_usage_events (day, action, profile_id, created_at) VALUES ('2026-08-02', 'chat_draft', ?, '2026-08-02')",
-                (user_id,),
+                (profile_id,),
             )
             conn.execute(
                 "INSERT INTO beta_methodology_comparisons (id, profile_id, chart_id, question, status, response_json, created_at, updated_at) VALUES (?, ?, ?, 'question', 'comparison_ready', '{}', '2026-08-02', '2026-08-02')",
-                (f"comparison-{user_id}", user_id, f"chart-{user_id}"),
+                (f"comparison-{profile_id}", profile_id, f"chart-{profile_id}"),
             )
             conn.commit()
 
         user_dir = Path(app.config["USER_DATA_ROOT"]) / user_id / "charts"
-        user_dir.mkdir(parents=True)
-        (user_dir / "private.json").write_text("personal", encoding="utf-8")
+        user_dir.mkdir(parents=True, exist_ok=True)
+        (user_dir / f"private-{profile_id}.json").write_text("personal", encoding="utf-8")
 
     def _table_count(self, table, column, value):
         with sqlite3.connect(app.config["BETA_DB_PATH"]) as conn:
@@ -107,6 +108,26 @@ class AccountDeletionTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertTrue(Path(app.config["USER_DATA_ROOT"], USER_ID).exists())
         self.assertEqual(self._table_count("beta_profiles", "id", USER_ID), 1)
+
+    def test_delete_removes_all_profiles_owned_by_user(self):
+        first_profile = "33333333-3333-4333-8333-333333333333"
+        second_profile = "44444444-4444-4444-8444-444444444444"
+        other_profile = "55555555-5555-4555-8555-555555555555"
+        self._seed_user(USER_ID, first_profile)
+        self._seed_user(USER_ID, second_profile)
+        self._seed_user(OTHER_USER_ID, other_profile)
+
+        response = self.client.post(
+            "/api/v2/account/delete-data",
+            json={"user_id": USER_ID, "request_id": "delete-owned-profiles-test"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        for profile_id in (first_profile, second_profile):
+            self.assertEqual(self._table_count("beta_profiles", "id", profile_id), 0)
+            self.assertEqual(self._table_count("beta_charts", "profile_id", profile_id), 0)
+            self.assertEqual(self._table_count("beta_methodology_comparisons", "profile_id", profile_id), 0)
+        self.assertEqual(self._table_count("beta_profiles", "id", other_profile), 1)
 
     def test_delete_endpoint_requires_service_bearer_token(self):
         self._seed_user(USER_ID)

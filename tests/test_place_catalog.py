@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from app import _resolve_timezone_offset, app
-from place_catalog import build_places_database, normalize_place_text, search_places
+from place_catalog import build_places_database, get_place, normalize_place_text, search_places
 
 
 def _geonames_row(
@@ -163,6 +163,27 @@ class PlaceCatalogTest(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["places"][0]["timezone_id"], "Europe/Istanbul")
         self.assertEqual(payload["source"]["license"], "CC BY 4.0")
+
+    def test_selected_place_can_be_resolved_by_stable_id(self):
+        place = get_place(self.database, "5128581")
+        self.assertIsNotNone(place)
+        self.assertEqual(place["place_id"], "5128581")
+        self.assertEqual(place["timezone_id"], "America/New_York")
+        self.assertIsNone(get_place(self.database, "999999999"))
+
+    def test_http_place_detail_rejects_unknown_or_invalid_id(self):
+        previous = app.config.get("PLACES_DB_PATH")
+        app.config["PLACES_DB_PATH"] = str(self.database)
+        try:
+            found = app.test_client().get("/api/v1/places/5128581")
+            missing = app.test_client().get("/api/v1/places/999999999")
+            invalid = app.test_client().get("/api/v1/places/not-a-number")
+        finally:
+            app.config["PLACES_DB_PATH"] = previous
+        self.assertEqual(found.status_code, 200)
+        self.assertEqual(found.get_json()["place"]["place_id"], "5128581")
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(invalid.status_code, 400)
 
     def test_selected_place_timezone_resolves_historical_birth_offset(self):
         place = search_places(self.database, "istan")[0]

@@ -274,23 +274,51 @@ def search_places(
     except sqlite3.Error as exc:
         raise PlaceCatalogUnavailable("Dogum yeri katalogu okunamadi") from exc
 
-    return [
-        {
-            "place_id": str(row["geoname_id"]),
-            "name": row["name"],
-            "label": _place_label(row),
-            "country_code": row["country_code"],
-            "country_name": row["country_name"],
-            "admin1_code": row["admin1_code"],
-            "admin1_name": row["admin1_name"],
-            "latitude": row["latitude"],
-            "longitude": row["longitude"],
-            "timezone_id": row["timezone_id"],
-            "population": row["population"],
-            "feature_code": row["feature_code"],
-        }
-        for row in rows
-    ]
+    return [_place_payload(row) for row in rows]
+
+
+def get_place(database_path: str | Path, place_id: str) -> dict | None:
+    """Secilmis GeoNames kaydini kimligiyle sunucu tarafinda yeniden cozer."""
+    database_path = Path(database_path)
+    if not database_path.is_file():
+        raise PlaceCatalogUnavailable(f"Dogum yeri katalogu bulunamadi: {database_path}")
+    place_id = str(place_id or "").strip()
+    if not re.fullmatch(r"[0-9]{1,20}", place_id):
+        raise ValueError("place_id sayisal GeoNames kimligi olmali")
+    try:
+        uri = f"file:{database_path.resolve()}?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT geoname_id, name, country_code, country_name,
+                       admin1_code, admin1_name, latitude, longitude,
+                       timezone_id, population, feature_code
+                FROM places
+                WHERE geoname_id = ?
+                """,
+                (place_id,),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        raise PlaceCatalogUnavailable("Dogum yeri katalogu okunamadi") from exc
+    return _place_payload(row) if row else None
+
+
+def _place_payload(row: sqlite3.Row) -> dict:
+    return {
+        "place_id": str(row["geoname_id"]),
+        "name": row["name"],
+        "label": _place_label(row),
+        "country_code": row["country_code"],
+        "country_name": row["country_name"],
+        "admin1_code": row["admin1_code"],
+        "admin1_name": row["admin1_name"],
+        "latitude": row["latitude"],
+        "longitude": row["longitude"],
+        "timezone_id": row["timezone_id"],
+        "population": row["population"],
+        "feature_code": row["feature_code"],
+    }
 
 
 def _place_label(row: sqlite3.Row) -> str:
