@@ -176,7 +176,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
             "birth": {"person": {"name": "Test"}},
             "lagna": {"sign": "Aries"},
             "dashas": {"vimshottari": {"current_active": {"path": ["Saturn", "Venus", "Jupiter"]}}},
-            "topic_packets": {"career": {"confidence": "medium", "missing_factors": [], "required_but_missing": []}},
+            "topic_packets": {"career": {"confidence": "medium", "missing_factors": [], "required_but_missing": [], "evidence": {"active_dasha": {"path": ["Rahu", "Rahu"]}}}},
             "missing": [],
             "data_quality": {"status": "complete"},
         }
@@ -190,7 +190,11 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
 
         self.assertEqual(draft["topic"], "transit")
         self.assertEqual(draft["subject_topic"], "career")
-        self.assertIs(draft["evidence"]["topic_packet"], chart["topic_packets"]["career"])
+        self.assertIsNot(draft["evidence"]["topic_packet"], chart["topic_packets"]["career"])
+        self.assertEqual(
+            draft["evidence"]["topic_packet"]["evidence"]["active_dasha"]["path"],
+            ["Saturn", "Venus", "Jupiter"],
+        )
         self.assertEqual(len(evidence["transits"]["daily_timing"]), 2)
         self.assertLess(len(_canonical_json(request).encode("utf-8")), MAX_PROMPT_BYTES)
 

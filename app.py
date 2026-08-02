@@ -8804,8 +8804,11 @@ def _topic_varga_evidence(vargas, divisions):
 
 
 def _topic_active_dasha_evidence(dashas):
-    active = dashas.get("vimshottari", {}).get("active", {})
+    vimshottari = dashas.get("vimshottari", {})
+    active = vimshottari.get("current_active") or vimshottari.get("active", {})
     return {
+        "reference": "current_active" if vimshottari.get("current_active") else "birth_active",
+        "reference_utc": vimshottari.get("current_active_reference_utc"),
         "path": active.get("path", []),
         "maha": active.get("maha"),
         "antara": active.get("antara"),
@@ -29398,6 +29401,14 @@ def _beta_build_chat_draft(question, chart):
     subject_topic = _beta_detect_subject_topic(question) if topic == "transit" else topic
     packets = chart.get("topic_packets") or {}
     packet = packets.get(subject_topic)
+    if packet:
+        # Stored beta charts created before the current-active correction can
+        # contain the birth-time dasha inside topic packets. Normalize at read
+        # time as well as at chart creation so existing profiles are safe.
+        packet = json.loads(json.dumps(packet))
+        packet.setdefault("evidence", {})["active_dasha"] = _topic_active_dasha_evidence(
+            chart.get("dashas") or {}
+        )
     transits = chart.get("transits")
     if topic == "transit":
         person = ((chart.get("birth") or {}).get("person") or {})

@@ -4652,6 +4652,14 @@ class ChartApiV2Test(unittest.TestCase):
             self.assertGreater(len(packet["evidence"]["planets"]), 0)
             self.assertGreater(len(packet["evidence"]["vargas"]), 0)
             self.assertIn("active_dasha", packet["evidence"])
+            self.assertEqual(
+                packet["evidence"]["active_dasha"]["path"],
+                current_active["path"],
+            )
+            self.assertEqual(
+                packet["evidence"]["active_dasha"]["reference"],
+                "current_active",
+            )
             self.assertIn("yogas", packet["evidence"])
             self.assertIn("missing", packet["evidence"])
             for yoga_ref in packet["evidence"]["yogas"]:
