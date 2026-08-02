@@ -3111,7 +3111,47 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertTrue(data["chart_id"])
         self.assertEqual(data["profile"]["name"], "Beta Kisi")
         self.assertIn("lagna", data["chart_summary"])
+        self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v1")
+        self.assertEqual(data["chart_summary"]["display_name"], "Beta Kisi")
+        self.assertGreaterEqual(len(data["chart_summary"]["planets"]), 9)
+        self.assertIn("D9", data["chart_summary"]["vargas"])
         self.assertEqual(data["usage"]["chat"]["limit"], 20)
+
+    def test_beta_chart_summary_returns_only_owned_browser_summary(self):
+        payload = self._sample_beta_profile_payload()
+        payload.update({
+            "owner_user_id": "11111111-1111-4111-8111-111111111111",
+            "profile_id": "22222222-2222-4222-8222-222222222222",
+            "chart_id": "33333333-3333-4333-8333-333333333333",
+        })
+        create_response = self.client.post("/api/v2/beta/profile", json=payload)
+        self.assertEqual(create_response.status_code, 200)
+
+        response = self.client.post(
+            "/api/v2/beta/chart/summary",
+            json={
+                "owner_user_id": payload["owner_user_id"],
+                "profile_id": payload["profile_id"],
+                "chart_id": payload["chart_id"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["status"], "summary_ready")
+        self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v1")
+        self.assertNotIn("dashas", data["chart_summary"])
+        self.assertNotIn("topic_packets", data["chart_summary"])
+
+        forbidden = self.client.post(
+            "/api/v2/beta/chart/summary",
+            json={
+                "owner_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "profile_id": payload["profile_id"],
+                "chart_id": payload["chart_id"],
+            },
+        )
+        self.assertEqual(forbidden.status_code, 403)
 
     def test_beta_profile_rejects_invalid_birth(self):
         payload = self._sample_beta_profile_payload()

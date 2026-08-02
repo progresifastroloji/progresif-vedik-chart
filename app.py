@@ -29180,7 +29180,73 @@ def _beta_chart_summary(chart):
         or chart.get("dashas", {}).get("vimshottari", {}).get("active")
         or {}
     )
+    supported_planets = {
+        "Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn",
+        "Rahu (True)", "Ketu",
+    }
+    planets = [
+        {
+            "id": planet.get("id"),
+            "name": planet.get("name"),
+            "name_tr": planet.get("name_tr"),
+            "longitude": planet.get("longitude"),
+            "sign": planet.get("sign"),
+            "sign_tr": planet.get("sign_tr"),
+            "house": planet.get("house"),
+            "degree": planet.get("degree"),
+            "degree_str": planet.get("degree_str"),
+            "retrograde": bool((planet.get("motion") or {}).get("retrograde")),
+            "nakshatra": (planet.get("nakshatra") or {}).get("name"),
+            "nakshatra_pada": (planet.get("nakshatra") or {}).get("pada"),
+        }
+        for planet in chart.get("planets", [])
+        if planet.get("name") in supported_planets
+    ]
+    vargas = {}
+    for division in VARGA_NAMES:
+        varga_lagna = _varga_lagna(chart, division)
+        vargas[division] = {
+            "lagna": {
+                "longitude": (
+                    varga_lagna.get("sign_index", 0) * 30.0
+                    + (varga_lagna.get("degree") or 0.0)
+                ),
+                "sign": varga_lagna.get("sign"),
+                "sign_tr": varga_lagna.get("sign_tr"),
+                "degree": varga_lagna.get("degree"),
+                "degree_str": varga_lagna.get("degree_str"),
+            },
+            "planets": [
+                {
+                    "id": planet.get("id"),
+                    "longitude": (
+                        (planet.get("varga_status") or {}).get(division, {}).get("sign_index", 0) * 30.0
+                        + ((planet.get("varga_status") or {}).get(division, {}).get("degree") or 0.0)
+                    ),
+                    "sign": (planet.get("varga_status") or {}).get(division, {}).get("sign"),
+                    "sign_tr": (planet.get("varga_status") or {}).get(division, {}).get("sign_tr"),
+                    "degree": (planet.get("varga_status") or {}).get(division, {}).get("degree"),
+                    "degree_str": (planet.get("varga_status") or {}).get(division, {}).get("degree_str"),
+                }
+                for planet in chart.get("planets", [])
+                if planet.get("name") in supported_planets
+            ],
+        }
+    active_periods = []
+    for level in ("maha", "antara", "pratyantar", "sookshma"):
+        period = active.get(level) or {}
+        if period:
+            active_periods.append({
+                "level": level,
+                "lord": period.get("lord"),
+                "start_date": period.get("start_date"),
+                "end_date": period.get("end_date"),
+                "actual_start_jd": period.get("actual_start_jd"),
+                "actual_end_jd": period.get("actual_end_jd"),
+            })
     return {
+        "schema_version": "vedic-pwa-chart-summary-v1",
+        "display_name": ((birth.get("person") or {}).get("name")),
         "birth": {
             "date": birth.get("date"),
             "time": birth.get("time"),
@@ -29191,9 +29257,14 @@ def _beta_chart_summary(chart):
         "lagna": {
             "sign": lagna.get("sign"),
             "sign_tr": lagna.get("sign_tr"),
+            "longitude": lagna.get("longitude"),
             "degree": lagna.get("degree_str"),
         },
+        "ayanamsa": (chart.get("ayanamsa") or {}).get("type") or "Lahiri",
+        "planets": planets,
+        "vargas": vargas,
         "active_dasha_path": active.get("path"),
+        "active_dasha_periods": active_periods,
     }
 
 
@@ -29999,6 +30070,58 @@ def api_v2_beta_profile():
         return jsonify({"error": f"Geçersiz beta profil verisi: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Beta profil hatası: {str(e)}"}), 500
+
+
+@app.route("/api/v2/beta/chart/summary", methods=["POST"])
+def api_v2_beta_chart_summary():
+    """Return only the browser-safe summary for an owned beta chart."""
+
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli özet isteği gerekli")
+        owner_user_id = _account_deletion_user_id(data.get("owner_user_id"))
+        profile_id = str(data.get("profile_id") or "").strip()
+        chart_id = str(data.get("chart_id") or "").strip()
+        if not profile_id or not re.fullmatch(r"[0-9A-Za-z._:-]{1,200}", chart_id):
+            raise ValueError("Geçerli profil ve harita kimliği gerekli")
+
+        with closing(_beta_db()) as conn:
+            row = conn.execute(
+                """
+                SELECT c.chart_json, c.owner_user_id,
+                       p.owner_user_id AS profile_owner_user_id
+                FROM beta_charts c
+                JOIN beta_profiles p ON p.id = c.profile_id
+                WHERE c.id = ? AND c.profile_id = ?
+                """,
+                (chart_id, profile_id),
+            ).fetchone()
+        if not row:
+            return jsonify({
+                "ok": False,
+                "status": "chart_not_found",
+                "error_code": "beta_chart_not_found",
+            }), 404
+        if row["owner_user_id"] != owner_user_id or row["profile_owner_user_id"] != owner_user_id:
+            return jsonify({
+                "ok": False,
+                "status": "ownership_mismatch",
+                "error_code": "beta_chart_ownership_mismatch",
+            }), 403
+
+        return jsonify({
+            "ok": True,
+            "status": "summary_ready",
+            "profile_id": profile_id,
+            "chart_id": chart_id,
+            "chart_summary": _beta_chart_summary(_beta_load_json(row["chart_json"])),
+        })
+
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": f"Geçersiz beta harita özet verisi: {str(e)}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Beta harita özet hatası: {str(e)}"}), 500
 
 
 @app.route("/api/v2/pwa/artifacts/generate", methods=["POST"])
