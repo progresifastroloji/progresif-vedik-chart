@@ -3,6 +3,7 @@
 Progresif Vedik Astroloji — Flask Web Uygulaması
 """
 
+import hashlib
 import hmac
 import json
 import os
@@ -18,7 +19,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import swisseph as swe
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 from methodology_orchestrator import (
     MethodologyOrchestrationError,
     new_comparison_id,
@@ -47,20 +48,28 @@ from vedic_chart import (
 
 app = Flask(__name__)
 
+RAILWAY_VOLUME_ROOT = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+DEFAULT_PERSISTENT_ROOT = (
+    Path(RAILWAY_VOLUME_ROOT)
+    if RAILWAY_VOLUME_ROOT
+    else Path(__file__).resolve().parent / "data"
+)
+
 VAULT_ASTROLOGY_ROOT = Path(
     "/Users/leventkalayci/Documents/progresifastrolog/20-Areas/Personal/Astroloji"
 )
 app.config["VAULT_ASTROLOGY_ROOT"] = str(VAULT_ASTROLOGY_ROOT)
 app.config["BETA_DB_PATH"] = os.environ.get(
     "PROGRESIF_BETA_DB_PATH",
-    str(Path(__file__).resolve().parent / "data" / "beta.sqlite3"),
+    str(DEFAULT_PERSISTENT_ROOT / "beta.sqlite3"),
 )
 app.config["BETA_DAILY_CHAT_LIMIT"] = 20
 app.config["BETA_DAILY_HEAVY_LIMIT"] = 3
 app.config["USER_DATA_ROOT"] = os.environ.get(
     "VEDIC_USER_DATA_ROOT",
-    str(Path(__file__).resolve().parent / "data" / "users"),
+    str(DEFAULT_PERSISTENT_ROOT / "users"),
 )
+PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v1"
 app.config["PLACES_DB_PATH"] = os.environ.get(
     "VEDIC_PLACES_DB",
     str(Path(__file__).resolve().parent / "data" / "places" / "places.sqlite3"),
@@ -204,13 +213,19 @@ def healthz():
             catalog_ready = place_count > 0
         except (sqlite3.Error, TypeError, ValueError, IndexError):
             catalog_ready = False
-    status_code = 200 if catalog_ready else 503
+    running_on_railway = bool(os.environ.get("RAILWAY_ENVIRONMENT_ID"))
+    artifact_storage_persistent = bool(RAILWAY_VOLUME_ROOT)
+    storage_ready = not running_on_railway or artifact_storage_persistent
+    service_ready = catalog_ready and storage_ready
+    status_code = 200 if service_ready else 503
     return jsonify({
-        "ok": catalog_ready,
+        "ok": service_ready,
         "service": "vedic-chart-api",
-        "status": "ready" if catalog_ready else "not_ready",
+        "status": "ready" if service_ready else "not_ready",
         "catalog_ready": catalog_ready,
         "place_count": place_count,
+        "artifact_storage_ready": storage_ready,
+        "artifact_storage_persistent": artifact_storage_persistent,
     }), status_code
 
 
@@ -28863,6 +28878,238 @@ def _delete_user_data_directory(user_id):
     return True
 
 
+PWA_ARTIFACT_BUILDERS = (
+    ("main_chart", "main-chart.md", "chart_markdown", lambda chart, name, group, transit: _build_natal_markdown(chart, name, group)),
+    ("career", "career.md", "topic_markdown", _build_career_analysis_data_package_markdown),
+    ("health", "health.md", "topic_markdown", _build_health_analysis_data_package_markdown),
+    ("family", "family.md", "topic_markdown", _build_family_analysis_data_package_markdown),
+    ("education", "education.md", "topic_markdown", _build_education_analysis_data_package_markdown),
+    ("relocation", "relocation.md", "topic_markdown", _build_relocation_analysis_data_package_markdown),
+    ("finance", "finance.md", "topic_markdown", _build_finance_analysis_data_package_markdown),
+    ("relationship", "relationship.md", "topic_markdown", _build_relationship_analysis_data_package_markdown),
+    ("character", "character.md", "topic_markdown", _build_character_analysis_data_package_markdown),
+    ("spiritual", "spiritual.md", "topic_markdown", _build_spiritual_analysis_data_package_markdown),
+    ("varshaphala", "varshaphala.md", "topic_markdown", _build_varshaphala_analysis_data_package_markdown),
+    ("legal", "legal.md", "topic_markdown", _build_legal_analysis_data_package_markdown),
+    ("planet_roles", "planet-roles.md", "topic_markdown", _build_planet_role_activation_package_markdown),
+    ("session", "session-preparation.md", "topic_markdown", _build_session_preparation_package_markdown),
+)
+
+
+def _pwa_artifact_sha256(content):
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    return hashlib.sha256(content).hexdigest()
+
+
+def _pwa_artifact_chart_id(value):
+    chart_id = str(value or "").strip()
+    if not re.fullmatch(r"[0-9A-Za-z._:-]{1,200}", chart_id):
+        raise ValueError("Geçerli chart_id gerekli")
+    return chart_id
+
+
+def _pwa_artifact_set_root(owner_user_id, chart_id):
+    owner_user_id = _account_deletion_user_id(owner_user_id)
+    chart_id = _pwa_artifact_chart_id(chart_id)
+    user_root = Path(app.config["USER_DATA_ROOT"]).resolve()
+    target = (user_root / owner_user_id / chart_id / PWA_ARTIFACT_SCHEMA_VERSION).resolve()
+    expected_parent = (user_root / owner_user_id / chart_id).resolve()
+    if target.parent != expected_parent or expected_parent.parent.parent != user_root:
+        raise ValueError("Artefakt veri yolu güvenli değil")
+    return target
+
+
+def _pwa_artifact_write(path, content):
+    data = content.encode("utf-8") if isinstance(content, str) else content
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(data)
+    os.replace(temporary, path)
+    return {
+        "byte_size": len(data),
+        "sha256": _pwa_artifact_sha256(data),
+    }
+
+
+def _pwa_artifact_existing_manifest(root, owner_user_id, profile_id, chart_id, chart_sha256):
+    path = root / "manifest.json"
+    if not path.is_file():
+        return None
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if (
+        manifest.get("contract_version") != "vedic-pwa-artifact-manifest-v1"
+        or manifest.get("schema_version") != PWA_ARTIFACT_SCHEMA_VERSION
+        or manifest.get("owner_user_id") != owner_user_id
+        or manifest.get("profile_id") != profile_id
+        or manifest.get("chart_id") != chart_id
+        or manifest.get("canonical_snapshot", {}).get("sha256") != chart_sha256
+        or manifest.get("artifact_count") != 15
+        or len(manifest.get("artifacts") or []) != 15
+    ):
+        return None
+    for item in [manifest.get("canonical_snapshot"), *(manifest.get("artifacts") or [])]:
+        if not isinstance(item, dict):
+            return None
+        artifact_path = root / str(item.get("filename") or "")
+        if not artifact_path.is_file():
+            return None
+        data = artifact_path.read_bytes()
+        if len(data) != item.get("byte_size") or _pwa_artifact_sha256(data) != item.get("sha256"):
+            return None
+    return manifest
+
+
+def _pwa_transit_pack(chart, person_name, group_name):
+    birth = chart.get("birth") or {}
+    current_date = datetime.now().date()
+    if birth.get("timezone_id"):
+        try:
+            current_date = datetime.now(ZoneInfo(birth["timezone_id"])).date()
+        except ZoneInfoNotFoundError:
+            pass
+    payload = {
+        "person": {"id": person_name, "name": person_name, "group": group_name},
+        "birth": _chart_birth_input_for_transit(chart),
+        "options": {
+            "ayanamsa": "Lahiri",
+            "zodiac": "sidereal",
+            "house_system": "whole_sign",
+            "node_type": "true",
+            "language": "tr",
+        },
+        "period": "three_month",
+        "start_date": current_date.isoformat(),
+        "transit_time": "12:00",
+    }
+    if birth.get("timezone_id"):
+        payload["transit_timezone_id"] = birth.get("timezone_id")
+    elif birth.get("tz_offset") not in {None, ""}:
+        payload["transit_tz_offset"] = birth.get("tz_offset")
+    return _build_transit_pack(payload)
+
+
+def _generate_pwa_artifact_set(owner_user_id, profile_id, chart_id, chart, person_name):
+    owner_user_id = _account_deletion_user_id(owner_user_id)
+    profile_id = str(profile_id or "").strip()
+    chart_id = _pwa_artifact_chart_id(chart_id)
+    if not profile_id or not isinstance(chart, dict):
+        raise ValueError("Profil ve chart verisi gerekli")
+
+    root = _pwa_artifact_set_root(owner_user_id, chart_id)
+    canonical_json = json.dumps(chart, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    chart_sha256 = _pwa_artifact_sha256(canonical_json)
+    existing = _pwa_artifact_existing_manifest(
+        root,
+        owner_user_id,
+        profile_id,
+        chart_id,
+        chart_sha256,
+    )
+    if existing:
+        manifest_bytes = (root / "manifest.json").read_bytes()
+        return existing, _pwa_artifact_sha256(manifest_bytes), True
+
+    chart_for_render = json.loads(canonical_json)
+    if not (chart_for_render.get("life_period_analysis") or {}).get("education_timing_evidence_v1"):
+        chart_for_render["life_period_analysis"] = _build_life_period_analysis_for_chart(chart_for_render)
+    group_name = "PWA"
+    transit_pack = _pwa_transit_pack(chart_for_render, person_name, group_name)
+    transit_pack["_source_path"] = "transit-three-month.md"
+
+    artifacts = []
+    for code, filename, artifact_type, builder in PWA_ARTIFACT_BUILDERS:
+        if code == "session":
+            content = builder(
+                chart_for_render,
+                person_name,
+                group_name,
+                rectification_record=None,
+                transit_pack=transit_pack,
+            )
+        else:
+            content = builder(chart_for_render, person_name, group_name, transit_pack)
+        metadata = _pwa_artifact_write(root / filename, content)
+        artifacts.append({
+            "code": code,
+            "filename": filename,
+            "artifact_type": artifact_type,
+            "content_type": "text/markdown; charset=utf-8",
+            "required": True,
+            **metadata,
+        })
+
+    transit_filename = "transit-three-month.md"
+    transit_metadata = _pwa_artifact_write(
+        root / transit_filename,
+        _build_transit_pack_markdown(transit_pack),
+    )
+    artifacts.append({
+        "code": "transit_three_month",
+        "filename": transit_filename,
+        "artifact_type": "transit_markdown",
+        "content_type": "text/markdown; charset=utf-8",
+        "required": True,
+        **transit_metadata,
+    })
+
+    snapshot_filename = "canonical-snapshot.json"
+    snapshot_metadata = _pwa_artifact_write(root / snapshot_filename, canonical_json)
+    generated_at = _beta_now()
+    manifest = {
+        "contract_version": "vedic-pwa-artifact-manifest-v1",
+        "schema_version": PWA_ARTIFACT_SCHEMA_VERSION,
+        "owner_user_id": owner_user_id,
+        "profile_id": profile_id,
+        "chart_id": chart_id,
+        "generated_at": generated_at,
+        "engine": "progresif-vedic-chart",
+        "artifact_count": len(artifacts),
+        "canonical_snapshot": {
+            "code": "canonical_snapshot",
+            "filename": snapshot_filename,
+            "artifact_type": "canonical_json",
+            "content_type": "application/json; charset=utf-8",
+            **snapshot_metadata,
+        },
+        "artifacts": artifacts,
+    }
+    manifest_text = json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
+    manifest_metadata = _pwa_artifact_write(root / "manifest.json", manifest_text)
+    return manifest, manifest_metadata["sha256"], False
+
+
+def _pwa_artifact_file(owner_user_id, chart_id, artifact_code):
+    root = _pwa_artifact_set_root(owner_user_id, chart_id)
+    manifest_path = root / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError("Artefakt manifesti bulunamadı")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("owner_user_id") != owner_user_id or manifest.get("chart_id") != chart_id:
+        raise ValueError("Artefakt sahipliği doğrulanamadı")
+    candidates = [
+        manifest.get("canonical_snapshot"),
+        {"code": "manifest", "filename": "manifest.json", "content_type": "application/json; charset=utf-8"},
+        *(manifest.get("artifacts") or []),
+    ]
+    item = next((candidate for candidate in candidates if candidate and candidate.get("code") == artifact_code), None)
+    if not item:
+        raise FileNotFoundError("Artefakt bulunamadı")
+    path = (root / item["filename"]).resolve()
+    if path.parent != root or not path.is_file():
+        raise FileNotFoundError("Artefakt dosyası bulunamadı")
+    data = path.read_bytes()
+    expected_sha256 = item.get("sha256")
+    if artifact_code == "manifest":
+        expected_sha256 = _pwa_artifact_sha256(data)
+    if expected_sha256 and _pwa_artifact_sha256(data) != expected_sha256:
+        raise ValueError("Artefakt bütünlüğü doğrulanamadı")
+    return path, item, _pwa_artifact_sha256(data)
+
+
 def _beta_options(options):
     merged = dict(BETA_DEFAULT_OPTIONS)
     merged.update({key: value for key, value in (options or {}).items() if value is not None})
@@ -29563,6 +29810,116 @@ def api_v2_beta_profile():
         return jsonify({"error": f"Geçersiz beta profil verisi: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Beta profil hatası: {str(e)}"}), 500
+
+
+@app.route("/api/v2/pwa/artifacts/generate", methods=["POST"])
+def api_v2_pwa_artifacts_generate():
+    """Generate the immutable PWA chart snapshot and 15 user artifact files."""
+
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli artefakt isteği gerekli")
+        owner_user_id = _account_deletion_user_id(data.get("owner_user_id"))
+        profile_id = str(data.get("profile_id") or "").strip()
+        chart_id = _pwa_artifact_chart_id(data.get("chart_id"))
+        if not profile_id:
+            raise ValueError("profile_id gerekli")
+
+        with closing(_beta_db()) as conn:
+            row = conn.execute(
+                """
+                SELECT c.profile_id, c.chart_json, c.owner_user_id,
+                       p.name, p.owner_user_id AS profile_owner_user_id
+                FROM beta_charts c
+                JOIN beta_profiles p ON p.id = c.profile_id
+                WHERE c.id = ? AND c.profile_id = ?
+                """,
+                (chart_id, profile_id),
+            ).fetchone()
+        if not row:
+            return jsonify({
+                "ok": False,
+                "status": "chart_not_found",
+                "error_code": "pwa_artifact_chart_not_found",
+            }), 404
+        if row["owner_user_id"] != owner_user_id or row["profile_owner_user_id"] != owner_user_id:
+            return jsonify({
+                "ok": False,
+                "status": "ownership_mismatch",
+                "error_code": "pwa_artifact_ownership_mismatch",
+            }), 403
+
+        manifest, manifest_sha256, replayed = _generate_pwa_artifact_set(
+            owner_user_id,
+            profile_id,
+            chart_id,
+            _beta_load_json(row["chart_json"]),
+            str(row["name"] or "Vedik AI Kullanıcısı"),
+        )
+        return jsonify({
+            "ok": True,
+            "status": "artifacts_ready",
+            "replayed": replayed,
+            "manifest_sha256": manifest_sha256,
+            "manifest": manifest,
+        })
+    except (KeyError, TypeError, ValueError) as exc:
+        return jsonify({
+            "ok": False,
+            "status": "invalid_request",
+            "error_code": "pwa_artifact_request_invalid",
+            "error": str(exc),
+        }), 400
+    except Exception:
+        app.logger.exception("PWA artefakt seti üretilemedi")
+        return jsonify({
+            "ok": False,
+            "status": "artifact_generation_failed",
+            "error_code": "pwa_artifact_generation_failed",
+        }), 500
+
+
+@app.route("/api/v2/pwa/artifacts/<owner_user_id>/<chart_id>/<artifact_code>", methods=["GET"])
+def api_v2_pwa_artifact_download(owner_user_id, chart_id, artifact_code):
+    """Return one integrity-checked artifact to the trusted application backend."""
+
+    try:
+        owner_user_id = _account_deletion_user_id(owner_user_id)
+        chart_id = _pwa_artifact_chart_id(chart_id)
+        artifact_code = str(artifact_code or "").strip()
+        if not re.fullmatch(r"[a-z0-9_]{1,80}", artifact_code):
+            raise ValueError("Geçerli artifact_code gerekli")
+        path, item, sha256 = _pwa_artifact_file(owner_user_id, chart_id, artifact_code)
+        response = send_file(
+            path,
+            mimetype=item.get("content_type") or "application/octet-stream",
+            as_attachment=True,
+            download_name=item["filename"],
+            conditional=False,
+        )
+        response.headers["X-Artifact-Sha256"] = sha256
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+    except FileNotFoundError:
+        return jsonify({
+            "ok": False,
+            "status": "artifact_not_found",
+            "error_code": "pwa_artifact_not_found",
+        }), 404
+    except (TypeError, ValueError):
+        return jsonify({
+            "ok": False,
+            "status": "invalid_request",
+            "error_code": "pwa_artifact_download_invalid",
+        }), 400
+    except Exception:
+        app.logger.exception("PWA artefakt dosyası indirilemedi")
+        return jsonify({
+            "ok": False,
+            "status": "artifact_download_failed",
+            "error_code": "pwa_artifact_download_failed",
+        }), 500
 
 
 @app.route("/api/v2/beta/chat/draft", methods=["POST"])
