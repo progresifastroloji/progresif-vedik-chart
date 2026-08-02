@@ -19,6 +19,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import swisseph as swe
 from flask import Flask, render_template, request, jsonify
+from methodology_orchestrator import (
+    MethodologyOrchestrationError,
+    new_comparison_id,
+    run_methodology_comparison,
+)
 from place_catalog import PlaceCatalogUnavailable, search_places
 from topic_pack_contract import (
     package_contract_markdown,
@@ -28673,6 +28678,16 @@ def _beta_init_db(conn):
             profile_id TEXT,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS beta_methodology_comparisons (
+            id TEXT PRIMARY KEY,
+            profile_id TEXT,
+            chart_id TEXT NOT NULL,
+            question TEXT NOT NULL,
+            status TEXT NOT NULL,
+            response_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
     )
     conn.commit()
@@ -28749,6 +28764,11 @@ def _account_deletion_request_id(value):
 def _delete_beta_user_records(conn, user_id):
     counts = {}
     statements = (
+        (
+            "methodology_comparisons",
+            "DELETE FROM beta_methodology_comparisons WHERE profile_id = ?",
+            (user_id,),
+        ),
         (
             "feedback",
             """
@@ -28948,6 +28968,33 @@ def _beta_build_chat_draft(question, chart):
         "safety_notes": _beta_safety_notes(topic),
         "next_action": "Bu kanıt paketini yorum katmanına ver; hesap veya eksik katman uydurma.",
     }
+
+
+def _beta_comparison_id(value):
+    comparison_id = str(value or "").strip() or new_comparison_id()
+    if not re.fullmatch(r"[0-9A-Za-z._:-]{1,200}", comparison_id):
+        raise ValueError("Geçerli comparison_id gerekli")
+    return comparison_id
+
+
+def _beta_existing_comparison(conn, comparison_id, profile_id, chart_id, question):
+    row = conn.execute(
+        """
+        SELECT profile_id, chart_id, question, status, response_json
+        FROM beta_methodology_comparisons
+        WHERE id = ?
+        """,
+        (comparison_id,),
+    ).fetchone()
+    if not row:
+        return None
+    if (
+        str(row["profile_id"] or "") != str(profile_id or "")
+        or row["chart_id"] != chart_id
+        or row["question"] != question
+    ):
+        raise ValueError("comparison_id başka bir istek için kullanılmış")
+    return row
 
 
 def _beta_load_chart(conn, chart_id=None, profile_id=None):
@@ -29520,6 +29567,162 @@ def api_v2_beta_chat_draft():
         return jsonify({"error": f"Beta sohbet hatası: {str(e)}"}), 500
 
 
+@app.route("/api/v2/beta/chat/compare", methods=["POST"])
+def api_v2_beta_chat_compare():
+    """Run the same evidence through all three isolated candidate methodologies."""
+
+    comparison_id = None
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli karşılaştırma isteği gerekli")
+        question = str(data.get("question") or "").strip()
+        if not question:
+            raise ValueError("question boş olamaz")
+        if len(question) > 2_000:
+            raise ValueError("question çok uzun")
+        comparison_id = _beta_comparison_id(data.get("comparison_id"))
+
+        with closing(_beta_db()) as conn:
+            chart_id, profile_id, chart = _beta_load_chart(
+                conn,
+                data.get("chart_id"),
+                data.get("profile_id"),
+            )
+            existing = _beta_existing_comparison(
+                conn,
+                comparison_id,
+                profile_id,
+                chart_id,
+                question,
+            )
+            if existing:
+                usage = _beta_usage_status(conn, profile_id)
+                if existing["status"] == "in_progress":
+                    return jsonify({
+                        "ok": False,
+                        "status": "comparison_in_progress",
+                        "comparison_id": comparison_id,
+                        "usage": usage,
+                    }), 409
+                stored = _beta_load_json(existing["response_json"])
+                status_code = 200 if stored.get("completed_count", 0) else 502
+                return jsonify({
+                    "ok": bool(stored.get("completed_count", 0)),
+                    "replayed": True,
+                    "profile_id": profile_id,
+                    "chart_id": chart_id,
+                    "usage": usage,
+                    **stored,
+                }), status_code
+
+            usage_before = _beta_usage_status(conn, profile_id)
+            if usage_before["heavy"]["remaining"] <= 0:
+                return jsonify({
+                    "ok": False,
+                    "status": "heavy_limit_exceeded",
+                    "comparison_id": comparison_id,
+                    "usage": usage_before,
+                }), 429
+
+            created_at = _beta_now()
+            conn.execute(
+                """
+                INSERT INTO beta_methodology_comparisons
+                    (id, profile_id, chart_id, question, status, response_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'in_progress', '{}', ?, ?)
+                """,
+                (comparison_id, profile_id, chart_id, question, created_at, created_at),
+            )
+            conn.commit()
+
+        draft = _beta_build_chat_draft(question, chart)
+        comparison = run_methodology_comparison(
+            draft,
+            comparison_id,
+            call_vertex_bridge,
+        )
+
+        with closing(_beta_db()) as conn:
+            updated_at = _beta_now()
+            conn.execute(
+                """
+                UPDATE beta_methodology_comparisons
+                SET status = ?, response_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (comparison["status"], _beta_json(comparison), updated_at, comparison_id),
+            )
+            conn.execute(
+                "INSERT INTO beta_usage_events (day, action, profile_id, created_at) VALUES (?, 'heavy', ?, ?)",
+                (_beta_day(), profile_id, updated_at),
+            )
+            conn.commit()
+            usage = _beta_usage_status(conn, profile_id)
+
+        ok = comparison["completed_count"] > 0
+        return jsonify({
+            "ok": ok,
+            "replayed": False,
+            "profile_id": profile_id,
+            "chart_id": chart_id,
+            "usage": usage,
+            **comparison,
+        }), 200 if ok else 502
+
+    except (KeyError, TypeError, ValueError) as exc:
+        return jsonify({
+            "ok": False,
+            "status": "invalid_request",
+            "error": str(exc),
+        }), 400
+    except MethodologyOrchestrationError as exc:
+        if comparison_id:
+            try:
+                with closing(_beta_db()) as conn:
+                    conn.execute(
+                        """
+                        UPDATE beta_methodology_comparisons
+                        SET status = 'failed', response_json = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (_beta_json({"status": "failed", "error": exc.code}), _beta_now(), comparison_id),
+                    )
+                    conn.commit()
+            except Exception:
+                app.logger.exception("Beta metodoloji karşılaştırması hata kaydı güncellenemedi")
+        return jsonify({
+            "ok": False,
+            "status": "comparison_failed",
+            "error_code": exc.code,
+        }), exc.http_status
+    except Exception:
+        app.logger.exception("Beta metodoloji karşılaştırması beklenmedik hatayla durdu")
+        if comparison_id:
+            try:
+                with closing(_beta_db()) as conn:
+                    conn.execute(
+                        """
+                        UPDATE beta_methodology_comparisons
+                        SET status = 'failed', response_json = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            _beta_json({"status": "failed", "error": "methodology_orchestration_failed"}),
+                            _beta_now(),
+                            comparison_id,
+                        ),
+                    )
+                    conn.commit()
+            except Exception:
+                app.logger.exception("Beta metodoloji karşılaştırması beklenmedik hata kaydı güncellenemedi")
+        return jsonify({
+            "ok": False,
+            "status": "comparison_failed",
+            "error_code": "methodology_orchestration_failed",
+        }), 500
+
+
 @app.route("/api/v2/ai/generate", methods=["POST"])
 def api_v2_ai_generate():
     """Server-only handoff from the Vedik API to the fixed Vertex bridge."""
@@ -29650,6 +29853,10 @@ def api_v2_beta_usage():
                 "SELECT COUNT(*) FROM beta_chat_messages WHERE profile_id = ? OR ? IS NULL",
                 (profile_id, profile_id),
             ).fetchone()[0]
+            comparison_count = conn.execute(
+                "SELECT COUNT(*) FROM beta_methodology_comparisons WHERE profile_id = ? OR ? IS NULL",
+                (profile_id, profile_id),
+            ).fetchone()[0]
 
         return jsonify({
             "ok": True,
@@ -29659,6 +29866,7 @@ def api_v2_beta_usage():
             "counts": {
                 "chat_messages": message_count,
                 "feedback": feedback_count,
+                "methodology_comparisons": comparison_count,
             },
         })
 

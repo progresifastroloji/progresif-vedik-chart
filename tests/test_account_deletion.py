@@ -54,6 +54,10 @@ class AccountDeletionTest(unittest.TestCase):
                 "INSERT INTO beta_usage_events (day, action, profile_id, created_at) VALUES ('2026-08-02', 'chat_draft', ?, '2026-08-02')",
                 (user_id,),
             )
+            conn.execute(
+                "INSERT INTO beta_methodology_comparisons (id, profile_id, chart_id, question, status, response_json, created_at, updated_at) VALUES (?, ?, ?, 'question', 'comparison_ready', '{}', '2026-08-02', '2026-08-02')",
+                (f"comparison-{user_id}", user_id, f"chart-{user_id}"),
+            )
             conn.commit()
 
         user_dir = Path(app.config["USER_DATA_ROOT"]) / user_id / "charts"
@@ -87,6 +91,7 @@ class AccountDeletionTest(unittest.TestCase):
             ("beta_chat_messages", "profile_id"),
             ("beta_feedback", "profile_id"),
             ("beta_usage_events", "profile_id"),
+            ("beta_methodology_comparisons", "profile_id"),
         ):
             self.assertEqual(self._table_count(table, column, USER_ID), 0)
             self.assertEqual(self._table_count(table, column, OTHER_USER_ID), 1)
