@@ -13,6 +13,11 @@ CONTRACT_VERSION = "vedic-methodology-comparison-v1"
 MAX_METHODOLOGY_BYTES = 64 * 1024
 MAX_PROMPT_BYTES = 220 * 1024
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
+RETRYABLE_RESPONSE_ERRORS = {
+    "methodology_model_json_invalid",
+    "methodology_model_response_empty",
+    "methodology_model_schema_invalid",
+}
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
 CANDIDATE_MANIFEST = (
@@ -297,37 +302,51 @@ def _usage(payload):
 
 
 def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_call, clock):
-    request_id = f"{comparison_id}-{candidate['id']}"
+    base_request_id = f"{comparison_id}-{candidate['id']}"
     request, prompt_sha256 = _model_request(candidate, evidence)
     started = clock()
-    try:
-        returned_request_id, payload = model_call(request_id, request)
-        if returned_request_id != request_id or not isinstance(payload, dict):
-            raise MethodologyOrchestrationError("methodology_model_response_invalid", 502)
-        analysis = validate_methodology_response(payload, evidence)
-        return {
-            "status": "completed",
-            "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
-            "request_id": request_id,
-            "evidence_sha256": evidence_sha256,
-            "prompt_sha256": prompt_sha256,
-            "latency_ms": max(round((clock() - started) * 1000), 0),
-            "usage": _usage(payload),
-            "analysis": analysis,
-        }
-    except Exception as exc:
-        if not isinstance(exc, MethodologyOrchestrationError) and not hasattr(exc, "code"):
-            raise
-        code = exc.code if isinstance(exc, MethodologyOrchestrationError) else getattr(exc, "code", "methodology_model_failed")
-        return {
-            "status": "failed",
-            "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
-            "request_id": request_id,
-            "evidence_sha256": evidence_sha256,
-            "prompt_sha256": prompt_sha256,
-            "latency_ms": max(round((clock() - started) * 1000), 0),
-            "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_model_failed",
-        }
+    for attempt_index in range(2):
+        request_id = (
+            base_request_id
+            if attempt_index == 0
+            else f"{base_request_id}-retry-{attempt_index}"
+        )
+        try:
+            returned_request_id, payload = model_call(request_id, request)
+            if returned_request_id != request_id or not isinstance(payload, dict):
+                raise MethodologyOrchestrationError("methodology_model_response_invalid", 502)
+            analysis = validate_methodology_response(payload, evidence)
+            return {
+                "status": "completed",
+                "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+                "request_id": request_id,
+                "attempt_count": attempt_index + 1,
+                "evidence_sha256": evidence_sha256,
+                "prompt_sha256": prompt_sha256,
+                "latency_ms": max(round((clock() - started) * 1000), 0),
+                "usage": _usage(payload),
+                "analysis": analysis,
+            }
+        except Exception as exc:
+            if not isinstance(exc, MethodologyOrchestrationError) and not hasattr(exc, "code"):
+                raise
+            code = (
+                exc.code
+                if isinstance(exc, MethodologyOrchestrationError)
+                else getattr(exc, "code", "methodology_model_failed")
+            )
+            if attempt_index == 0 and code in RETRYABLE_RESPONSE_ERRORS:
+                continue
+            return {
+                "status": "failed",
+                "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+                "request_id": request_id,
+                "attempt_count": attempt_index + 1,
+                "evidence_sha256": evidence_sha256,
+                "prompt_sha256": prompt_sha256,
+                "latency_ms": max(round((clock() - started) * 1000), 0),
+                "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_model_failed",
+            }
 
 
 def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_root=None, clock=None):

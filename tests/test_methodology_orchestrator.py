@@ -125,6 +125,33 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             ["completed", "failed", "completed"],
         )
 
+    def test_schema_invalid_response_is_retried_once_without_relaxing_validation(self):
+        calls = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            if request_id.endswith("vedic-classical-strict-v1"):
+                invalid = _payload()
+                value = json.loads(invalid["candidates"][0]["content"]["parts"][0]["text"])
+                value["supporting_evidence"][0]["evidence_path"] = "evidence.nonexistent.layer"
+                invalid["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+                return request_id, invalid
+            return request_id, _payload()
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-compare-schema-retry",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        self.assertEqual(result["completed_count"], 3)
+        self.assertEqual(len(calls), 4)
+        classical = result["methodology_results"][0]
+        self.assertEqual(classical["status"], "completed")
+        self.assertEqual(classical["attempt_count"], 2)
+        self.assertTrue(classical["request_id"].endswith("-retry-1"))
+
     def test_response_rejects_a_made_up_evidence_path(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
