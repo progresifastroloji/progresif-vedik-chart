@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import re
+import shutil
 import sqlite3
 import uuid
 from contextlib import closing
@@ -51,6 +52,10 @@ app.config["BETA_DB_PATH"] = os.environ.get(
 )
 app.config["BETA_DAILY_CHAT_LIMIT"] = 20
 app.config["BETA_DAILY_HEAVY_LIMIT"] = 3
+app.config["USER_DATA_ROOT"] = os.environ.get(
+    "VEDIC_USER_DATA_ROOT",
+    str(Path(__file__).resolve().parent / "data" / "users"),
+)
 app.config["PLACES_DB_PATH"] = os.environ.get(
     "VEDIC_PLACES_DB",
     str(Path(__file__).resolve().parent / "data" / "places" / "places.sqlite3"),
@@ -28716,6 +28721,82 @@ def _beta_record_usage(conn, action, profile_id=None):
     conn.commit()
 
 
+def _account_deletion_user_id(value):
+    try:
+        parsed = uuid.UUID(str(value or "").strip())
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError("Geçerli user_id gerekli") from exc
+    if parsed.version != 4:
+        raise ValueError("user_id UUID v4 olmalı")
+    return str(parsed)
+
+
+def _account_deletion_request_id(value):
+    request_id = str(value or "").strip()
+    if not re.fullmatch(r"[0-9A-Za-z._:-]{1,200}", request_id):
+        raise ValueError("Geçerli request_id gerekli")
+    return request_id
+
+
+def _delete_beta_user_records(conn, user_id):
+    counts = {}
+    statements = (
+        (
+            "feedback",
+            """
+            DELETE FROM beta_feedback
+            WHERE profile_id = ?
+               OR message_id IN (
+                    SELECT id FROM beta_chat_messages WHERE profile_id = ?
+               )
+            """,
+            (user_id, user_id),
+        ),
+        (
+            "chat_messages",
+            "DELETE FROM beta_chat_messages WHERE profile_id = ?",
+            (user_id,),
+        ),
+        (
+            "charts",
+            "DELETE FROM beta_charts WHERE profile_id = ?",
+            (user_id,),
+        ),
+        (
+            "profiles",
+            "DELETE FROM beta_profiles WHERE id = ?",
+            (user_id,),
+        ),
+        (
+            "usage_events",
+            "DELETE FROM beta_usage_events WHERE profile_id = ?",
+            (user_id,),
+        ),
+    )
+    try:
+        for key, statement, params in statements:
+            cursor = conn.execute(statement, params)
+            counts[key] = max(int(cursor.rowcount), 0)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return counts
+
+
+def _delete_user_data_directory(user_id):
+    root = Path(app.config["USER_DATA_ROOT"]).resolve()
+    target = (root / user_id).resolve()
+    if target.parent != root:
+        raise ValueError("Kullanıcı veri yolu güvenli değil")
+    if not target.exists():
+        return False
+    if not target.is_dir():
+        raise ValueError("Kullanıcı veri yolu klasör değil")
+    shutil.rmtree(target)
+    return True
+
+
 def _beta_options(options):
     merged = dict(BETA_DEFAULT_OPTIONS)
     merged.update({key: value for key, value in (options or {}).items() if value is not None})
@@ -29467,6 +29548,44 @@ def api_v2_ai_generate():
             "error": messages.get(exc.code, "Vedik model isteği tamamlanamadı."),
             "error_code": exc.code,
         }), exc.http_status
+
+
+@app.route("/api/v2/account/delete-data", methods=["POST"])
+def api_v2_account_delete_data():
+    """Idempotently remove one Supabase user's Railway-side personal data."""
+
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli silme isteği gerekli")
+        user_id = _account_deletion_user_id(data.get("user_id"))
+        request_id = _account_deletion_request_id(data.get("request_id"))
+
+        with closing(_beta_db()) as conn:
+            deleted_rows = _delete_beta_user_records(conn, user_id)
+        directory_deleted = _delete_user_data_directory(user_id)
+
+        return jsonify({
+            "ok": True,
+            "status": "railway_user_data_deleted",
+            "request_id": request_id,
+            "deleted": {
+                "beta_rows": deleted_rows,
+                "user_directory": directory_deleted,
+            },
+        })
+    except (TypeError, ValueError) as exc:
+        return jsonify({
+            "ok": False,
+            "status": "invalid_request",
+            "error": str(exc),
+        }), 400
+    except Exception:
+        return jsonify({
+            "ok": False,
+            "status": "delete_failed",
+            "error": "Railway kullanıcı verisi silinemedi.",
+        }), 500
 
 
 @app.route("/api/v2/beta/feedback", methods=["POST"])
