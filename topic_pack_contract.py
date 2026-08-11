@@ -178,7 +178,7 @@ TOPIC_PACK_REGISTRY = {
         ],
         "varga_required": ["D4"],
         "varga_support": ["D9", "D12", "D2"],
-        "varga_note": "D2 karşılanabilirlik; D16 araç için gerekli fakat motorda yok",
+        "varga_note": "D2 karşılanabilirlik; D16 araç, konfor ve yerleşim varlığı bağlamında destekleyici katmandır",
         "timing": "Vimśottarī | taşınma/mülk penceresi | transit tetik | kaynak hazırlığı",
         "jaimini": "A4, A12, AL; Chara Daśā yalnız karşılaştırma",
         "counter_focus": "4. ev istikrarı ile 9./12. ev hareketliliği çatışması, karşılanabilirlik ve hukuki kısıt",

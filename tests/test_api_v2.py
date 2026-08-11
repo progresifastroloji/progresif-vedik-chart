@@ -88,6 +88,15 @@ ASTROSEEK_VERIFIED_PERSON_VARGAS = [
     "D60",
 ]
 
+ASTROSEEK_VERIFIED_FORMULA_VARGAS = [
+    "D4",
+    "D6",
+    "D11",
+    "D20",
+    "D24",
+    "D30",
+]
+
 RECTIFIED_VARGAS = [
     "D1",
     "D2",
@@ -99,6 +108,7 @@ RECTIFIED_VARGAS = [
     "D10",
     "D11",
     "D12",
+    "D16",
     "D20",
     "D24",
     "D30",
@@ -157,6 +167,49 @@ class ChartApiV2Test(unittest.TestCase):
             2,
         )
 
+    def test_d16_shodasamsha_uses_classical_modality_starts_and_boundaries(self):
+        segment = 30.0 / 16.0
+        cases = [
+            (0.0, 0),
+            (segment + 1e-8, 1),
+            (30.0, 4),
+            (30.0 + segment + 1e-8, 5),
+            (60.0, 8),
+            (60.0 + 15.0, 4),
+        ]
+        for longitude, expected_sign in cases:
+            with self.subTest(longitude=longitude):
+                result = _varga_position_from_longitude(longitude, "D16")
+                self.assertEqual(result["sign_index"], expected_sign)
+                self.assertGreaterEqual(result["degree"], 0.0)
+                self.assertLess(result["degree"], 30.0)
+
+    def test_full_chart_exposes_d16_with_birth_time_policy(self):
+        response = self.client.post(
+            "/api/v2/chart/full",
+            json={
+                "person": {"id": "d16-test", "name": "D16 Test"},
+                "birth": {
+                    "year": 2000, "month": 1, "day": 15,
+                    "hour": 12, "minute": 0,
+                    "timezone_id": "Europe/London",
+                    "lat": 51.5074, "lon": -0.1278,
+                    "place": "London, United Kingdom",
+                    "time_confidence": "high",
+                },
+                "options": {"ayanamsa": "Lahiri", "zodiac": "sidereal", "house_system": "whole_sign", "node_type": "true", "language": "tr"},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertIn("D16", data["vargas"])
+        self.assertEqual(data["vargas"]["D16"]["source_rule"], "shodasamsha_movable_aries_fixed_leo_dual_sagittarius")
+        self.assertEqual(data["vargas"]["D16"]["confidence"], "high")
+        self.assertEqual(data["vargas"]["D16"]["calculation_validation"]["status"], "internal_formula")
+        registry = data["meta"]["calculation_validation_registry"]
+        self.assertEqual(registry["registry"]["golden_fixtures"]["chart_a"], "source_discrepancy_pending_review")
+        self.assertEqual(registry["registry"]["layers"]["vimshopaka_bala"], "partial_internal_formula_d27_d40_d45_not_in_scope")
+
     def _assert_astroseek_verified_vargas(self, data):
         self.assertEqual(
             data["data_quality"]["person_verified_vargas"],
@@ -164,6 +217,10 @@ class ChartApiV2Test(unittest.TestCase):
         )
         for division in ASTROSEEK_VERIFIED_PERSON_VARGAS:
             self.assertEqual(data["vargas"][division]["confidence"], "high")
+            self.assertEqual(
+                data["vargas"][division]["calculation_validation"]["status"],
+                "astroseek_verified",
+            )
             self.assertEqual(
                 data["vargas"][division]["external_validation"]["status"],
                 "customer_time_declaration_policy",
@@ -304,7 +361,7 @@ class ChartApiV2Test(unittest.TestCase):
 
     def _assert_golden_vargas_match_api(self, fixture, data):
         expected_vargas = fixture["expected"]["vargas"]
-        for division in ["D9", "D10", "D7"]:
+        for division in ["D9", "D10", "D16", "D7"]:
             expected = expected_vargas.get(division)
             self.assertIsInstance(expected, dict, f"{fixture['id']} {division}")
             api_varga = data["vargas"][division]
@@ -359,7 +416,7 @@ class ChartApiV2Test(unittest.TestCase):
             with self.subTest(fixture=fixture["id"]):
                 self.assertEqual(
                     fixture["expected"]["source_status"],
-                    "swiss_and_jhora_matched",
+                    "source_discrepancy_pending_review",
                 )
                 response = self.client.post(
                     "/api/v2/chart/full",
@@ -1902,6 +1959,10 @@ class ChartApiV2Test(unittest.TestCase):
         )
         self.assertEqual(education_timing["primary_vargas"], ["D1", "D24"])
         self.assertIn(
+            "d24_formula_and_astroseek_validation_completed",
+            education_timing["safety_notes"],
+        )
+        self.assertNotIn(
             "d24_is_low_confidence_and_external_validation_pending",
             education_timing["safety_notes"],
         )
@@ -1916,6 +1977,10 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertFalse(relocation_timing["known_life_events_used"])
         self.assertEqual(len(relocation_timing["event_types"]), 6)
         self.assertEqual(relocation_timing["primary_vargas"], ["D1", "D4"])
+        self.assertIn(
+            "d4_formula_and_astroseek_validation_completed",
+            relocation_timing["safety_notes"],
+        )
         self.assertTrue(
             all(
                 not rows
@@ -1987,6 +2052,10 @@ class ChartApiV2Test(unittest.TestCase):
             ["D1", "D9", "D20"],
         )
         self.assertIn(
+            "d20_formula_and_astroseek_validation_completed",
+            spiritual_activation["safety_notes"],
+        )
+        self.assertNotIn(
             "d20_is_low_confidence_and_external_validation_pending",
             spiritual_activation["safety_notes"],
         )
@@ -2549,23 +2618,23 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertIn("bhava_bala", data)
 
         bhava_bala = data["bhava_bala"]
-        self.assertEqual(bhava_bala["status"], "starter_technical_layer")
+        self.assertEqual(bhava_bala["status"], "implemented_internal_formula")
         self.assertEqual(
             bhava_bala["method"],
-            "compiled_house_evidence_from_existing_layers_no_new_weighting",
+            "bhavadhipati_bala_plus_bhava_dig_bala_plus_bhava_drishti_bala",
         )
-        self.assertIn("no_weighted_score", bhava_bala["assumptions"])
-        self.assertIn("new_weighted_house_strength_score", bhava_bala["excluded_rules"])
+        self.assertIn("kendra_panapara_apoklima_dig_bala_scale", bhava_bala["assumptions"])
+        self.assertIn("external_reference_result_comparison_pending", bhava_bala["excluded_rules"])
         self.assertIn("rectification_window_collapse", bhava_bala["excluded_rules"])
-        self.assertFalse(bhava_bala["summary"]["scored"])
+        self.assertTrue(bhava_bala["summary"]["scored"])
         self.assertEqual(len(bhava_bala["houses"]), 12)
 
         first_house = bhava_bala["houses"][0]
         self.assertEqual(first_house["house"], data["houses"][0]["house"])
         self.assertEqual(first_house["sign"], data["houses"][0]["sign"])
         self.assertEqual(first_house["lord"], data["lordships"]["1"]["lord"])
-        self.assertIsNone(first_house["score"])
-        self.assertEqual(first_house["score_status"], "not_scored")
+        self.assertIsInstance(first_house["score"], (int, float))
+        self.assertEqual(first_house["score_status"], "calculated_internal_formula")
         self.assertIn("sav", first_house["ashtakavarga"])
         self.assertIn("lord_bav", first_house["ashtakavarga"])
         self.assertIn("total_score", first_house["lord_shadbala"])
@@ -3405,7 +3474,7 @@ class ChartApiV2Test(unittest.TestCase):
         )
         for planet in data["planets"]:
             varga_status = planet["varga_status"]
-            for division in ["D1", "D2", "D3", "D4", "D6", "D7", "D9", "D10", "D11", "D12", "D20", "D24", "D30", "D60"]:
+            for division in ["D1", "D2", "D3", "D4", "D6", "D7", "D9", "D10", "D11", "D12", "D16", "D20", "D24", "D30", "D60"]:
                 self.assertIn(division, varga_status)
                 self.assertEqual(
                     varga_status[division]["sign"],
@@ -3431,9 +3500,9 @@ class ChartApiV2Test(unittest.TestCase):
             self.assertEqual(varga_status["lagna_vargottama"], lagna_vargottama)
         self.assertIn("vimshopaka_bala", data)
         vimshopaka = data["vimshopaka_bala"]
-        self.assertEqual(vimshopaka["status"], "starter_technical_layer")
-        self.assertEqual(vimshopaka["score_status"], "not_final")
-        self.assertFalse(vimshopaka["summary"]["scored"])
+        self.assertEqual(vimshopaka["status"], "implemented_internal_formula")
+        self.assertEqual(vimshopaka["score_status"], "calculated_internal_formula")
+        self.assertTrue(vimshopaka["summary"]["scored"])
         self.assertFalse(vimshopaka["summary"]["rahu_ketu_scored"])
         self.assertFalse(vimshopaka["summary"]["rectification_score_used"])
         self.assertEqual(len(vimshopaka["planets"]), 7)
@@ -3447,14 +3516,14 @@ class ChartApiV2Test(unittest.TestCase):
         )
         self.assertEqual(
             vimshopaka["schemes"]["saptavarga"]["weights_status"],
-            "pending_reference_validation",
+            "implemented_classical_weights_pending_external_reference",
         )
         sun_vimshopaka = next(
             planet for planet in vimshopaka["planets"] if planet["planet"] == "Sun"
         )
         self.assertEqual(
             sun_vimshopaka["schemes"]["saptavarga"]["score_status"],
-            "not_final",
+            "calculated_internal_formula",
         )
         self.assertEqual(
             [row["division"] for row in sun_vimshopaka["schemes"]["saptavarga"]["rows"]],
@@ -3462,9 +3531,9 @@ class ChartApiV2Test(unittest.TestCase):
         )
         self.assertIn("avasthas", data)
         avasthas = data["avasthas"]
-        self.assertEqual(avasthas["status"], "starter_technical_layer")
-        self.assertEqual(avasthas["score_status"], "not_scored")
-        self.assertFalse(avasthas["summary"]["scored"])
+        self.assertEqual(avasthas["status"], "partial_internal_formula")
+        self.assertEqual(avasthas["score_status"], "partially_calculated_internal_rule")
+        self.assertTrue(avasthas["summary"]["scored"])
         self.assertFalse(avasthas["summary"]["rahu_ketu_scored"])
         self.assertFalse(avasthas["summary"]["rectification_score_used"])
         self.assertEqual(len(avasthas["planets"]), 7)
@@ -3479,15 +3548,15 @@ class ChartApiV2Test(unittest.TestCase):
         sun_avastha = next(
             planet for planet in avasthas["planets"] if planet["planet"] == "Sun"
         )
-        self.assertEqual(sun_avastha["bala_avastha"]["score_status"], "not_scored")
+        self.assertEqual(sun_avastha["bala_avastha"]["score_status"], "calculated_internal_rule")
         self.assertEqual(
             sun_avastha["jagradadi_avastha"]["status"],
-            "pending_reference_validation",
+            "calculated_internal_rule",
         )
-        self.assertEqual(sun_avastha["deeptadi_avastha"]["score"], None)
+        self.assertIsInstance(sun_avastha["deeptadi_avastha"]["score"], (int, float))
         self.assertEqual(
             sun_avastha["lajjitaadi_avastha"]["status"],
-            "not_available_pending_rules",
+            "not_available_scope_dependency",
         )
         dignity_by_planet = {
             planet["name"]: planet["dignity"]
@@ -4343,6 +4412,15 @@ class ChartApiV2Test(unittest.TestCase):
             data["vargas"]["D4"]["external_validation"]["status"],
             "customer_time_declaration_policy",
         )
+        self.assertEqual(
+            data["vargas"]["D2"]["calculation_validation"]["status"],
+            "internal_formula",
+        )
+        for division in ASTROSEEK_VERIFIED_FORMULA_VARGAS:
+            self.assertEqual(
+                data["vargas"][division]["calculation_validation"]["status"],
+                "astroseek_verified",
+            )
         self.assertEqual(data["data_quality"]["varga_interpretation_confidence"]["D30"], "high")
         self.assertEqual(data["data_quality"]["varga_interpretation_confidence"]["D60"], "high")
         self.assertNotIn("houses", data["birth_time_policy"]["low_confidence_interpretations"])
@@ -7741,7 +7819,10 @@ class ChartApiV2Test(unittest.TestCase):
                 self.assertNotIn("## D10 Dashamsha Meslek Haritası", person_text)
                 self.assertNotIn("## D12 Sağlık/Hassasiyet Varga Tablosu", person_text)
                 self.assertIn("## Varga Güven Durumu", person_text)
-                self.assertIn("customer_time_declaration_policy", person_text)
+                self.assertIn("astroseek_verified", person_text)
+                self.assertIn("internal_formula", person_text)
+                self.assertNotIn("pending_astroseek_crosscheck", person_text)
+                self.assertNotIn("dış doğrulama bekleyen", person_text)
                 self.assertNotIn("## Chara Dasha Aktif Periyotlar", person_text)
                 self.assertNotIn("## Yogini Dasha Aktif Periyotlar", person_text)
                 self.assertNotIn("API response içinde aktif periyot yok", person_text)
@@ -8240,7 +8321,8 @@ class ChartApiV2Test(unittest.TestCase):
                 external_person_text = Path(response.get_json()["paths"]["person"]).read_text(
                     encoding="utf-8",
                 )
-                self.assertIn("rectified_time_supported", external_person_text)
+                self.assertIn("astroseek_verified", external_person_text)
+                self.assertNotIn("pending_astroseek_crosscheck", external_person_text)
                 self.assertIn("- Müşteri saat beyanı: rektifiye", external_person_text)
                 self.assertIn(
                     "Uzman rektifikasyon kaynağı: Dış/onaylı rektifikasyon",
@@ -8327,7 +8409,7 @@ class ChartApiV2Test(unittest.TestCase):
                 person_path = Path(response.get_json()["paths"]["person"])
                 person_text = person_path.read_text(encoding="utf-8")
                 self.assertIn("## Varga Güven Durumu", person_text)
-                self.assertIn("rectified_time_supported", person_text)
+                self.assertIn("astroseek_verified", person_text)
                 self.assertIn(
                     "Uzman rektifikasyon kaynağı: API v1 rektifikasyon karar kapısı",
                     person_text,

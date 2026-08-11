@@ -166,7 +166,7 @@ def validate_pending_fields(fixture_id: str, expected: dict, errors: list[str], 
     if not isinstance(vargas, dict):
         return
 
-    for division in ["D9", "D10", "D7"]:
+    for division in ["D9", "D10", "D16", "D7"]:
         require(division in vargas, f"{fixture_id}.expected.vargas.{division} missing", errors)
         if vargas.get(division) is None:
             warnings.append(f"{fixture_id}.expected.vargas.{division} pending")
@@ -194,6 +194,23 @@ def validate_reference_templates(fixture_id: str, errors: list[str]) -> None:
         f"{fixture_id}.swiss_reference",
         errors,
     )
+
+
+def validate_source_consistency(fixture: dict, errors: list[str]) -> None:
+    fixture_id = fixture.get("id", "<missing-id>")
+    expected = fixture.get("expected") or {}
+    flags = fixture.get("flags") or {}
+    source_status = expected.get("source_status")
+    pending_flag = bool(flags.get("external_reference_pending"))
+    if source_status == "source_discrepancy_pending_review" and not pending_flag:
+        errors.append(f"{fixture_id}: source discrepancy requires flags.external_reference_pending=true")
+    if source_status == "swiss_and_jhora_matched" and pending_flag:
+        errors.append(f"{fixture_id}: matched source cannot keep external_reference_pending=true")
+    jhora_path = REFERENCES_DIR / f"{fixture_id}_jhora.txt"
+    if source_status == "swiss_and_jhora_matched" and jhora_path.exists():
+        text = jhora_path.read_text(encoding="utf-8")
+        if "Status: external_reference_pending" in text:
+            errors.append(f"{fixture_id}: fixture says matched while JHora reference says pending")
     validate_reference_file(
         REFERENCES_DIR / f"{fixture_id}_jhora.txt",
         REQUIRED_JHORA_REFERENCE_MARKERS,
@@ -246,6 +263,7 @@ def validate_fixture(fixture: dict, errors: list[str], warnings: list[str]) -> N
 
     validate_pending_fields(fixture_id, expected, errors, warnings)
     validate_reference_templates(fixture_id, errors)
+    validate_source_consistency(fixture, errors)
 
 
 def main() -> int:

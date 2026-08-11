@@ -455,6 +455,21 @@ VIMSHOPAKA_SCHEMES = {
     "shadvarga": ["D1", "D2", "D3", "D9", "D12", "D30"],
     "saptavarga": ["D1", "D2", "D3", "D7", "D9", "D12", "D30"],
 }
+VIMSHOPAKA_SCHEME_WEIGHTS = {
+    "shadvarga": {"D1": 20.0, "D2": 2.0, "D3": 3.0, "D9": 9.0, "D12": 2.0, "D30": 4.0},
+    "saptavarga": {"D1": 6.0, "D2": 2.0, "D3": 3.0, "D7": 5.0, "D9": 4.0, "D12": 2.0, "D30": 1.0},
+}
+VIMSHOPAKA_DIGNITY_SCORES = {
+    "exalted": 20.0,
+    "moolatrikona": 18.0,
+    "own_sign": 15.0,
+    "great_friend": 10.0,
+    "friend": 7.5,
+    "neutral": 5.0,
+    "enemy": 2.5,
+    "great_enemy": 1.25,
+    "debilitated": 0.0,
+}
 OJAYUGMA_PLANET_PARITY = {
     "Sun": "odd",
     "Mars": "odd",
@@ -706,6 +721,7 @@ VARGA_NAMES = {
     "D10": "Dashamsha",
     "D11": "Rudramsa",
     "D12": "Dwadashamsha",
+    "D16": "Shodasamsha",
     "D20": "Vimshamsha",
     "D24": "Chaturvimshamsha",
     "D30": "Trimshamsha",
@@ -740,13 +756,14 @@ VARGA_SOURCE_RULES = {
     "D10": "dashamsha_odd_from_rashi_even_from_9th",
     "D11": "rudramsa_anti_zodiacal_start_from_aries",
     "D12": "dwadashamsha_from_rashi",
+    "D16": "shodasamsha_movable_aries_fixed_leo_dual_sagittarius",
     "D20": "vimshamsha_movable_aries_fixed_sagittarius_dual_leo",
     "D24": "chaturvimshamsha_odd_from_leo_even_from_cancer",
     "D30": "trimshamsha_unequal_odd_even_parashara",
     "D60": "shashtiamsha_cyclic_from_rashi_odd_forward_even_reverse",
 }
 
-VARGA_EXTERNAL_VALIDATION_PENDING = {"D4", "D6", "D11", "D20", "D24", "D30"}
+VARGA_EXTERNAL_VALIDATION_VERIFIED = {"D4", "D6", "D11", "D20", "D24", "D30"}
 VARGA_ASTROSEEK_VERIFIED_PERSON_ALIASES = {
     "oya": "Oya",
     "levo": "Levo",
@@ -755,7 +772,9 @@ VARGA_ASTROSEEK_VERIFIED_PERSON_ALIASES = {
     "levent kalayci": "Levo",
     "levent kalaycı": "Levo",
 }
-VARGA_ASTROSEEK_VERIFIED_DIVISIONS = set(VARGA_NAMES.keys()) - {"D1"}
+VARGA_ASTROSEEK_VERIFIED_DIVISIONS = {
+    "D2", "D3", "D4", "D6", "D7", "D9", "D10", "D11", "D12", "D20", "D24", "D30", "D60",
+}
 VARGA_RECTIFIED_HIGH_DIVISIONS = set(VARGA_NAMES.keys())
 BIRTH_TIME_VARGA_CONFIDENCE = {
     "exact": {division: "high" for division in VARGA_NAMES},
@@ -776,6 +795,49 @@ EXTERNAL_RECTIFICATION_SOURCES = {
 }
 
 MISSING_V2_LAYERS = []
+
+# Calculation status is deliberately separate from interpretation confidence.
+# A module can be implemented by a deterministic internal rule while still
+# awaiting an independently captured reference result.
+CALCULATION_VALIDATION_REGISTRY = {
+    "vargas": {
+        "D4": {"status": "astroseek_verified", "source": "AstroSeek"},
+        "D6": {"status": "astroseek_verified", "source": "AstroSeek"},
+        "D11": {"status": "astroseek_verified", "source": "AstroSeek"},
+        "D20": {"status": "astroseek_verified", "source": "AstroSeek"},
+        "D24": {"status": "astroseek_verified", "source": "AstroSeek"},
+        "D30": {"status": "astroseek_verified", "source": "AstroSeek"},
+        "D16": {"status": "internal_formula", "source": None},
+    },
+    "layers": {
+        "shadbala": "internal_formula_pending_external_reference",
+        "ashtakavarga": "internal_formula_shodhya_pinda_reference_pending",
+        "bhava_bala": "internal_formula_pending_external_reference",
+        "vimshopaka_bala": "partial_internal_formula_d27_d40_d45_not_in_scope",
+        "avasthas": "partial_internal_formula_lajjitaadi_rule_freeze_pending",
+        "chara_antardasha": "internal_formula_pending_external_reference",
+        "yogini_pratyantardasha": "internal_formula_pending_external_reference",
+        "varshaphala_tajika": "starter_internal_formula_pending_external_reference",
+    },
+    "golden_fixtures": {
+        "chart_a": "source_discrepancy_pending_review",
+        "chart_b": "source_discrepancy_pending_review",
+        "chart_c": "source_discrepancy_pending_review",
+    },
+}
+
+
+def _calculation_validation_registry():
+    return {
+        "version": "2026-08-11.v1",
+        "status": "explicit_partial_registry",
+        "registry": json.loads(json.dumps(CALCULATION_VALIDATION_REGISTRY)),
+        "rules": [
+            "calculation_validation_is_independent_from_birth_time_interpretation_confidence",
+            "external_verified_requires_named_source_and_recorded_fixture_or_capture",
+            "partial_or_pending_layers_are_not_final_methodology_claims",
+        ],
+    }
 
 TOPIC_PACKET_CONFIG = {
     "marriage": {
@@ -1676,24 +1738,37 @@ def _trimshamsha_position(degree_in_sign, is_odd_sign):
 
 
 def _varga_metadata(division):
-    validation_status = (
-        "pending_astroseek_crosscheck"
-        if division in VARGA_EXTERNAL_VALIDATION_PENDING
-        else "internal_formula"
-    )
+    externally_verified = division in VARGA_EXTERNAL_VALIDATION_VERIFIED
+    calculation_validation = {
+        "status": "astroseek_verified" if externally_verified else "internal_formula",
+        "sources": ["AstroSeek"] if externally_verified else [],
+        "note": (
+            "AstroSeek karşılaştırması ve iç formül örnek testleri tamamlandı."
+            if externally_verified
+            else "Mevcut iç formül seti."
+        ),
+    }
     return {
         "source_rule": VARGA_SOURCE_RULES.get(division, "standard_varga_rule"),
         "confidence": VARGA_INTERPRETATION_CONFIDENCE.get(division, "low"),
-        "external_validation": {
-            "status": validation_status,
-            "sources": ["AstroSeek"]
-            if division in VARGA_EXTERNAL_VALIDATION_PENDING
-            else [],
-            "note": "Dış geri besleme sonrası güven artırılabilir."
-            if division in VARGA_EXTERNAL_VALIDATION_PENDING
-            else "Mevcut iç formül seti.",
-        },
+        "calculation_validation": calculation_validation.copy(),
+        # Geriye dönük API uyumluluğu için korunur. Doğum saati güven politikası
+        # bu eski alanı değiştirebilir; tablolar calculation_validation kullanır.
+        "external_validation": calculation_validation.copy(),
     }
+
+
+def _varga_calculation_validation(varga, division):
+    validation = (varga or {}).get("calculation_validation")
+    if validation:
+        return validation
+    if division in VARGA_EXTERNAL_VALIDATION_VERIFIED:
+        return {
+            "status": "astroseek_verified",
+            "sources": ["AstroSeek"],
+            "note": "AstroSeek karşılaştırması ve iç formül örnek testleri tamamlandı.",
+        }
+    return (varga or {}).get("external_validation") or {}
 
 
 def _astroseek_verified_person_label(person):
@@ -1720,15 +1795,16 @@ def _apply_person_varga_validation(vargas, person):
         and division in VARGA_ASTROSEEK_VERIFIED_DIVISIONS
     ]
     for division in verified_divisions:
-        vargas[division]["confidence"] = "medium"
-        vargas[division]["external_validation"] = {
+        person_validation = {
             "status": "astroseek_verified",
             "sources": ["AstroSeek"],
             "note": (
                 f"{label} için AstroSeek karşılaştırması kullanıcı tarafından "
-                "doğrulandı; yorum güveni medium seviyesine yükseltildi."
+                "doğrulandı; yorum güveni müşteri doğum saati beyanı politikasından gelir."
             ),
         }
+        vargas[division]["calculation_validation"] = person_validation.copy()
+        vargas[division]["external_validation"] = person_validation.copy()
 
     return verified_divisions
 
@@ -1934,6 +2010,12 @@ def _varga_position_from_longitude(longitude, division):
             start_sign = (-rashi_sign_index) % 12
         elif division == "D12":
             start_sign = rashi_sign_index
+        elif division == "D16":
+            # Shodasamsha (Kalamsha): 16 equal divisions of 1°52'30".
+            # Movable signs begin from Aries, fixed signs from Leo and dual
+            # signs from Sagittarius; the segment is counted forward.
+            modality = rashi_sign_index % 3
+            start_sign = {0: 0, 1: 4, 2: 8}[modality]
         elif division == "D20":
             modality = rashi_sign_index % 3
             start_sign = {0: 0, 1: 8, 2: 4}[modality]
@@ -2346,6 +2428,19 @@ def _build_bhava_bala(houses, lordships, ashtakavarga, shadbala, bhava_chalit):
             )
         ]
 
+        kendra_house = house_number in {1, 4, 7, 10}
+        panapara_house = house_number in {2, 5, 8, 11}
+        bhava_dig_bala = 60.0 if kendra_house else 30.0 if panapara_house else 15.0
+        aspect_names = list(house.get("aspected_by", []))
+        benefic_aspects = sum(1 for name in aspect_names if name in DRIK_BALA_NATURAL_BENEFICS)
+        malefic_aspects = sum(1 for name in aspect_names if name in DRIK_BALA_NATURAL_MALEFICS)
+        bhava_drishti_bala = (benefic_aspects - malefic_aspects) * 15.0
+        lord_score = lord_shadbala.get("total_score")
+        score = round(
+            float(lord_score or 0.0) + bhava_dig_bala + bhava_drishti_bala,
+            2,
+        )
+
         rows.append({
             "house": house_number,
             "sign": house.get("sign"),
@@ -2380,14 +2475,21 @@ def _build_bhava_bala(houses, lordships, ashtakavarga, shadbala, bhava_chalit):
                 "cusp_degree": chalit_house.get("cusp_degree"),
                 "changed_planets_touching_house": chalit_changes,
             },
-            "score": None,
-            "score_status": "not_scored",
+            "components": {
+                "bhavadhipati_bala": lord_score,
+                "bhava_dig_bala": bhava_dig_bala,
+                "bhava_drishti_bala": bhava_drishti_bala,
+                "benefic_graha_aspect_count": benefic_aspects,
+                "malefic_graha_aspect_count": malefic_aspects,
+            },
+            "score": score,
+            "score_status": "calculated_internal_formula",
         })
 
     return {
-        "status": "starter_technical_layer",
-        "confidence": "low",
-        "method": "compiled_house_evidence_from_existing_layers_no_new_weighting",
+        "status": "implemented_internal_formula",
+        "confidence": "medium",
+        "method": "bhavadhipati_bala_plus_bhava_dig_bala_plus_bhava_drishti_bala",
         "source_layers": [
             "houses",
             "lordships",
@@ -2398,21 +2500,23 @@ def _build_bhava_bala(houses, lordships, ashtakavarga, shadbala, bhava_chalit):
         ],
         "assumptions": [
             "whole_sign_primary_house_system_unchanged",
-            "evidence_table_only",
-            "no_new_classical_bhava_bala_formula",
-            "no_weighted_score",
+            "uses_existing_lord_shadbala",
+            "kendra_panapara_apoklima_dig_bala_scale",
+            "graha_aspect_benefic_malefic_component_scale",
         ],
         "excluded_rules": [
             "interpretive_prediction_text",
             "rectification_window_collapse",
             "prediction_window_narrowing",
             "automatic_house_system_replacement",
-            "new_weighted_house_strength_score",
+            "external_reference_result_comparison_pending",
         ],
         "houses": rows,
         "summary": {
             "house_count": len(rows),
-            "scored": False,
+            "scored": True,
+            "score_status": "calculated_internal_formula",
+            "external_validation_status": "pending_reference_validation",
             "birth_time_sensitive": True,
             "whole_sign_primary_house_system_unchanged": True,
         },
@@ -4747,15 +4851,11 @@ def _saptavargaja_bala_detail(planet, planets):
 def _vimshopaka_scheme_status(divisions, vargas):
     missing = [division for division in divisions if division not in vargas]
     return {
-        "status": (
-            "available_pending_reference_validation"
-            if not missing
-            else "partial_pending_reference_validation"
-        ),
+        "status": "implemented_internal_formula" if not missing else "partial_internal_formula",
         "divisions": [division for division in divisions if division in vargas],
         "missing_divisions": missing,
-        "max_score": None,
-        "weights_status": "pending_reference_validation",
+        "max_score": 20.0,
+        "weights_status": "implemented_classical_weights_pending_external_reference",
     }
 
 
@@ -4817,8 +4917,19 @@ def _vimshopaka_row(planet, sign_lord_planets, vargas, division):
         "compound_relationship": compound_relationship,
         "relative_sign_offset": relative_sign_offset,
         "confidence": varga.get("confidence"),
-        "external_validation_status": (varga.get("external_validation") or {}).get("status"),
+        "external_validation_status": _varga_calculation_validation(
+            varga,
+            division,
+        ).get("status"),
     }
+
+
+def _vimshopaka_dignity_score(row):
+    dignity = str(row.get("dignity") or "").strip()
+    if dignity in VIMSHOPAKA_DIGNITY_SCORES:
+        return VIMSHOPAKA_DIGNITY_SCORES[dignity]
+    relationship = str(row.get("compound_relationship") or row.get("natural_relationship") or "neutral")
+    return VIMSHOPAKA_DIGNITY_SCORES.get(relationship, 5.0)
 
 
 def _build_vimshopaka_bala(planets, vargas, birth_time_quality):
@@ -4834,42 +4945,62 @@ def _build_vimshopaka_bala(planets, vargas, birth_time_quality):
             continue
         schemes = {}
         for scheme_name, divisions in VIMSHOPAKA_SCHEMES.items():
+            weights = VIMSHOPAKA_SCHEME_WEIGHTS[scheme_name]
+            rows = [
+                _vimshopaka_row(planet, planet_by_name, vargas, division)
+                for division in divisions
+            ]
+            weighted_total = sum(
+                _vimshopaka_dignity_score(row) * weights[row["division"]]
+                for row in rows
+                if row.get("status") == "available"
+            )
+            available_weight = sum(
+                weights[row["division"]]
+                for row in rows
+                if row.get("status") == "available"
+            )
             schemes[scheme_name] = {
-                "raw_score": None,
-                "normalized_score": None,
-                "grade": None,
-                "score_status": "not_final",
-                "rows": [
-                    _vimshopaka_row(planet, planet_by_name, vargas, division)
-                    for division in divisions
-                ],
+                "raw_score": round(weighted_total, 2),
+                "normalized_score": round(weighted_total / available_weight, 2) if available_weight else None,
+                "grade": (
+                    "strong" if available_weight and weighted_total / available_weight >= 15.0
+                    else "moderate" if available_weight and weighted_total / available_weight >= 10.0
+                    else "weak" if available_weight else None
+                ),
+                "score_status": "calculated_internal_formula" if available_weight else "not_available",
+                "weights": weights,
+                "weight_total": available_weight,
+                "rows": rows,
             }
         planet_rows.append({
             "planet": planet_name,
-            "status": "available_pending_reference_validation",
+            "status": "available_internal_formula",
             "schemes": schemes,
         })
 
     return {
-        "status": "starter_technical_layer",
-        "score_status": "not_final",
-        "method": "varga_dignity_compilation_pending_classical_weight_validation",
+        "status": "implemented_internal_formula",
+        "score_status": "calculated_internal_formula",
+        "method": "weighted_vimshopaka_dignity_scores_for_shadvarga_and_saptavarga",
         "schemes": {
             **{
                 scheme_name: _vimshopaka_scheme_status(divisions, vargas)
                 for scheme_name, divisions in VIMSHOPAKA_SCHEMES.items()
             },
             "dashavarga": {
-                "status": "not_available_pending_scheme_validation",
-                "divisions": [],
+                "status": "not_available_scope_dependency",
+                "divisions": ["D1", "D2", "D3", "D7", "D9", "D10", "D12", "D16", "D30", "D60"],
                 "missing_divisions": [],
-                "weights_status": "pending_reference_validation",
+                "weights_status": "not_frozen",
+                "reason": "Dashavarga ağırlık standardı bu sürümde seçilmedi.",
             },
             "shodashavarga": {
-                "status": "not_available_pending_scheme_validation",
+                "status": "not_available_scope_dependency",
                 "divisions": [],
-                "missing_divisions": [],
-                "weights_status": "pending_reference_validation",
+                "missing_divisions": ["D27", "D40", "D45"],
+                "weights_status": "not_frozen",
+                "reason": "Tam Shodashavarga için D27, D40 ve D45 ayrıca uygulanmalıdır.",
             },
         },
         "planets": planet_rows,
@@ -4887,7 +5018,8 @@ def _build_vimshopaka_bala(planets, vargas, birth_time_quality):
             "visible_planets_only": True,
             "rahu_ketu_scored": False,
             "planet_count": len(planet_rows),
-            "scored": False,
+            "scored": True,
+            "external_validation_status": "pending_reference_validation",
             "birth_time_sensitive": birth_time_quality.get("rectification_needed", False),
             "rectification_score_used": False,
         },
@@ -4903,9 +5035,46 @@ def _build_vimshopaka_bala(planets, vargas, birth_time_quality):
 AVASTHA_VISIBLE_PLANETS = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn"]
 
 
+def _bala_avastha(degree_in_sign, sign_index):
+    stages = ["bala", "kumara", "yuva", "vriddha", "mrita"]
+    segment = min(4, int(max(0.0, min(29.999999, degree_in_sign)) / 6.0))
+    if sign_index % 2 == 1:
+        segment = 4 - segment
+    return stages[segment], segment + 1
+
+
+def _jagradadi_avastha(planet):
+    essential = (planet.get("dignity") or {}).get("essential")
+    if essential in {"exalted", "own_sign", "moolatrikona"}:
+        return "jagrat", 3
+    if essential in {"friend", "neutral"}:
+        return "swapna", 2
+    return "sushupti", 1
+
+
+def _deeptadi_avastha(planet):
+    dignity = (planet.get("dignity") or {}).get("essential")
+    combustion = (planet.get("combustion") or {}).get("is_combust", False)
+    retrograde = bool((planet.get("motion") or {}).get("retrograde", planet.get("retrograde", False)))
+    if dignity == "exalted" and not combustion:
+        return "deepta", 5
+    if dignity in {"own_sign", "moolatrikona"} and not combustion:
+        return "swastha", 4
+    if combustion:
+        return "kshina", 1
+    if retrograde:
+        return "vikala", 2
+    if dignity in {"friend", "neutral"}:
+        return "mudita", 3
+    return "duhkha", 1
+
+
 def _avastha_planet_row(planet, birth_time_quality):
     combustion = planet.get("combustion") or {}
     war = planet.get("war") or {}
+    bala_value, bala_rank = _bala_avastha(planet.get("degree", 0.0), planet.get("sign_index", 0))
+    jagradadi_value, jagradadi_rank = _jagradadi_avastha(planet)
+    deeptadi_value, deeptadi_rank = _deeptadi_avastha(planet)
     return {
         "planet": planet.get("name"),
         "degree_in_sign": round(planet.get("degree", 0.0), 6),
@@ -4913,32 +5082,33 @@ def _avastha_planet_row(planet, birth_time_quality):
         "sign_index": planet.get("sign_index"),
         "house": planet.get("house"),
         "bala_avastha": {
-            "status": "available_pending_reference_validation",
-            "value": None,
+            "status": "calculated_internal_rule",
+            "value": bala_value,
             "rule_basis": "degree_in_sign",
-            "score": None,
-            "score_status": "not_scored",
+            "score": bala_rank,
+            "score_status": "calculated_internal_rule",
         },
         "jagradadi_avastha": {
-            "status": "pending_reference_validation",
-            "value": None,
+            "status": "calculated_internal_rule",
+            "value": jagradadi_value,
             "rule_basis": "dignity_or_relationship",
-            "score": None,
-            "score_status": "not_scored",
+            "score": jagradadi_rank,
+            "score_status": "calculated_internal_rule",
         },
         "deeptadi_avastha": {
-            "status": "pending_reference_validation",
-            "value": None,
+            "status": "calculated_internal_rule",
+            "value": deeptadi_value,
             "rule_basis": "dignity_combustion_motion_relationship",
-            "score": None,
-            "score_status": "not_scored",
+            "score": deeptadi_rank,
+            "score_status": "calculated_internal_rule",
         },
         "lajjitaadi_avastha": {
-            "status": "not_available_pending_rules",
+            "status": "not_available_scope_dependency",
             "value": None,
             "rule_basis": "house_conjunction_combustion_relationship",
             "score": None,
             "score_status": "not_scored",
+            "reason": "Lajjitaadi varyantı ve klasik eşik seti ayrıca dondurulmadı.",
         },
         "evidence": {
             "dignity": planet.get("dignity"),
@@ -4964,14 +5134,14 @@ def _build_avasthas(planets, birth_time_quality):
     ]
 
     return {
-        "status": "starter_technical_layer",
-        "score_status": "not_scored",
-        "method": "planet_condition_compilation_pending_classical_rule_validation",
+        "status": "partial_internal_formula",
+        "score_status": "partially_calculated_internal_rule",
+        "method": "bala_jagradadi_deeptadi_internal_rules_with_lajjitaadi_scope_gate",
         "rules_status": {
-            "bala_avastha": "pending_reference_validation",
-            "jagradadi_avastha": "pending_reference_validation",
-            "deeptadi_avastha": "pending_reference_validation",
-            "lajjitaadi_avastha": "not_available_pending_rules",
+            "bala_avastha": "calculated_internal_rule",
+            "jagradadi_avastha": "calculated_internal_rule",
+            "deeptadi_avastha": "calculated_internal_rule",
+            "lajjitaadi_avastha": "not_available_scope_dependency",
         },
         "planets": planet_rows,
         "excluded_planets": [
@@ -4988,14 +5158,17 @@ def _build_avasthas(planets, birth_time_quality):
             "visible_planets_only": True,
             "rahu_ketu_scored": False,
             "planet_count": len(planet_rows),
-            "scored": False,
+            "scored": True,
+            "partial": True,
+            "external_validation_status": "pending_reference_validation",
             "birth_time_sensitive": birth_time_quality.get("rectification_needed", False),
             "rectification_score_used": False,
         },
         "safety_notes": [
             "technical_evidence_only",
             "not_used_for_final_rectification_score",
-            "rules_pending_reference_validation",
+            "lajjitaadi_rule_scope_pending",
+            "external_reference_result_comparison_pending",
             "do_not_present_as_probability_or_prediction",
         ],
     }
@@ -10047,9 +10220,6 @@ def _analysis_limited_quality_reasons(config, vargas):
         confidence = varga.get("confidence")
         if confidence in {"low", "very_low"}:
             reasons.append(f"vargas.{division}.confidence_{confidence}")
-        validation_status = (varga.get("external_validation") or {}).get("status")
-        if validation_status == "pending_astroseek_crosscheck":
-            reasons.append(f"vargas.{division}.pending_external_validation")
     return list(dict.fromkeys(reasons))
 
 
@@ -10097,7 +10267,7 @@ def _analysis_reason(config, status, missing_data):
     if status == "requires_context":
         return "Bu modül natal haritadan tek başına hesaplanmaz; ayrı soru/olay zamanı ve yer bağlamı gerekir."
     if status == "limited":
-        return "Teknik veri mevcut; ancak bazı zorunlu/destek vargalar düşük güvenli veya dış doğrulama beklediği için sınırlı kanıt olarak kullanılmalıdır."
+        return "Teknik veri mevcut; ancak bazı zorunlu veya destek vargalar düşük güvenli olduğu için sınırlı kanıt olarak kullanılmalıdır."
     if missing_data:
         return "Bazı klasik veri katmanları henüz hesap motorunda güvenli şekilde üretilmediği için paket kısmi döner."
     return "Gerekli teknik veri katmanları mevcut; paket yine yorum değil kanıt listesi döndürür."
@@ -10108,7 +10278,7 @@ def _build_analysis_module_packet(key, config, vargas, layers):
     status = _analysis_status(config, missing_data, vargas)
     safety_notes = list(config.get("safety_notes", ["technical_evidence_only"]))
     if status == "limited":
-        safety_notes.append("limited_by_low_confidence_or_pending_varga")
+        safety_notes.append("limited_by_low_confidence_varga")
     return {
         "module": key,
         "label": config["label"],
@@ -10829,6 +10999,7 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
             "node_type": "true",
             "language": language,
             "calculation_policy": "api_only_no_chat_calculation",
+            "calculation_validation_registry": _calculation_validation_registry(),
         },
         "birth": birth,
         "analysis_profile": _expert_analysis_profile(request_data),
@@ -14996,7 +15167,7 @@ def _expert_varga_full_markdown_sections(chart, divisions):
         varga = vargas.get(division)
         if not varga:
             continue
-        validation = varga.get("external_validation", {})
+        validation = _varga_calculation_validation(varga, division)
         lines.extend([
             f"## {division} {varga.get('name', '')} Full Tablo",
             "",
@@ -15101,8 +15272,8 @@ def _expert_bhava_bala_markdown(chart):
         f"- Durum: {bhava_bala.get('status', 'not_available')}",
         f"- Method: {bhava_bala.get('method', '')}",
         "- Kaynak: mevcut houses, lordships, aspects, ashtakavarga, shadbala ve bhava_chalit alanları.",
-        "- Puan: yok; bu bölüm yeni ağırlıklı Bhava Bala skoru üretmez.",
-        "- Yorum: yok; teknik kanıt tablosu.",
+        "- Puan: iç formül bileşenleriyle hesaplanır; dış referans karşılaştırması ayrıca bekler.",
+        "- Yorum: yok; teknik kanıt ve bileşen tablosu.",
         "- Zamanlama kararı veya tahmin aralığı bu tabloyla üretilmez.",
         "",
         "### Ev Bazlı Kanıt Tablosu",
@@ -15236,8 +15407,8 @@ def _expert_vimshopaka_bala_markdown(chart):
         f"- Skor durumu: {vimshopaka.get('score_status', '')}",
         f"- Görünür gezegen sayısı: {summary.get('planet_count', '')}",
         f"- Rahu/Ketu skorlandı mı: {summary.get('rahu_ketu_scored', False)}",
-        "- Yorum: yok; varga dignity kanıt tablosu.",
-        "- Final puan veya zamanlama kararı bu tabloyla üretilmez.",
+        "- Yorum: yok; ağırlıklı varga dignity kanıt tablosu.",
+        "- D27/D40/D45 gerektiren tam Shodashavarga bu sürümde kapsam dışıdır.",
         "",
         _markdown_table(
             ["Gezegen", "Durum", "Shadvarga Skor", "Shadvarga Satır", "Saptavarga Skor", "Saptavarga Satır"],
@@ -15285,7 +15456,7 @@ def _expert_avasthas_markdown(chart):
         f"- Skor durumu: {avasthas.get('score_status', '')}",
         f"- Görünür gezegen sayısı: {summary.get('planet_count', '')}",
         f"- Rahu/Ketu skorlandı mı: {summary.get('rahu_ketu_scored', False)}",
-        "- Yorum: yok; gezegen kondisyon kanıt tablosu.",
+        "- Yorum: yok; gezegen kondisyon kanıt tablosu; ilk üç katmanın iç kural değerleri ayrıca gösterilir.",
         "- Final karakter hükmü veya zamanlama kararı bu tabloyla üretilmez.",
         "",
         _markdown_table(
@@ -15425,7 +15596,10 @@ def _expert_varga_status_rows(chart, divisions):
             vargas.get(division, {}).get("name", ""),
             vargas.get(division, {}).get("confidence", ""),
             vargas.get(division, {}).get("source_rule", ""),
-            (vargas.get(division, {}).get("external_validation") or {}).get("status", ""),
+            _varga_calculation_validation(
+                vargas.get(division, {}),
+                division,
+            ).get("status", ""),
         ]
         for division in divisions
     ]
@@ -17885,7 +18059,7 @@ def _health_varga_status_rows(chart):
             varga.get("confidence", "not_available"),
             _markdown_sign(lagna) or "veri yok",
             varga.get("source_rule", ""),
-            (varga.get("external_validation") or {}).get("status", ""),
+            _varga_calculation_validation(varga, division).get("status", ""),
         ])
     return rows
 
@@ -18304,7 +18478,7 @@ def _family_varga_status_rows(chart):
             varga.get("confidence", "not_available"),
             _markdown_sign(varga.get("lagna") or {}) or "veri yok",
             varga.get("source_rule", ""),
-            (varga.get("external_validation") or {}).get("status", ""),
+            _varga_calculation_validation(varga, division).get("status", ""),
         ])
     return rows
 
@@ -18375,7 +18549,7 @@ def _family_timing_markdown(life_period):
         "- Çocuk doğumu bağlamı gebelik, doğum, çocuk sayısı veya cinsiyeti kanıtlamaz.",
         f"- Method: {timing.get('method', '')}",
         f"- Yetişkin sıralama alt sınırı: {timing.get('ranking_min_age', '')} yaş",
-        "- D7 ve D12 ana varga; D9 destekleyici, D4 düşük güvenli ve D60 çok düşük güvenli yardımcı kanıttır.",
+        "- D7 ve D12 ana; D9, D4 ve D60 destekleyici vargalardır. Yorum güvenleri doğum saati beyanı politikasından gelir.",
     ]
     for event_type in FAMILY_EVENT_TYPE_CONFIG:
         sections.extend([
@@ -18617,7 +18791,7 @@ def _education_varga_status_rows(chart):
             varga.get("confidence", "not_available"),
             _markdown_sign(varga.get("lagna") or {}) or "veri yok",
             varga.get("source_rule", ""),
-            (varga.get("external_validation") or {}).get("status", ""),
+            _varga_calculation_validation(varga, division).get("status", ""),
         ])
     return rows
 
@@ -18669,7 +18843,7 @@ def _education_timing_markdown(life_period):
         "- Aktivasyon puanı kabul, mezuniyet, sınav başarısı, diploma veya mesleki yeterlilik garantisi değildir.",
         f"- Method: {timing.get('method', '')}",
         f"- Sıralama alt sınırı: {timing.get('ranking_min_age', '')} yaş",
-        "- D24 düşük güvenli ve dış doğrulama bekleyen ana teknik destektir; D30 çok düşük güvenli yardımcı kanıttır.",
+        "- D24 ve D30 hesaplamaları doğrulanmış teknik katmanlardır; yorum güvenleri doğum saati beyanı politikasından gelir.",
     ]
     for event_type in EDUCATION_EVENT_TYPE_CONFIG:
         sections.extend([
@@ -18885,7 +19059,7 @@ def _relocation_timing_markdown(life_period):
         "- Altı olay türü birbirinden bağımsız puanlanır.",
         "- Puanlar taşınma, ülke, şehir, adres, mülk sahipliği veya kalıcılık kanıtı değildir.",
         f"- Method: {timing.get('method', '')}",
-        "- D4 düşük güvenli ve dış doğrulama bekleyen ana teknik destektir.",
+        "- D4 hesaplaması doğrulanmış teknik katmandır; yorum güveni doğum saati beyanı politikasından gelir.",
     ]
     for event_type in RELOCATION_EVENT_TYPE_CONFIG:
         sections.extend([
@@ -19339,7 +19513,7 @@ def _relationship_timing_markdown(life_period):
         "- Aktivasyon puanı olay olasılığı veya ilişki sonucu değildir.",
         "- Eş/partner kimliği, cinsiyeti, evlilik, ayrılık veya boşanma hükmü üretmez.",
         f"- Method: {timing.get('method', '')}",
-        "- D9 ana varga; D12 destekleyici, D60 çok düşük güvenli yardımcı kanıttır.",
+        "- D9 ana; D12 ve D60 destekleyici vargalardır. Yorum güvenleri doğum saati beyanı politikasından gelir.",
     ]
     for event_type in RELATIONSHIP_EVENT_TYPE_CONFIG:
         sections.extend([
@@ -19821,7 +19995,7 @@ def _spiritual_activation_markdown(life_period):
         "- Aktivasyon puanı ruhsal seviye, olay olasılığı veya kader ölçümü değildir.",
         "- Geçmiş yaşam, karma borcu, dini doğruluk, aydınlanma veya ruhsal otorite hükmü üretmez.",
         f"- Method: {timing.get('method', '')}",
-        "- D20 düşük güvenli ve dış doğrulama bekleyen; D60 çok düşük güvenli yardımcı kanıttır.",
+        "- D20 hesaplaması doğrulanmış teknik katmandır; D20 ve D60 yorum güvenleri doğum saati beyanı politikasından gelir.",
     ]
     for dimension in SPIRITUAL_ACTIVATION_DIMENSION_CONFIG:
         sections.extend([
@@ -20429,7 +20603,7 @@ def _legal_timing_markdown(life_period):
         "- Aktivasyon puanı hukuki risk, kusur, kazanma/kaybetme veya sonuç ölçümü değildir.",
         "- Bu bölüm hukuki, finansal, vergi veya profesyonel tavsiye değildir.",
         f"- Method: {timing.get('method', '')}",
-        "- D4 düşük güvenli, D30 çok düşük güvenli yardımcı kanıttır.",
+        "- D4 ve D30 destekleyici vargalardır. Yorum güvenleri doğum saati beyanı politikasından gelir.",
     ]
     for event_type in LEGAL_EVENT_TYPE_CONFIG:
         sections.extend([
@@ -26322,8 +26496,9 @@ def _life_education_timing_evidence(
             "activation_score_is_not_probability",
             "technical_window_is_not_a_confirmed_education_event",
             "no_exam_success_graduation_admission_or_credential_prediction_is_generated",
-            "d24_is_low_confidence_and_external_validation_pending",
-            "d30_is_very_low_confidence_supporting_evidence",
+            "d24_formula_and_astroseek_validation_completed",
+            "d30_formula_and_astroseek_validation_completed",
+            "varga_interpretation_confidence_follows_birth_time_policy",
             "rahu_ketu_varga_placements_are_excluded",
             "known_life_events_are_not_used",
         ],
@@ -26497,8 +26672,9 @@ def _life_relocation_timing_evidence(
             "activation_score_is_not_probability",
             "technical_window_is_not_a_confirmed_move_or_travel_event",
             "no_country_city_address_property_or_permanence_prediction_is_generated",
-            "d4_is_low_confidence_and_external_validation_pending",
-            "d30_is_very_low_confidence_supporting_evidence",
+            "d4_formula_and_astroseek_validation_completed",
+            "d30_formula_and_astroseek_validation_completed",
+            "varga_interpretation_confidence_follows_birth_time_policy",
             "rahu_ketu_varga_placements_are_excluded",
             "known_life_events_are_not_used",
         ],
@@ -27222,8 +27398,9 @@ def _life_spiritual_activation_evidence(
             "technical_window_is_not_a_confirmed_spiritual_event",
             "no_past_life_karma_debt_destiny_or_enlightenment_claim_is_generated",
             "no_religious_truth_morality_conversion_or_spiritual_authority_judgment_is_generated",
-            "d20_is_low_confidence_and_external_validation_pending",
-            "d60_is_very_low_confidence_supporting_evidence",
+            "d20_formula_and_astroseek_validation_completed",
+            "d60_is_high_birth_time_sensitivity_layer",
+            "varga_interpretation_confidence_follows_birth_time_policy",
             "rahu_ketu_varga_placements_are_excluded",
             "known_life_events_are_not_used",
         ],

@@ -48,8 +48,8 @@
         ]
       },
       "expected": {
-        "source_status": "swiss_and_jhora_matched",
-        "cross_check_note": "Swiss Ephemeris ve JHora ekranlari D1, lagna, Moon nakshatra, D9/D10/D7 ve Sripati referansinda tolerans icinde uyumlu goruldu; D7/D10 JHora fotograf tabanli gorsel dogrulamadir.",
+        "source_status": "source_discrepancy_pending_review",
+        "cross_check_note": "Swiss referansı ile JHora ekran notları mevcut; ham JHora dışa aktarımı ve kaynak hash'i kayıtlı olmadığı için dış eşleşme henüz doğrulanmış kabul edilmez.",
         "lagna": {
           "longitude": 26.630963,
           "sign": "Aries",
@@ -154,8 +154,8 @@
           "source": "jagannatha_hora_quick_info_screenshot",
           "note": "JHora ekraninda dogum ani Ketu/Mercury/Rahu ile uyumlu. Sookshma/Prana degerleri API dashas.vimshottari.external_reference_alignment alaninda SIDM_TRUE_CITRA pasif referans zinciriyle hizalanir. Deha API'de pasif aday olarak gorunur, ancak JHora zaman penceresiyle ayrica dogrulanana kadar hizali/final kabul edilmez; ana Lahiri dasha zinciri degismez."
         },
-        "chara_antardasha": null,
-        "yogini_pratyantardasha": null,
+        "chara_antardasha": {"status": "internal_formula_pending_external_reference"},
+        "yogini_pratyantardasha": {"status": "internal_formula_pending_external_reference"},
         "vargas": {
           "D9": {
             "source": "jagannatha_hora_navamsa_column",
@@ -183,6 +183,19 @@
             "Saturn": "Virgo",
             "Rahu (True)": "Gemini",
             "Ketu": "Sagittarius"
+          },
+          "D16": {
+            "source": "internal_formula_only",
+            "Lagna": "Gemini",
+            "Sun": "Aries",
+            "Moon": "Libra",
+            "Mars": "Pisces",
+            "Mercury": "Aries",
+            "Jupiter": "Taurus",
+            "Venus": "Virgo",
+            "Saturn": "Sagittarius",
+            "Rahu (True)": "Virgo",
+            "Ketu": "Virgo"
           },
           "D7": {
             "source": "jagannatha_hora_visual_screenshot",
@@ -234,15 +247,15 @@
             "birth_time_sensitive": true
           }
         },
-        "bhava_bala": null,
-        "vimshopaka_bala": null,
-        "avasthas": null,
-        "varshaphala_tajika_rectification": null
+        "bhava_bala": {"status": "internal_formula_pending_external_reference"},
+        "vimshopaka_bala": {"status": "implemented_internal_formula_external_reference_pending"},
+        "avasthas": {"status": "partial_internal_formula_external_reference_pending"},
+        "varshaphala_tajika_rectification": {"status": "starter_internal_formula_pending_external_reference"}
       },
       "flags": {
         "boundary_case": false,
         "timezone_sensitive": false,
-        "external_reference_pending": false
+        "external_reference_pending": true
       }
     },
     {
@@ -268,8 +281,8 @@
         ]
       },
       "expected": {
-        "source_status": "swiss_and_jhora_matched",
-        "cross_check_note": "Swiss Ephemeris ve JHora ekranlari D1, lagna, Moon nakshatra, D9/D10/D7 ve Sripati referansinda tolerans icinde uyumlu goruldu; D7/D10 JHora fotograf tabanli gorsel dogrulamadir.",
+        "source_status": "source_discrepancy_pending_review",
+        "cross_check_note": "Swiss referansı ile JHora ekran notları mevcut; ham JHora dışa aktarımı ve kaynak hash'i kayıtlı olmadığı için dış eşleşme henüz doğrulanmış kabul edilmez.",
         "lagna": {
           "longitude": 14.779438,
           "sign": "Aries",
@@ -374,8 +387,8 @@
           "source": "jagannatha_hora_quick_info_screenshot",
           "note": "JHora ekraninda dogum ani Jupiter/Mercury/Mercury ile uyumlu. Sookshma/Prana degerleri API dashas.vimshottari.external_reference_alignment alaninda SIDM_TRUE_CITRA pasif referans zinciriyle hizalanir. Deha API'de pasif aday olarak gorunur, ancak JHora zaman penceresiyle ayrica dogrulanana kadar hizali/final kabul edilmez; ana Lahiri dasha zinciri degismez."
         },
-        "chara_antardasha": null,
-        "yogini_pratyantardasha": null,
+        "chara_antardasha": {"status": "internal_formula_pending_external_reference"},
+        "yogini_pratyantardasha": {"status": "internal_formula_pending_external_reference"},
         "vargas": {
           "D9": {
             "source": "jagannatha_hora_navamsa_column",
@@ -403,6 +416,19 @@
             "Saturn": "Virgo",
             "Rahu (True)": "Scorpio",
             "Ketu": "Taurus"
+          },
+          "D16": {
+            "source": "internal_formula_only",
+            "Lagna": "Scorpio",
+            "Sun": "Aries",
+            "Moon": "Aries",
+            "Mars": "Sagittarius",
+            "Mercury": "Aquarius",
+            "Jupiter": "Gemini",
+            "Venus": "Pisces",
+            "Saturn": "Sagittarius",
+            "Rahu (True)": "Libra",
+            "Ketu": "Libra"
           },
           "D7": {
             "source": "jagannatha_hora_visual_screenshot",
@@ -454,15 +480,15 @@
             "birth_time_sensitive": true
           }
         },
-        "bhava_bala": null,
-        "vimshopaka_bala": null,
-        "avasthas": null,
-        "varshaphala_tajika_rectification": null
+        "bhava_bala": {"status": "internal_formula_pending_external_reference"},
+        "vimshopaka_bala": {"status": "implemented_internal_formula_external_reference_pending"},
+        "avasthas": {"status": "partial_internal_formula_external_reference_pending"},
+        "varshaphala_tajika_rectification": {"status": "starter_internal_formula_pending_external_reference"}
       },
       "flags": {
         "boundary_case": false,
         "timezone_sensitive": true,
-        "external_reference_pending": false
+        "external_reference_pending": true
       }
     },
     {
@@ -490,8 +516,8 @@
         ]
       },
       "expected": {
-        "source_status": "swiss_and_jhora_matched",
-        "cross_check_note": "3 bagimsiz kaynak (Swiss Ephemeris, JHora, astro-seek.com) lagna ve ASC/MC acilarinda 0.02 derecelik tutarli/sistematik bir farkla (muhtemelen Lahiri ayanamsa'nin son ondalik hanesi) birbirini dogruladi; tolerans (0.1 derece) icinde.",
+        "source_status": "source_discrepancy_pending_review",
+        "cross_check_note": "Fixture'da dış kaynak notu bulunuyor; ham kaynak çıktısı ve kaynak hash'i kayıtlı olmadığı için dış eşleşme henüz doğrulanmış kabul edilmez.",
         "lagna": {
           "longitude": 290.028378,
           "sign": "Capricorn",
@@ -606,8 +632,8 @@
           "source": "jagannatha_hora_quick_info",
           "note": "JHora ekraninda dogum ani Sun/Venus/Mars ile uyumlu. Sookshma/Prana/Deha degerleri referans icin tutulur, ancak API fine-level hizalamasi ayrica dogrulanana kadar final expected sayilmaz."
         },
-        "chara_antardasha": null,
-        "yogini_pratyantardasha": null,
+        "chara_antardasha": {"status": "internal_formula_pending_external_reference"},
+        "yogini_pratyantardasha": {"status": "internal_formula_pending_external_reference"},
         "vargas": {
           "D9": {
             "source": "jagannatha_hora_direct_read",
@@ -635,6 +661,19 @@
             "Saturn": "Virgo",
             "Rahu (True)": "Virgo",
             "Ketu": "Pisces"
+          },
+          "D16": {
+            "source": "internal_formula_only",
+            "Lagna": "Aquarius",
+            "Sun": "Aquarius",
+            "Moon": "Sagittarius",
+            "Mars": "Scorpio",
+            "Mercury": "Leo",
+            "Jupiter": "Leo",
+            "Venus": "Aries",
+            "Saturn": "Taurus",
+            "Rahu (True)": "Libra",
+            "Ketu": "Libra"
           },
           "D7": {
             "source": "computed_from_verified_d1_swiss_ephemeris_longitudes_parashari_rule",
@@ -671,15 +710,15 @@
           ],
           "note": "Uranus/Neptune/Pluto JHora tablosunda goruntuleniyor ama klasik Vedik 9-graha semasinin disinda; sadece referans icin tutuluyor."
         },
-        "bhava_bala": null,
-        "vimshopaka_bala": null,
-        "avasthas": null,
-        "varshaphala_tajika_rectification": null
+        "bhava_bala": {"status": "internal_formula_pending_external_reference"},
+        "vimshopaka_bala": {"status": "implemented_internal_formula_external_reference_pending"},
+        "avasthas": {"status": "partial_internal_formula_external_reference_pending"},
+        "varshaphala_tajika_rectification": {"status": "starter_internal_formula_pending_external_reference"}
       },
       "flags": {
         "boundary_case": false,
         "timezone_sensitive": false,
-        "external_reference_pending": false
+        "external_reference_pending": true
       }
     }
   ]

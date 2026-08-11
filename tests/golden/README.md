@@ -1,7 +1,8 @@
 # Golden Test Paketi Plani
 
-Bu klasor, Vedik hesap motoru icin dis referanslarla dogrulanacak golden test
-verilerini tutmak icin ayrilmistir.
+Bu klasör, Vedik hesap motoru için dış referans kanıtı ve golden test verilerini
+tutar. Bir fixture yalnız ham kaynak çıktısı, ayarları ve kaynak kimliği/hash'i
+birlikte kayıtlıysa dış referansla doğrulanmış sayılır.
 
 Bu asamada dosyalar test calistirmaz. Amac, hangi chartlarin hangi kaynaklarla
 ve hangi toleranslarla dogrulanacagini netlestirmektir.
@@ -117,8 +118,10 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python tests/golden/validate_fixture_shape.p
 
 Beklenen mevcut durum:
 
-- `source_status` simdilik `swiss_only_pending_jhora`.
-- JHora, Vimshottari, D9, D10 ve D7 alanlari pending uyarisi verebilir.
+- Mevcut fixture'larda `source_status` `source_discrepancy_pending_review`
+  durumundadır: JHora ekran notları var, ancak ham dışa aktarım ve kaynak hash'i
+  yoktur.
+- “matched” etiketi kanıt eklenmeden kullanılmaz.
 - Swiss ve JHora referans dosyalarinda Bhava Chalit / Sripati basliklari
   bulunmalidir.
 - Varshaphala/Tajika rektifikasyon referans sablonlari

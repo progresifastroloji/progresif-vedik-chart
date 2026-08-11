@@ -170,6 +170,7 @@ Ilk sette kontrol edilecek vargalar:
 
 - D9
 - D10
+- D16 (iç formül golden kontrolü; dış doğrulama ayrı)
 - D7
 
 Kontrol notu:
@@ -273,7 +274,7 @@ Kontrol notu:
 - Bu alan yeni klasik Bhava Bala formulu veya agirlikli ev puani degildir.
 - Ilk asamada `houses`, `lordships`, `aspects`, `ashtakavarga`,
   `shadbala` ve `bhava_chalit` alanlarindan derlenen kanit tablosudur.
-- `score` bilincli olarak `null`, `score_status` `not_scored` kalir.
+- `score` iç bileşen formülüyle hesaplanır; dış referans durumu ayrıca taşınır.
 - `summary.scored` false oldugu surece bu alan yorum gucu, kesin hukum veya
   siralama olarak kullanilmaz.
 - Rektifikasyon ve tahmin pencereleri bu alanla kapatilmaz.
@@ -286,27 +287,27 @@ Kontrol notu:
 
 ```json
 {
-  "status": "starter_technical_layer",
-  "score_status": "not_final",
+  "status": "implemented_internal_formula",
+  "score_status": "calculated_internal_formula",
   "schemes": {
     "shadvarga": {
-      "status": "available_pending_reference_validation",
+      "status": "implemented_internal_formula",
       "divisions": ["D1", "D2", "D3", "D9", "D12", "D30"],
-      "weights_status": "pending_reference_validation"
+      "weights_status": "implemented_classical_weights_pending_external_reference"
     },
     "saptavarga": {
-      "status": "available_pending_reference_validation",
+      "status": "implemented_internal_formula",
       "divisions": ["D1", "D2", "D3", "D7", "D9", "D12", "D30"],
-      "weights_status": "pending_reference_validation"
+      "weights_status": "implemented_classical_weights_pending_external_reference"
     }
   },
   "planets": {
     "Sun": {
       "schemes": {
         "saptavarga": {
-          "raw_score": null,
-          "normalized_score": null,
-          "score_status": "not_final",
+          "raw_score": 0.0,
+          "normalized_score": 0.0,
+          "score_status": "calculated_internal_formula",
           "rows": [
             {
               "division": "D1",
@@ -323,7 +324,7 @@ Kontrol notu:
   "summary": {
     "visible_planets_only": true,
     "rahu_ketu_scored": false,
-    "scored": false,
+    "scored": true,
     "rectification_score_used": false
   }
 }
