@@ -116,6 +116,8 @@ class ChartApiV2Test(unittest.TestCase):
         app.config["BETA_DB_PATH"] = str(Path(self._beta_tmp.name) / "beta.sqlite3")
         app.config["BETA_DAILY_CHAT_LIMIT"] = 20
         self.client = app.test_client()
+        from rectification_app import rectification_app
+        self.rectification_client = rectification_app.test_client()
 
     def tearDown(self):
         app.config["BETA_DB_PATH"] = self._old_beta_db_path
@@ -161,22 +163,26 @@ class ChartApiV2Test(unittest.TestCase):
             ASTROSEEK_VERIFIED_PERSON_VARGAS,
         )
         for division in ASTROSEEK_VERIFIED_PERSON_VARGAS:
-            self.assertEqual(data["vargas"][division]["confidence"], "medium")
+            self.assertEqual(data["vargas"][division]["confidence"], "high")
             self.assertEqual(
                 data["vargas"][division]["external_validation"]["status"],
-                "astroseek_verified",
+                "customer_time_declaration_policy",
             )
             self.assertEqual(
                 data["data_quality"]["varga_interpretation_confidence"][division],
-                "medium",
+                "high",
             )
 
-        self.assertNotIn("D2", data["rectification"]["low_confidence_interpretations"])
-        self.assertNotIn("D60", data["rectification"]["low_confidence_interpretations"])
+        self.assertNotIn("D2", data["birth_time_policy"]["low_confidence_interpretations"])
+        self.assertNotIn("D60", data["birth_time_policy"]["low_confidence_interpretations"])
 
-    def _assert_rectified_vargas_confidence(self, data):
+    def _assert_rectified_vargas_confidence(
+        self,
+        data,
+        expected_status="customer_time_declaration_policy",
+    ):
         self.assertEqual(
-            data["data_quality"]["rectified_time_supported_vargas"],
+            data["data_quality"]["supported_vargas"],
             RECTIFIED_VARGAS,
         )
         for division in RECTIFIED_VARGAS:
@@ -187,15 +193,15 @@ class ChartApiV2Test(unittest.TestCase):
             )
             self.assertEqual(
                 data["vargas"][division]["external_validation"]["status"],
-                "rectified_time_supported",
+                expected_status,
             )
             self.assertEqual(
                 data["data_quality"]["varga_interpretation_confidence"][division],
                 expected_confidence,
             )
 
-        self.assertNotIn("D1", data["rectification"]["low_confidence_interpretations"])
-        self.assertNotIn("D60", data["rectification"]["low_confidence_interpretations"])
+        self.assertNotIn("D1", data["birth_time_policy"]["low_confidence_interpretations"])
+        self.assertNotIn("D60", data["birth_time_policy"]["low_confidence_interpretations"])
 
     def _load_golden_fixtures(self):
         payload = json.loads(GOLDEN_FIXTURES_PATH.read_text(encoding="utf-8"))
@@ -2851,8 +2857,8 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertIn("requires_separate_muhurta_datetime", modules["muhurta"]["safety_notes"])
 
         health = modules["health"]
-        self.assertEqual(health["status"], "limited")
-        self.assertEqual(health["confidence"], "low")
+        self.assertEqual(health["status"], "ready")
+        self.assertEqual(health["confidence"], "high")
         self.assertIn("D1", health["available_data"])
         self.assertIn("D6", health["available_data"])
         self.assertIn("D12", health["available_data"])
@@ -2867,10 +2873,10 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertIn("houses.8", health["evidence_refs"])
         self.assertIn("houses.12", health["evidence_refs"])
         self.assertIn("not_medical_advice", health["safety_notes"])
-        self.assertIn("limited_by_low_confidence_or_pending_varga", health["safety_notes"])
+        self.assertNotIn("limited_by_low_confidence_or_pending_varga", health["safety_notes"])
 
         self.assertIn("D11", modules["finance"]["available_data"])
-        self.assertEqual(modules["finance"]["status"], "limited")
+        self.assertEqual(modules["finance"]["status"], "ready")
         self.assertNotIn("vargas.D11", modules["finance"]["missing_data"])
         self.assertIn("not_financial_advice", modules["finance"]["safety_notes"])
         self.assertIn("D24", modules["children_education"]["available_data"])
@@ -2934,7 +2940,7 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertIn("context.candidate_datetime", decision_engine["modules"]["muhurta"]["missing_data"])
         self.assertIn("requires_separate_context_before_decision", decision_engine["modules"]["muhurta"]["warnings"])
         self.assertEqual(decision_engine["modules"]["prashna"]["status"], "requires_context")
-        self.assertEqual(decision_engine["modules"]["health"]["status"], "limited")
+        self.assertEqual(decision_engine["modules"]["health"]["status"], "ready")
         self.assertEqual(decision_engine["modules"]["chara_dasha"]["status"], "limited")
         self.assertEqual(decision_engine["modules"]["chara_dasha"]["score"], 45)
         self.assertIn("dashas.chara.parampara_specific_variants", decision_engine["modules"]["chara_dasha"]["missing_data"])
@@ -3073,6 +3079,13 @@ class ChartApiV2Test(unittest.TestCase):
         chart_response = rectification_client.post("/api/v2/chart/full", json={})
         self.assertEqual(chart_response.status_code, 404)
 
+        for route in (
+            "/api/v2/rectification/analyze",
+            "/api/v2/rectification/report",
+            "/api/v2/rectification/save",
+        ):
+            self.assertEqual(self.client.post(route, json={}).status_code, 404)
+
         analyze_response = rectification_client.post(
             "/api/v2/rectification/analyze",
             json={},
@@ -3086,6 +3099,23 @@ class ChartApiV2Test(unittest.TestCase):
         )
         self.assertEqual(external_response.status_code, 403)
         self.assertIn("yalnızca yerel cihazdan", external_response.get_json()["error"])
+
+        old_local = rectification_app.config["LOCAL_ACCESS_ONLY"]
+        old_token = rectification_app.config["API_TOKEN"]
+        try:
+            rectification_app.config["LOCAL_ACCESS_ONLY"] = False
+            rectification_app.config["API_TOKEN"] = "separate-test-token"
+            self.assertEqual(rectification_client.get("/health").status_code, 401)
+            authorized = rectification_client.get(
+                "/health",
+                headers={"Authorization": "Bearer separate-test-token"},
+            )
+            self.assertEqual(authorized.status_code, 200)
+            rectification_app.config["API_TOKEN"] = ""
+            self.assertEqual(rectification_client.get("/health").status_code, 503)
+        finally:
+            rectification_app.config["LOCAL_ACCESS_ONLY"] = old_local
+            rectification_app.config["API_TOKEN"] = old_token
 
     def test_dashboard_exposes_panchanga_district_city_input(self):
         response = self.client.get("/")
@@ -3111,7 +3141,7 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertTrue(data["chart_id"])
         self.assertEqual(data["profile"]["name"], "Beta Kisi")
         self.assertIn("lagna", data["chart_summary"])
-        self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v1")
+        self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v2")
         self.assertEqual(data["chart_summary"]["display_name"], "Beta Kisi")
         self.assertGreaterEqual(len(data["chart_summary"]["planets"]), 9)
         self.assertIn("D9", data["chart_summary"]["vargas"])
@@ -3141,7 +3171,7 @@ class ChartApiV2Test(unittest.TestCase):
         data = response.get_json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["status"], "summary_ready")
-        self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v1")
+        self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v2")
         self.assertNotIn("dashas", data["chart_summary"])
         self.assertNotIn("topic_packets", data["chart_summary"])
 
@@ -3210,17 +3240,13 @@ class ChartApiV2Test(unittest.TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 422)
         data = response.get_json()
-        self.assertEqual(data["topic"], "rectification")
-        self.assertIn("status", data)
-        self.assertIsInstance(data["missing"], list)
-        self.assertGreater(len(data["missing"]), 0)
-        for item in data["missing"]:
-            self.assertIn("key", item)
-            self.assertTrue(item.get("impact") or item.get("reason"))
-        self.assertNotIn("answer", data)
-        self.assertIn("yorum üretmez", " ".join(data["safety_notes"]))
+        self.assertEqual(data["status"], "rectification_service_separate")
+        self.assertEqual(
+            data["error_code"],
+            "rectification_not_available_in_customer_api",
+        )
 
     def test_beta_chat_daily_limit_returns_controlled_response(self):
         profile_response = self.client.post(
@@ -4296,15 +4322,18 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertIn("D20", data["data_quality"]["varga_interpretation_confidence"])
         self.assertIn("D24", data["data_quality"]["varga_interpretation_confidence"])
         self.assertEqual(data["data_quality"]["person_verified_vargas"], [])
-        self.assertEqual(data["vargas"]["D2"]["external_validation"]["status"], "internal_formula")
+        self.assertEqual(
+            data["vargas"]["D2"]["external_validation"]["status"],
+            "customer_time_declaration_policy",
+        )
         self.assertEqual(
             data["vargas"]["D4"]["external_validation"]["status"],
-            "pending_astroseek_crosscheck",
+            "customer_time_declaration_policy",
         )
-        self.assertEqual(data["data_quality"]["varga_interpretation_confidence"]["D30"], "very_low")
-        self.assertEqual(data["data_quality"]["varga_interpretation_confidence"]["D60"], "very_low")
-        self.assertNotIn("houses", data["rectification"]["low_confidence_interpretations"])
-        self.assertIn("D60", data["rectification"]["sensitive_layers"])
+        self.assertEqual(data["data_quality"]["varga_interpretation_confidence"]["D30"], "high")
+        self.assertEqual(data["data_quality"]["varga_interpretation_confidence"]["D60"], "high")
+        self.assertNotIn("houses", data["birth_time_policy"]["low_confidence_interpretations"])
+        self.assertNotIn("D60", data["birth_time_policy"]["low_confidence_interpretations"])
         self.assertNotIn("panchanga", missing_keys)
         panchanga = data["panchanga"]
         for key in [
@@ -5463,22 +5492,25 @@ class ChartApiV2Test(unittest.TestCase):
                 automatic_pack,
             )
 
-    def test_birth_time_quality_defaults_from_entered_time(self):
-        def post_for_time(hour, minute):
+    def test_birth_time_customer_declaration_policy(self):
+        def post_for_time(hour, minute, confidence=None):
+            birth = {
+                "year": 1990,
+                "month": 8,
+                "day": 15,
+                "hour": hour,
+                "minute": minute,
+                "timezone_id": "Europe/Istanbul",
+                "lat": 41.0082,
+                "lon": 28.9784,
+            }
+            if confidence:
+                birth["time_confidence"] = confidence
             return self.client.post(
                 "/api/v2/chart/full",
                 json={
                     "person": {"id": "kisi", "name": "Kisi"},
-                    "birth": {
-                        "year": 1990,
-                        "month": 8,
-                        "day": 15,
-                        "hour": hour,
-                        "minute": minute,
-                        "timezone_id": "Europe/Istanbul",
-                        "lat": 41.0082,
-                        "lon": 28.9784,
-                    },
+                    "birth": birth,
                     "options": {
                         "ayanamsa": "Lahiri",
                         "zodiac": "sidereal",
@@ -5489,102 +5521,39 @@ class ChartApiV2Test(unittest.TestCase):
                 },
             )
 
-        known_response = post_for_time(10, 30)
-        self.assertEqual(known_response.status_code, 200)
-        known = known_response.get_json()
-        self.assertEqual(known["birth"]["time_confidence"], "known")
-        self.assertEqual(known["birth"]["time_confidence_label"], "biliniyor")
-        self.assertEqual(known["data_quality"]["rectification_status"], "yapılmadı")
-        self.assertTrue(known["data_quality"]["rectification_needed"])
-        self.assertIsNone(known["data_quality"]["fallback_reference"])
-        self.assertEqual(
-            known["data_quality"]["house_interpretation_confidence"],
-            "high",
-        )
-        self.assertEqual(
-            known["data_quality"]["varga_interpretation_confidence"]["D1"],
-            "high",
-        )
-        self.assertEqual(
-            known["data_quality"]["varga_interpretation_confidence"]["D9"],
-            "medium",
-        )
-        self.assertEqual(
-            known["data_quality"]["interpretation_policy"],
-            "birth_time_based",
-        )
+        exact_response = post_for_time(0, 0, "exact")
+        self.assertEqual(exact_response.status_code, 200)
+        exact = exact_response.get_json()
+        self.assertEqual(exact["birth"]["time_confidence"], "exact")
+        self.assertTrue(exact["data_quality"]["accepted_as_rectified"])
+        self.assertTrue(all(
+            value == "high"
+            for value in exact["data_quality"]["varga_interpretation_confidence"].values()
+        ))
 
-        unknown_response = post_for_time(0, 0)
+        approximate_response = post_for_time(10, 30, "approximate")
+        self.assertEqual(approximate_response.status_code, 200)
+        approximate = approximate_response.get_json()
+        self.assertEqual(approximate["birth"]["time_confidence"], "approximate")
+        self.assertFalse(approximate["data_quality"]["accepted_as_rectified"])
+        for division, value in approximate["data_quality"]["varga_interpretation_confidence"].items():
+            self.assertEqual(value, "low" if division in {"D30", "D60"} else "high")
+        self.assertEqual(approximate["data_quality"]["house_interpretation_confidence"], "high")
+
+        unknown_response = post_for_time(12, 0, "unknown")
         self.assertEqual(unknown_response.status_code, 200)
         unknown = unknown_response.get_json()
         self.assertEqual(unknown["birth"]["time_confidence"], "unknown")
-        self.assertEqual(unknown["birth"]["time_confidence_label"], "bilinmiyor")
-        self.assertEqual(unknown["data_quality"]["rectification_status"], "yapılmadı")
-        self.assertTrue(unknown["data_quality"]["rectification_needed"])
-        self.assertIsNone(unknown["data_quality"]["fallback_reference"])
-        self.assertEqual(
-            unknown["data_quality"]["interpretation_policy"],
-            "rectification_required_no_moon_lagna_fallback",
-        )
-        self.assertEqual(
-            unknown["data_quality"]["lagna_interpretation_confidence"],
-            "very_low",
-        )
-        self.assertEqual(
-            unknown["data_quality"]["house_interpretation_confidence"],
-            "very_low",
-        )
-        self.assertEqual(
-            unknown["data_quality"]["planet_sign_interpretation_confidence"],
-            "medium",
-        )
-        self.assertEqual(
-            unknown["data_quality"]["varga_interpretation_confidence"]["D1"],
-            "very_low",
-        )
-        self.assertEqual(
-            unknown["data_quality"]["varga_interpretation_confidence"]["D9"],
-            "very_low",
-        )
-        self.assertEqual(unknown["rectification"]["safe_to_interpret"], ["planet_signs"])
-        self.assertIn("lagna", unknown["rectification"]["low_confidence_interpretations"])
-        self.assertIn("houses", unknown["rectification"]["low_confidence_interpretations"])
-        self.assertIn(
-            "Ay Lagna yedeği kullanılmaz",
-            unknown["copy_packages"]["expert"]["markdown"],
-        )
-
-        explicit_unknown_response = self.client.post(
-            "/api/v2/chart/full",
-            json={
-                "person": {"id": "kisi", "name": "Kisi"},
-                "birth": {
-                    "year": 1990,
-                    "month": 8,
-                    "day": 15,
-                    "hour": 10,
-                    "minute": 30,
-                    "timezone_id": "Europe/Istanbul",
-                    "lat": 41.0082,
-                    "lon": 28.9784,
-                    "time_confidence": "unknown",
-                },
-                "options": {
-                    "ayanamsa": "Lahiri",
-                    "zodiac": "sidereal",
-                    "house_system": "whole_sign",
-                    "node_type": "true",
-                    "language": "tr",
-                },
-            },
-        )
-        self.assertEqual(explicit_unknown_response.status_code, 200)
-        explicit_unknown = explicit_unknown_response.get_json()
-        self.assertEqual(explicit_unknown["birth"]["time_confidence"], "unknown")
-        self.assertEqual(
-            explicit_unknown["data_quality"]["house_interpretation_confidence"],
-            "very_low",
-        )
+        self.assertEqual(unknown["birth"]["calculation_reference_time"], "12:00")
+        self.assertEqual(unknown["lagna"]["reference_frame"], "chandra_lagna")
+        self.assertFalse(unknown["lagna"]["is_birth_ascendant"])
+        moon = next(planet for planet in unknown["planets"] if planet["id"] == "moon")
+        self.assertAlmostEqual(unknown["lagna"]["longitude"], moon["longitude"])
+        self.assertEqual(unknown["bhava_chalit"]["status"], "not_applicable_unknown_birth_time")
+        for division, value in unknown["data_quality"]["varga_interpretation_confidence"].items():
+            self.assertEqual(value, "medium" if division == "D9" else "very_low")
+        self.assertNotIn("rectification", unknown)
+        self.assertIn("birth_time_policy", unknown)
 
     def test_rectified_chart_marks_all_supported_vargas_high(self):
         response = self.client.post(
@@ -5614,16 +5583,8 @@ class ChartApiV2Test(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["birth"]["time_confidence_label"], "rektifiye")
-        self.assertEqual(data["data_quality"]["rectification_status"], "yapıldı")
-        self.assertEqual(
-            data["data_quality"]["rectification_source"],
-            "unspecified_rectified_time",
-        )
-        self.assertEqual(
-            data["data_quality"]["rectification_source_label"],
-            "Kaynağı belirtilmemiş rektifiye saat",
-        )
+        self.assertEqual(data["birth"]["time_confidence_label"], "eminim")
+        self.assertTrue(data["data_quality"]["accepted_as_rectified"])
         self._assert_rectified_vargas_confidence(data)
         self.assertEqual(data["analysis_modules"]["health"]["status"], "ready")
 
@@ -6099,7 +6060,7 @@ class ChartApiV2Test(unittest.TestCase):
         )
 
     def test_rectification_analyze_scores_candidate_times(self):
-        response = self.client.post(
+        response = self.rectification_client.post(
             "/api/v2/rectification/analyze",
             json={
                 "birth_base": {
@@ -6404,7 +6365,7 @@ class ChartApiV2Test(unittest.TestCase):
             ],
         }
 
-        response = self.client.post("/api/v2/rectification/report", json=payload)
+        response = self.rectification_client.post("/api/v2/rectification/report", json=payload)
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -6547,7 +6508,7 @@ class ChartApiV2Test(unittest.TestCase):
                     },
                     "overwrite": False,
                 }
-                response = self.client.post("/api/v2/rectification/save", json=payload)
+                response = self.rectification_client.post("/api/v2/rectification/save", json=payload)
 
                 self.assertEqual(response.status_code, 200)
                 data = response.get_json()
@@ -6656,7 +6617,7 @@ class ChartApiV2Test(unittest.TestCase):
                 self.assertEqual(overwritten_record["birth_base"]["time_confidence"], "unknown")
                 self.assertEqual(len(overwritten_record["events"]), 3)
 
-                duplicate = self.client.post("/api/v2/rectification/save", json=payload)
+                duplicate = self.rectification_client.post("/api/v2/rectification/save", json=payload)
                 self.assertEqual(duplicate.status_code, 409)
                 self.assertEqual(duplicate.get_json()["status"], "life_events_record_exists")
 
@@ -6669,7 +6630,7 @@ class ChartApiV2Test(unittest.TestCase):
                     },
                     "overwrite": True,
                 }
-                update_response = self.client.post("/api/v2/rectification/save", json=updated_payload)
+                update_response = self.rectification_client.post("/api/v2/rectification/save", json=updated_payload)
                 self.assertEqual(update_response.status_code, 400)
                 updated = update_response.get_json()
                 self.assertEqual(updated["status"], "rectified_time_blocked_by_v1_gate")
@@ -6698,7 +6659,7 @@ class ChartApiV2Test(unittest.TestCase):
                     },
                     "overwrite": True,
                 }
-                update_response = self.client.post("/api/v2/rectification/save", json=updated_payload)
+                update_response = self.rectification_client.post("/api/v2/rectification/save", json=updated_payload)
                 self.assertEqual(update_response.status_code, 200)
                 updated = update_response.get_json()
                 self.assertEqual(updated["birth_base"]["hour"], 4)
@@ -6746,7 +6707,7 @@ class ChartApiV2Test(unittest.TestCase):
                 app.config["VAULT_ASTROLOGY_ROOT"] = old_root
 
     def test_rectification_kp_and_tattwa_layers_activate_with_required_inputs(self):
-        response = self.client.post(
+        response = self.rectification_client.post(
             "/api/v2/rectification/analyze",
             json={
                 "birth_base": {
@@ -6793,7 +6754,7 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertEqual(year_event["event_weight"]["certainty_weight"], 0.45)
 
     def test_rectification_uses_known_lagna_as_ranking_anchor(self):
-        response = self.client.post(
+        response = self.rectification_client.post(
             "/api/v2/rectification/analyze",
             json={
                 "birth_base": {
@@ -6876,7 +6837,7 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertEqual(known["status"], "derived")
 
     def test_rectification_candidate_lagna_uses_birth_timezone(self):
-        response = self.client.post(
+        response = self.rectification_client.post(
             "/api/v2/rectification/analyze",
             json={
                 "birth_base": {
@@ -6920,7 +6881,7 @@ class ChartApiV2Test(unittest.TestCase):
         )
 
     def test_rectification_analyze_rejects_too_many_candidates(self):
-        response = self.client.post(
+        response = self.rectification_client.post(
             "/api/v2/rectification/analyze",
             json={
                 "birth_base": {
@@ -6944,7 +6905,7 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertIn("Çok fazla aday saat", response.get_json()["error"])
 
     def test_rectification_analyze_supports_second_level_steps(self):
-        response = self.client.post(
+        response = self.rectification_client.post(
             "/api/v2/rectification/analyze",
             json={
                 "birth_base": {
@@ -7767,7 +7728,7 @@ class ChartApiV2Test(unittest.TestCase):
                 self.assertNotIn("## D10 Dashamsha Meslek Haritası", person_text)
                 self.assertNotIn("## D12 Sağlık/Hassasiyet Varga Tablosu", person_text)
                 self.assertIn("## Varga Güven Durumu", person_text)
-                self.assertIn("pending_astroseek_crosscheck", person_text)
+                self.assertIn("customer_time_declaration_policy", person_text)
                 self.assertNotIn("## Chara Dasha Aktif Periyotlar", person_text)
                 self.assertNotIn("## Yogini Dasha Aktif Periyotlar", person_text)
                 self.assertNotIn("API response içinde aktif periyot yok", person_text)
@@ -8267,13 +8228,13 @@ class ChartApiV2Test(unittest.TestCase):
                     encoding="utf-8",
                 )
                 self.assertIn("rectified_time_supported", external_person_text)
-                self.assertIn("- Zaman güveni: rektifiye", external_person_text)
+                self.assertIn("- Müşteri saat beyanı: rektifiye", external_person_text)
                 self.assertIn(
-                    "Rektifikasyon kaynağı: Dış/onaylı rektifikasyon",
+                    "Uzman rektifikasyon kaynağı: Dış/onaylı rektifikasyon",
                     external_person_text,
                 )
                 self.assertIn(
-                    "Dış/onaylı rektifikasyon desteğiyle desteklenen vargalar high yorum güveniyle kaydedilir.",
+                    "Uzman rektifikasyon kaydı (Dış/onaylı rektifikasyon) müşteri beyanı güveninden ayrı bir teknik kayıt olarak korunur.",
                     external_person_text,
                 )
                 external_load = self.client.post(
@@ -8293,7 +8254,10 @@ class ChartApiV2Test(unittest.TestCase):
                     external_loaded_chart["data_quality"]["rectification_source_label"],
                     "Dış/onaylı rektifikasyon",
                 )
-                self._assert_rectified_vargas_confidence(external_loaded_chart)
+                self._assert_rectified_vargas_confidence(
+                    external_loaded_chart,
+                    expected_status="rectified_time_supported",
+                )
 
                 person_path = (
                     Path(tmp_dir)
@@ -8352,12 +8316,12 @@ class ChartApiV2Test(unittest.TestCase):
                 self.assertIn("## Varga Güven Durumu", person_text)
                 self.assertIn("rectified_time_supported", person_text)
                 self.assertIn(
-                    "Rektifikasyon kaynağı: API v1 rektifikasyon karar kapısı",
+                    "Uzman rektifikasyon kaynağı: API v1 rektifikasyon karar kapısı",
                     person_text,
                 )
                 self.assertNotIn("pending_astroseek_crosscheck", person_text)
                 self.assertIn(
-                    "API v1 rektifikasyon karar kapısı desteğiyle desteklenen vargalar high yorum güveniyle kaydedilir.",
+                    "Uzman rektifikasyon kaydı (API v1 rektifikasyon karar kapısı) müşteri beyanı güveninden ayrı bir teknik kayıt olarak korunur.",
                     person_text,
                 )
                 for division in RECTIFIED_VARGAS:

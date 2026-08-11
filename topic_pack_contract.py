@@ -430,7 +430,7 @@ def _bullet_list(items, empty="- yok"):
 
 # Kunye: RUL-PH3-0008, RUL-T05-0001 (ACTIVE)
 
-CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
+CONFIDENCE_ORDER = {"very_low": 0, "low": 1, "medium": 2, "high": 3}
 
 
 def _min_confidence(*values):
@@ -446,78 +446,61 @@ def resolve_data_gate(chart, pack_id=None):
     birth = chart.get("birth") or {}
     dq = chart.get("data_quality") or {}
 
-    supported = list(dq.get("rectified_time_supported_vargas") or [])
+    supported = list(dq.get("supported_vargas") or [])
     varga_conf = dict(dq.get("varga_interpretation_confidence") or {})
     verified = list(dq.get("person_verified_vargas") or [])
-
-    rect_source = (dq.get("rectification_source")
-                   or birth.get("rectification_source") or "")
-    rect_status = (dq.get("rectification_status")
-                   or birth.get("rectification_status") or "")
-    rect_label = dq.get("rectification_source_label") or ""
-    rect_needed = bool(dq.get("rectification_needed"))
 
     conf_label = (dq.get("birth_time_confidence_label")
                   or birth.get("time_confidence_label") or "")
     conf_raw = (dq.get("birth_time_confidence")
                 or birth.get("time_confidence") or "")
 
-    lagna_conf = dq.get("lagna_interpretation_confidence") or ""
+    reference_frame = dq.get("reference_frame") or "birth_lagna"
+    lagna_conf = (
+        dq.get("reference_lagna_interpretation_confidence")
+        if reference_frame == "chandra_lagna"
+        else dq.get("lagna_interpretation_confidence")
+    ) or ""
     house_conf = dq.get("house_interpretation_confidence") or ""
     sign_conf = dq.get("planet_sign_interpretation_confidence") or ""
-
-    # Kaynagi belirsiz rektifikasyon -> bagimsiz dogrulama yok
-    source_unspecified = "unspecified" in str(rect_source).lower()
-
-    # Veri guven tavani:
-    #   motorun yorum guvenlerinin en dususu taban olusturur;
-    #   rektifikasyon kaynagi belirsizse veya hicbir varga kisi tarafindan
-    #   dogrulanmamissa tavan medium'a cekilir.
     engine_floor = _min_confidence(lagna_conf, house_conf, sign_conf)
     cap = engine_floor
     cap_reasons = []
-    if source_unspecified:
-        cap = _min_confidence(cap, "medium")
-        cap_reasons.append("rektifikasyon kaynağı belirtilmemiş")
-    if not verified:
-        cap = _min_confidence(cap, "medium")
-        cap_reasons.append("kişi tarafından doğrulanmış varga yok")
-    if rect_needed:
-        cap = "low"
-        cap_reasons.append("motor rektifikasyon gerekli diyor")
     if engine_floor != "high":
         cap_reasons.append("motor yorum güveni: %s" % engine_floor)
+    if reference_frame == "chandra_lagna":
+        cap_reasons.append("ev çerçevesi Chandra Lagna")
 
-    # Kapali teknik = desteklenmeyen veya guveni high olmayan varga
+    # Medium varga yorumlanabilir; low/very_low varga hüküm üretmez.
     blocked = []
     for div, conf in sorted(varga_conf.items()):
-        if supported and div not in supported:
-            blocked.append("%s (desteklenmiyor)" % div)
-        elif conf and conf != "high":
+        if conf in {"low", "very_low"}:
             blocked.append("%s (güven: %s)" % (div, conf))
-    for div in supported:
-        if div not in varga_conf:
-            blocked.append("%s (güven kaydı yok)" % div)
 
-    # Pakete ozgu zorunlu varga catismasi
     conflict = []
     pack = TOPIC_PACK_REGISTRY.get(pack_id) if pack_id else None
     if pack:
         for div in pack.get("varga_required", []):
-            if supported and div not in supported:
-                conflict.append("%s (desteklenmiyor)" % div)
-            elif varga_conf.get(div) and varga_conf[div] != "high":
-                conflict.append("%s (güven: %s)" % (div, varga_conf[div]))
+            confidence = varga_conf.get(div)
+            if div == "D1" and reference_frame == "chandra_lagna":
+                continue
+            if not confidence:
+                conflict.append("%s (güven kaydı yok)" % div)
+            elif confidence in {"low", "very_low"}:
+                conflict.append("%s (güven: %s)" % (div, confidence))
+            else:
+                cap = _min_confidence(cap, confidence)
 
-    passed = engine_floor != "low" and not rect_needed and not conflict
+    passed = engine_floor in {"medium", "high"} and not conflict
 
     return {
         "confidence_raw": conf_raw or "belirtilmemis",
         "confidence_label": conf_label or "belirtilmemis",
-        "rectification_status": rect_status or "belirtilmemis",
-        "rectification_source": rect_source or "belirtilmemis",
-        "rectification_source_label": rect_label or "-",
-        "rectification_needed": rect_needed,
+        "birth_time_declaration": dq.get("birth_time_declaration") or conf_raw or "belirtilmemis",
+        "customer_declaration_basis": bool(dq.get("customer_declaration_basis")),
+        "accepted_as_rectified": bool(dq.get("accepted_as_rectified")),
+        "reference_frame": reference_frame,
+        "calculation_reference_time": dq.get("calculation_reference_time"),
         "independent_verification": bool(verified),
         "verified_vargas": verified,
         "lagna_confidence": lagna_conf or "-",
@@ -613,11 +596,15 @@ def package_data_gate_markdown(chart, pack_id=None):
         "| --- | --- |",
         "| Doğum saati güveni | %s (%s) |" % (
             _esc(g["confidence_label"]), _esc(g["confidence_raw"])),
-        "| Rektifikasyon statüsü | %s |" % _esc(g["rectification_status"]),
-        "| Rektifikasyon kaynağı | %s |" % _esc(g["rectification_source_label"]),
-        "| Motor rektifikasyon istiyor mu | %s |" % (
-            "evet" if g["rectification_needed"] else "hayır"),
-        "| Bağımsız doğrulama | %s |" % (
+        "| Müşteri beyanı | %s |" % _esc(g["birth_time_declaration"]),
+        "| Müşteri beyanı esas mı | %s |" % (
+            "evet" if g["customer_declaration_basis"] else "hayır"),
+        "| Rektifikasyonlu kabul | %s |" % (
+            "evet" if g["accepted_as_rectified"] else "hayır"),
+        "| Ev referansı | %s |" % _esc(g["reference_frame"]),
+        "| Teknik hesaplama saati | %s |" % _esc(
+            g["calculation_reference_time"] or "doğum saati"),
+        "| Formül karşılaştırma kaydı | %s |" % (
             "var (%s)" % _esc(_fmt_list(g["verified_vargas"]))
             if g["independent_verification"] else "yok"),
         "| Lagna yorum güveni | %s |" % _esc(g["lagna_confidence"]),

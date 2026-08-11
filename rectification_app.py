@@ -6,6 +6,7 @@ This service exposes only rectification routes on a separate local port so
 heavy rectification scans do not need to share the main dashboard/API process.
 """
 
+import hmac
 import os
 from ipaddress import ip_address
 
@@ -16,6 +17,7 @@ from app import (
     _build_rectification_analysis,
     _build_rectification_report,
     _rectification_payload_from_save_data,
+    _rectification_save_gate,
     _save_rectification_record,
 )
 
@@ -29,6 +31,10 @@ rectification_app = Flask(__name__)
 rectification_app.config["LOCAL_ACCESS_ONLY"] = main_app.config["LOCAL_ACCESS_ONLY"]
 rectification_app.config["MAX_CONTENT_LENGTH"] = main_app.config["MAX_CONTENT_LENGTH"]
 rectification_app.config["VAULT_ASTROLOGY_ROOT"] = main_app.config["VAULT_ASTROLOGY_ROOT"]
+rectification_app.config["API_TOKEN"] = os.environ.get(
+    "VEDIC_RECTIFICATION_API_TOKEN",
+    "",
+).strip()
 rectification_app.config["ALLOWED_DASHBOARD_ORIGINS"] = ALLOWED_DASHBOARD_ORIGINS
 
 
@@ -47,6 +53,23 @@ def _require_local_access():
         }), 413
 
     if not rectification_app.config["LOCAL_ACCESS_ONLY"]:
+        configured_token = rectification_app.config.get("API_TOKEN") or ""
+        if not configured_token:
+            return jsonify({
+                "ok": False,
+                "error": "Rektifikasyon servisi kimlik doğrulaması yapılandırılmamış.",
+            }), 503
+        authorization = request.headers.get("Authorization", "")
+        supplied_token = (
+            authorization[7:].strip()
+            if authorization.lower().startswith("bearer ")
+            else ""
+        )
+        if not supplied_token or not hmac.compare_digest(supplied_token, configured_token):
+            return jsonify({
+                "ok": False,
+                "error": "Rektifikasyon servisi yetkilendirmesi geçersiz.",
+            }), 401
         return None
 
     remote_addr = request.remote_addr
@@ -139,6 +162,11 @@ def api_v2_rectification_save():
             "events": record["events"],
             "event_count": len(record["events"]),
         }
+        save_gate = _rectification_save_gate(record)
+        if save_gate:
+            http_status = save_gate.pop("_http_status", 400)
+            result.update(save_gate)
+            return jsonify(result), http_status
         save_result = _save_rectification_record(record, overwrite=overwrite)
         http_status = save_result.pop("_http_status", 200)
         result.update(save_result)

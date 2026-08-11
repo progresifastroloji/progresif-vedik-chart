@@ -69,7 +69,7 @@ app.config["USER_DATA_ROOT"] = os.environ.get(
     "VEDIC_USER_DATA_ROOT",
     str(DEFAULT_PERSISTENT_ROOT / "users"),
 )
-PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v1"
+PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v2"
 app.config["PLACES_DB_PATH"] = os.environ.get(
     "VEDIC_PLACES_DB",
     str(Path(__file__).resolve().parent / "data" / "places" / "places.sqlite3"),
@@ -749,9 +749,16 @@ VARGA_ASTROSEEK_VERIFIED_PERSON_ALIASES = {
 }
 VARGA_ASTROSEEK_VERIFIED_DIVISIONS = set(VARGA_NAMES.keys()) - {"D1"}
 VARGA_RECTIFIED_HIGH_DIVISIONS = set(VARGA_NAMES.keys())
-UNKNOWN_TIME_VARGA_CONFIDENCE = {
-    division: "low" if division == "D1" else "very_low"
-    for division in VARGA_NAMES
+BIRTH_TIME_VARGA_CONFIDENCE = {
+    "exact": {division: "high" for division in VARGA_NAMES},
+    "approximate": {
+        division: "low" if division in {"D30", "D60"} else "high"
+        for division in VARGA_NAMES
+    },
+    "unknown": {
+        division: "medium" if division == "D9" else "very_low"
+        for division in VARGA_NAMES
+    },
 }
 EXTERNAL_RECTIFICATION_SOURCES = {
     "external_astrolog",
@@ -1776,23 +1783,24 @@ def _apply_rectified_varga_confidence(vargas, birth_time_quality):
 
 
 def _apply_birth_time_varga_confidence(vargas, birth_time_quality):
-    if (
-        birth_time_quality.get("rectification_status") == "yapıldı"
-        or birth_time_quality.get("confidence") == "known"
-    ):
-        return []
-
+    declaration = birth_time_quality.get("declaration") or "approximate"
+    confidence_policy = BIRTH_TIME_VARGA_CONFIDENCE.get(
+        declaration,
+        BIRTH_TIME_VARGA_CONFIDENCE["approximate"],
+    )
     affected_divisions = []
-    for division in UNKNOWN_TIME_VARGA_CONFIDENCE:
+    for division, confidence in confidence_policy.items():
         if division not in vargas:
             continue
-        vargas[division]["confidence"] = "very_low"
-        external_validation = vargas[division].get("external_validation") or {}
-        if external_validation.get("status") == "astroseek_verified":
-            external_validation["note"] = (
-                "Varga formülü kişi bazında AstroSeek ile doğrulandı; doğum saati "
-                "rektifiye edilmediği için yorum güveni very_low tutulur."
-            )
+        vargas[division]["confidence"] = confidence
+        vargas[division]["external_validation"] = {
+            "status": "customer_time_declaration_policy",
+            "sources": ["customer_declaration"],
+            "note": (
+                f"{birth_time_quality.get('confidence_label', declaration)} müşteri "
+                f"beyanı nedeniyle {division} yorum güveni {confidence} kabul edildi."
+            ),
+        }
         affected_divisions.append(division)
     return affected_divisions
 
@@ -10425,57 +10433,110 @@ def _build_decision_engine(panchanga, dashas, analysis_modules):
 
 def _birth_time_quality_from_input(birth_input):
     explicit = str(birth_input.get("time_confidence") or "").strip().lower()
-    if explicit in {"rectified", "rektifiye", "rektifiye edilmiş", "rektifiye edilmis"}:
+    if explicit in {
+        "exact", "high", "rectified", "rektifiye", "rektifiye edilmiş",
+        "rektifiye edilmis", "eminim", "sure",
+    }:
         return {
-            "confidence": "known",
-            "confidence_label": "rektifiye",
+            "confidence": "exact",
+            "confidence_label": "eminim",
+            "declaration": "exact",
+            "accepted_as_rectified": True,
             "rectification_needed": False,
-            "rectification_status": "yapıldı",
+            "rectification_status": "müşteri_beyanıyla_rektifikasyonlu_kabul",
             "fallback_reference": None,
         }
-    if explicit in {"high", "medium", "known"}:
+    if explicit in {
+        "approx", "approximate", "medium", "known", "bilinen", "biliniyor",
+        "yaklaşık", "yaklasik",
+    }:
         return {
-            "confidence": "known",
-            "confidence_label": "biliniyor",
-            "rectification_needed": True,
+            "confidence": "approximate",
+            "confidence_label": "yaklaşık biliyorum",
+            "declaration": "approximate",
+            "accepted_as_rectified": False,
+            "rectification_needed": False,
             "rectification_status": "yapılmadı",
             "fallback_reference": None,
         }
     if explicit == "low":
         return {
-            "confidence": "low",
-            "confidence_label": "düşük güven",
-            "rectification_needed": True,
+            "confidence": "approximate",
+            "confidence_label": "yaklaşık biliyorum",
+            "declaration": "approximate",
+            "accepted_as_rectified": False,
+            "rectification_needed": False,
             "rectification_status": "yapılmadı",
             "fallback_reference": None,
         }
     if explicit in {"unknown", "bilinmiyor", "unrectified", "rektifikasyonsuz"}:
         return {
             "confidence": "unknown",
-            "confidence_label": "bilinmiyor",
-            "rectification_needed": True,
+            "confidence_label": "hiç bilmiyorum",
+            "declaration": "unknown",
+            "accepted_as_rectified": False,
+            "rectification_needed": False,
             "rectification_status": "yapılmadı",
-            "fallback_reference": None,
+            "fallback_reference": "chandra_lagna",
         }
-
-    hour = _require_int(birth_input, "hour")
-    minute = _require_int(birth_input, "minute")
-    second = _optional_second(birth_input)
-    if hour == 0 and minute == 0 and second == 0:
-        return {
-            "confidence": "unknown",
-            "confidence_label": "bilinmiyor",
-            "rectification_needed": True,
-            "rectification_status": "yapılmadı",
-            "fallback_reference": None,
-        }
-
+    # Eski istemciler güven alanını göndermiyorsa girilmiş saat müşteri beyanı
+    # olarak kabul edilir. 00:00 geçerli bir doğum saatidir; bilinmiyor anlamına
+    # gelmez.
     return {
-        "confidence": "known",
-        "confidence_label": "biliniyor",
-        "rectification_needed": True,
-        "rectification_status": "yapılmadı",
+        "confidence": "exact",
+        "confidence_label": "eminim",
+        "declaration": "exact",
+        "accepted_as_rectified": True,
+        "rectification_needed": False,
+        "rectification_status": "müşteri_beyanıyla_rektifikasyonlu_kabul",
         "fallback_reference": None,
+    }
+
+
+def _chart_with_chandra_lagna(chart):
+    """Doğum saati bilinmiyorsa evleri Ay burcundan yeniden çerçeveler."""
+    moon = next(
+        planet for planet in chart["planets"]
+        if _planet_name_en(planet) == "Moon"
+    )
+    moon_sign_index = moon["sign_index"]
+    lagna = {
+        **chart["lagna"],
+        "longitude": moon["longitude"],
+        "sign_index": moon_sign_index,
+        "sign": moon["sign"],
+        "sign_en": moon["sign_en"],
+        "degree": moon["degree"],
+        "degree_str": moon["degree_str"],
+        "nakshatra": moon["nakshatra"],
+    }
+    planets = [
+        {
+            **planet,
+            "house": ((planet["sign_index"] - moon_sign_index) % 12) + 1,
+        }
+        for planet in chart["planets"]
+    ]
+    return {**chart, "lagna": lagna, "planets": planets}
+
+
+def _unknown_time_bhava_chalit():
+    return {
+        "status": "not_applicable_unknown_birth_time",
+        "confidence": "none",
+        "method": "chandra_lagna_whole_sign_reference",
+        "reference_frame": "chandra_lagna",
+        "reason": "actual_birth_time_unavailable",
+        "houses": [],
+        "planets": [],
+        "summary": {
+            "birth_time_sensitive": True,
+            "whole_sign_chandra_lagna_used": True,
+        },
+        "notes": [
+            "Yerel 12:00 yalnız gezegen konumlarını hesaplama referansıdır.",
+            "Sripati/Bhava Chalit gerçek doğum saati bilinmeden yorumlanmaz.",
+        ],
     }
 
 
@@ -10582,6 +10643,8 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
     timezone_label = timezone_id or chart["birth_info"]["timezone"]
     birth_time_quality = _birth_time_quality_from_input(birth_input)
+    unknown_birth_time = birth_time_quality["declaration"] == "unknown"
+    analysis_chart = _chart_with_chandra_lagna(chart) if unknown_birth_time else chart
 
     birth = {
         "date": chart["birth_info"]["date"],
@@ -10600,20 +10663,11 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
         ),
         "time_confidence": birth_time_quality["confidence"],
         "time_confidence_label": birth_time_quality["confidence_label"],
-        "rectification_status": birth_time_quality["rectification_status"],
+        "time_declaration": birth_time_quality["declaration"],
+        "accepted_as_rectified": birth_time_quality["accepted_as_rectified"],
+        "calculation_reference_time": "12:00" if unknown_birth_time else None,
+        "calculation_reference_only": unknown_birth_time,
     }
-    requested_rectification_source = str(
-        birth_input.get("rectification_source") or ""
-    ).strip()
-    rectification_source = None
-    if birth_time_quality["rectification_status"] == "yapıldı":
-        if requested_rectification_source in EXTERNAL_RECTIFICATION_SOURCES:
-            rectification_source = requested_rectification_source
-        elif requested_rectification_source == "api_v1_decision_gate":
-            rectification_source = requested_rectification_source
-        else:
-            rectification_source = "unspecified_rectified_time"
-        birth["rectification_source"] = rectification_source
 
     if person:
         birth["person"] = {
@@ -10631,24 +10685,38 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
         _optional_second(birth_input),
     )
     nav_lagna = _varga_lagna(chart, "D9")
-    lagna_vargottama = chart["lagna"]["sign_index"] == nav_lagna["sign_index"]
-    sun = next(planet for planet in chart["planets"] if planet["abbr"] == "Su")
+    lagna_vargottama = analysis_chart["lagna"]["sign_index"] == nav_lagna["sign_index"]
+    sun = next(planet for planet in analysis_chart["planets"] if planet["abbr"] == "Su")
     sun_longitude = sun["longitude"]
-    war_by_name = _build_war_map(chart["planets"])
-    graha_drishti = _build_graha_drishti(chart)
-    rashi_drishti = _build_rashi_drishti(chart)
+    war_by_name = _build_war_map(analysis_chart["planets"])
+    graha_drishti = _build_graha_drishti(analysis_chart)
+    rashi_drishti = _build_rashi_drishti(analysis_chart)
     planets = [
         _v2_planet(planet, sun_longitude, war_by_name, lagna_vargottama)
-        for planet in chart["planets"]
+        for planet in analysis_chart["planets"]
     ]
-    houses = _build_houses(chart, graha_drishti, rashi_drishti)
-    bhava_chalit = _build_bhava_chalit(chart, birth_jd)
-    lordships = _build_lordships(chart)
+    houses = _build_houses(analysis_chart, graha_drishti, rashi_drishti)
+    bhava_chalit = (
+        _unknown_time_bhava_chalit()
+        if unknown_birth_time
+        else _build_bhava_chalit(chart, birth_jd)
+    )
+    lordships = _build_lordships(analysis_chart)
     vargas = {
         division: {
             "name": name,
             **_varga_metadata(division),
-            "lagna": _varga_lagna(chart, division),
+            "reference_frame": (
+                "chandra_lagna"
+                if unknown_birth_time and division == "D1"
+                else "noon_calculation_reference"
+                if unknown_birth_time
+                else "birth_lagna"
+            ),
+            "lagna": _varga_lagna(
+                analysis_chart if unknown_birth_time and division == "D1" else chart,
+                division,
+            ),
             "planets": [
                 _varga_planet(planet, division)
                 for planet in chart["planets"]
@@ -10657,54 +10725,34 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
         for division, name in VARGA_NAMES.items()
     }
     verified_vargas = _apply_person_varga_validation(vargas, person)
-    rectified_vargas = _apply_rectified_varga_confidence(
-        vargas,
-        {
-            **birth_time_quality,
-            "rectification_source": rectification_source or "api_v1_decision_gate",
-        },
-    )
-    time_limited_vargas = _apply_birth_time_varga_confidence(vargas, birth_time_quality)
-    varga_confidence = VARGA_INTERPRETATION_CONFIDENCE.copy()
-    for division in [*verified_vargas, *rectified_vargas, *time_limited_vargas]:
+    policy_vargas = _apply_birth_time_varga_confidence(vargas, birth_time_quality)
+    varga_confidence = {}
+    for division in policy_vargas:
         varga_confidence[division] = vargas[division]["confidence"]
 
-    data_quality_notes = []
-    quality_supported_vargas = (
-        set(verified_vargas) | set(rectified_vargas)
-    ) - set(time_limited_vargas)
-    pending_vargas = [
-        division
-        for division in VARGA_NAMES
-        if division in VARGA_EXTERNAL_VALIDATION_PENDING
-        and division not in quality_supported_vargas
+    data_quality_notes = [
+        "Varga yorum güveni yalnız müşterinin doğum saati beyanından türetilir; "
+        "formül veya harici karşılaştırma bu seviyeyi değiştirmez."
     ]
-    if pending_vargas:
-        data_quality_notes.append(
-            f"{'/'.join(pending_vargas)} hesaplandı; AstroSeek dış doğrulaması bekleniyor."
-        )
     if verified_vargas:
         data_quality_notes.append(
-            f"{'/'.join(verified_vargas)} için kişi bazlı AstroSeek doğrulaması kayıtlı."
+            f"{'/'.join(verified_vargas)} formül karşılaştırması kayıtlıdır; müşteri "
+            "beyanına dayalı yorum güveninden bağımsızdır."
         )
-    if rectified_vargas:
+    if unknown_birth_time:
         data_quality_notes.append(
-            f"{_rectification_source_label(rectification_source or 'api_v1_decision_gate')} "
-            "desteğiyle tüm vargalar high yorum güveni kayıtlı."
-        )
-    if time_limited_vargas:
-        data_quality_notes.append(
-            "Doğum saati rektifiye edilmediği için Ay Lagna yedeği kullanılmaz; "
-            "Lagna, evler ve vargalar rektifikasyon tamamlanana kadar düşük güvenlidir."
+            "Yerel 12:00 yalnız hesaplama referansıdır; gerçek yükselen yerine "
+            "Chandra Lagna ev çerçevesi kullanılır."
         )
     low_confidence_interpretations = [
         division
-        for division in ["D2", "D3", "D7", "D10", "D12", "D60"]
+        for division in VARGA_NAMES
         if varga_confidence.get(division) in {"low", "very_low"}
     ]
-    low_confidence_interpretations.extend(["upapada", "KP"])
-    if time_limited_vargas:
-        low_confidence_interpretations.extend(["lagna", "houses"])
+    if unknown_birth_time:
+        low_confidence_interpretations.extend(
+            ["actual_birth_lagna", "bhava_chalit", "upapada", "KP", "special_lagnas"]
+        )
     low_confidence_interpretations = list(dict.fromkeys(low_confidence_interpretations))
     transit_reference = _transit_reference_from_options(
         request_data.get("options") or {},
@@ -10726,16 +10774,17 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
     )
     transits = _build_transits(chart, dashas, transit_reference)
     varshaphala = _build_varshaphala(chart, birth_input, tz_offset, timezone_id, transit_reference)
-    ashtakavarga = _build_ashtakavarga(chart, transits["planets"])
+    ashtakavarga = _build_ashtakavarga(analysis_chart, transits["planets"])
     bhava_bala = _build_bhava_bala(houses, lordships, ashtakavarga, shadbala, bhava_chalit)
     vimshopaka_bala = _build_vimshopaka_bala(planets, vargas, birth_time_quality)
     avasthas = _build_avasthas(planets, birth_time_quality)
     kp = _build_kp(chart, birth_jd)
     missing = _missing_v2_layers()
-    jaimini = _build_jaimini(chart, vargas)
+    jaimini = _build_jaimini(analysis_chart, vargas)
     panchanga = _build_panchanga_for_options(chart, birth_input, options, tz_offset, timezone_id)
     special_lagnas = _build_special_lagnas(chart, birth_input, tz_offset, birth_jd)
     sensitive_points = _build_sensitive_points(chart, birth_input, tz_offset, birth_jd)
+    time_sensitive_confidence = "very_low" if unknown_birth_time else "high"
     analysis_layers = {
         "planets": planets,
         "houses": houses,
@@ -10778,42 +10827,49 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
         "data_quality": {
             "birth_time_confidence": birth_time_quality["confidence"],
             "birth_time_confidence_label": birth_time_quality["confidence_label"],
-            "rectification_status": birth_time_quality["rectification_status"],
-            "rectification_source": (
-                rectification_source
-                if birth_time_quality["rectification_status"] == "yapıldı"
-                else None
-            ),
-            "rectification_source_label": (
-                _rectification_source_label(rectification_source)
-                if birth_time_quality["rectification_status"] == "yapıldı"
-                else None
-            ),
-            "rectification_needed": birth_time_quality["rectification_needed"],
+            "birth_time_declaration": birth_time_quality["declaration"],
+            "customer_declaration_basis": True,
+            "accepted_as_rectified": birth_time_quality["accepted_as_rectified"],
             "fallback_reference": birth_time_quality["fallback_reference"],
-            "lagna_sensitivity": "unknown",
+            "reference_frame": "chandra_lagna" if unknown_birth_time else "birth_lagna",
+            "actual_birth_lagna_available": not unknown_birth_time,
+            "calculation_reference_time": "12:00" if unknown_birth_time else None,
+            "calculation_reference_only": unknown_birth_time,
             "d9_sensitivity_minutes": None,
             "d10_sensitivity_minutes": None,
-            "lagna_interpretation_confidence": (
-                "very_low" if time_limited_vargas else "high"
-            ),
-            "house_interpretation_confidence": (
-                "very_low" if time_limited_vargas else "high"
-            ),
-            "planet_sign_interpretation_confidence": (
-                "medium" if time_limited_vargas else "high"
-            ),
+            "lagna_interpretation_confidence": "none" if unknown_birth_time else "high",
+            "reference_lagna_interpretation_confidence": "high",
+            "house_interpretation_confidence": "high",
+            "planet_sign_interpretation_confidence": "high",
             "interpretation_policy": (
-                "rectification_required_no_moon_lagna_fallback"
-                if time_limited_vargas
-                else "birth_time_based"
+                "unknown_time_noon_calculation_chandra_lagna_interpretation"
+                if unknown_birth_time
+                else "customer_declared_time"
             ),
             "varga_interpretation_confidence": varga_confidence,
             "person_verified_vargas": verified_vargas,
-            "rectified_time_supported_vargas": rectified_vargas,
+            "supported_vargas": [
+                division
+                for division, confidence in varga_confidence.items()
+                if confidence in {"high", "medium"}
+            ],
+            "layer_interpretation_confidence": {
+                "birth_lagna": "none" if unknown_birth_time else "high",
+                "chandra_lagna": "high",
+                "houses": "high",
+                "bhava_chalit": "none" if unknown_birth_time else "high",
+                "upapada": time_sensitive_confidence,
+                "kp": time_sensitive_confidence,
+                "special_lagnas": time_sensitive_confidence,
+            },
             "notes": data_quality_notes,
         },
-        "lagna": _v2_lagna(chart["lagna"]),
+        "lagna": {
+            **_v2_lagna(analysis_chart["lagna"]),
+            "reference_frame": "chandra_lagna" if unknown_birth_time else "birth_lagna",
+            "is_birth_ascendant": not unknown_birth_time,
+            "interpretation_confidence": "high",
+        },
         "angles": angles,
         "planets": planets,
         "houses": houses,
@@ -10840,20 +10896,25 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
         "doshas": doshas,
         "transits": transits,
         "varshaphala": varshaphala,
-        "rectification": {
+        "birth_time_policy": {
             "birth_time_confidence": birth_time_quality["confidence"],
             "birth_time_confidence_label": birth_time_quality["confidence_label"],
-            "rectification_status": birth_time_quality["rectification_status"],
-            "rectification_needed": birth_time_quality["rectification_needed"],
-            "fallback_reference": birth_time_quality["fallback_reference"],
-            "sensitive_layers": ["lagna", "D9", "D10", "D60"],
-            "safe_to_interpret": (
-                ["planet_signs"]
-                if time_limited_vargas
-                else ["moon", "nakshatra", "planet_signs", "D1", "D9"]
-            ),
+            "declaration": birth_time_quality["declaration"],
+            "customer_declaration_basis": True,
+            "accepted_as_rectified": birth_time_quality["accepted_as_rectified"],
+            "reference_frame": "chandra_lagna" if unknown_birth_time else "birth_lagna",
+            "calculation_reference_time": "12:00" if unknown_birth_time else None,
+            "calculation_reference_only": unknown_birth_time,
+            "safe_to_interpret": [
+                "moon", "nakshatra", "planet_signs", "chandra_lagna",
+                *[
+                    division
+                    for division, confidence in varga_confidence.items()
+                    if confidence in {"high", "medium"}
+                ],
+            ],
             "low_confidence_interpretations": low_confidence_interpretations,
-            "notes": [],
+            "notes": data_quality_notes,
         },
         "topic_packets": _build_topic_packets(planets, houses, lordships, vargas, dashas, yogas, missing),
         "kp": kp,
@@ -15373,10 +15434,14 @@ def _expert_varga_validation_note(chart):
             )
         )
         return (
-            f"- Not: {source_label} desteğiyle desteklenen vargalar "
-            "high yorum güveniyle kaydedilir."
+            f"- Not: Uzman rektifikasyon kaydı ({source_label}) müşteri beyanı "
+            "güveninden ayrı bir teknik kayıt olarak korunur."
         )
-    return "- Not: Dış doğrulaması bekleyen vargalarda güven notu düşük tutulur."
+    declaration = data_quality.get("birth_time_declaration") or "belirtilmemiş"
+    return (
+        f"- Not: Varga güvenleri `{declaration}` müşteri beyanı politikasından "
+        "gelir; formül veya harici karşılaştırma bu seviyeyi değiştirmez."
+    )
 
 
 def _expert_panchanga_reference_rows(chart):
@@ -17025,19 +17090,29 @@ def _build_expert_copy_markdown(chart, person_name, group_name):
         "",
         f"- İsim: {person_name}",
         f"- Grup: {group_name}",
-        f"- Doğum: {birth.get('date', '')} {birth.get('time', '')}",
+        f"- Doğum: {birth.get('date', '')} {'saat bilinmiyor' if birth.get('calculation_reference_only') else birth.get('time', '')}",
         f"- Yer: {birth_place}",
         f"- Saat dilimi: {birth.get('timezone_label') or birth.get('timezone', '')}",
         f"- Koordinatlar: {birth.get('latitude', '')}, {birth.get('longitude_geo', '')}",
-        f"- Saat güveni: {_birth_time_confidence_display_label(birth)}",
-        f"- Rektifikasyon kaynağı: {data_quality.get('rectification_source_label') or _rectification_source_label(birth.get('rectification_source')) if birth.get('rectification_status') == 'yapıldı' else 'yok'}",
+        f"- Müşteri saat beyanı: {_birth_time_confidence_display_label(birth)}",
+        *(
+            [
+                "- Uzman rektifikasyon kaynağı: "
+                f"{data_quality.get('rectification_source_label') or _rectification_source_label(birth.get('rectification_source'))}"
+            ]
+            if birth.get("rectification_status") == "yapıldı"
+            else []
+        ),
+        f"- Rektifikasyonlu kabul: {'evet' if data_quality.get('accepted_as_rectified') else 'hayır'}",
+        f"- Ev referansı: {data_quality.get('reference_frame', 'birth_lagna')}",
+        f"- Teknik hesaplama saati: {data_quality.get('calculation_reference_time') or 'doğum saati'}",
         f"- Lagna/ev yorum güveni: {data_quality.get('house_interpretation_confidence', '')}",
         (
-            "- Saat politikası: Ay Lagna yedeği kullanılmaz; saat belirsizken "
-            "Lagna, ev ve varga yorumu düşük güvenlidir."
+            "- Saat politikası: Yerel 12:00 yalnız hesaplama referansıdır; "
+            "gerçek yükselen yerine Chandra Lagna kullanılır."
             if data_quality.get("interpretation_policy")
-            == "rectification_required_no_moon_lagna_fallback"
-            else "- Saat politikası: Girilen doğum saati esas alınır."
+            == "unknown_time_noon_calculation_chandra_lagna_interpretation"
+            else "- Saat politikası: Müşterinin beyan ettiği doğum saati esas alınır."
         ),
         f"- Ayanamsa: {ayanamsa.get('type', '')} {ayanamsa.get('value', '')}",
         f"- House system: {meta.get('house_system', '')}",
@@ -17048,7 +17123,7 @@ def _build_expert_copy_markdown(chart, person_name, group_name):
         "",
         "## Ana Göstergeler",
         "",
-        f"- Lagna: {_markdown_sign(lagna)} {lagna.get('degree_str', '')}",
+        f"- {'Ay Lagnası' if lagna.get('reference_frame') == 'chandra_lagna' else 'Lagna'}: {_markdown_sign(lagna)} {lagna.get('degree_str', '')}",
         f"- Moon: {_markdown_sign(moon)} {moon.get('degree_str', '')}",
         f"- Sun: {_markdown_sign(sun)} {sun.get('degree_str', '')}",
         f"- Atmakaraka: {karakamsa.get('atmakaraka', '')}",
@@ -17231,23 +17306,33 @@ def _build_natal_markdown(chart, person_name, group_name):
         "",
         "## Doğum Bilgisi",
         "",
-        f"- Tarih: {birth.get('date')} {birth.get('time')}",
+        f"- Tarih: {birth.get('date')} {'saat bilinmiyor' if birth.get('calculation_reference_only') else birth.get('time')}",
         f"- Saat dilimi: {birth.get('timezone_label') or birth.get('timezone')}",
         f"- Koordinatlar: {birth.get('latitude')}, {birth.get('longitude_geo')}",
-        f"- Zaman güveni: {_birth_time_confidence_display_label(birth)}",
-        f"- Rektifikasyon kaynağı: {data_quality.get('rectification_source_label') or _rectification_source_label(birth.get('rectification_source')) if birth.get('rectification_status') == 'yapıldı' else 'yok'}",
+        f"- Müşteri saat beyanı: {_birth_time_confidence_display_label(birth)}",
+        *(
+            [
+                "- Uzman rektifikasyon kaynağı: "
+                f"{data_quality.get('rectification_source_label') or _rectification_source_label(birth.get('rectification_source'))}"
+            ]
+            if birth.get("rectification_status") == "yapıldı"
+            else []
+        ),
+        f"- Rektifikasyonlu kabul: {'evet' if data_quality.get('accepted_as_rectified') else 'hayır'}",
+        f"- Ev referansı: {data_quality.get('reference_frame', 'birth_lagna')}",
+        f"- Teknik hesaplama saati: {data_quality.get('calculation_reference_time') or 'doğum saati'}",
         f"- Lagna/ev yorum güveni: {data_quality.get('house_interpretation_confidence', '')}",
         (
-            "- Saat politikası: Ay Lagna yedeği kullanılmaz; saat belirsizken "
-            "Lagna, ev ve varga yorumu düşük güvenlidir."
+            "- Saat politikası: Yerel 12:00 yalnız hesaplama referansıdır; "
+            "gerçek yükselen yerine Chandra Lagna kullanılır."
             if data_quality.get("interpretation_policy")
-            == "rectification_required_no_moon_lagna_fallback"
-            else "- Saat politikası: Girilen doğum saati esas alınır."
+            == "unknown_time_noon_calculation_chandra_lagna_interpretation"
+            else "- Saat politikası: Müşterinin beyan ettiği doğum saati esas alınır."
         ),
         "",
         "## Lagna",
         "",
-        f"- Lagna: {lagna.get('sign_tr')} ({lagna.get('sign')}) {lagna.get('degree_str')}",
+        f"- {'Ay Lagnası' if lagna.get('reference_frame') == 'chandra_lagna' else 'Lagna'}: {lagna.get('sign_tr')} ({lagna.get('sign')}) {lagna.get('degree_str')}",
         f"- Nakshatra: {lagna.get('nakshatra', {}).get('name')} Pada {lagna.get('nakshatra', {}).get('pada')} ({lagna.get('nakshatra', {}).get('lord')})",
         "",
         "## Gezegen Tablosu",
@@ -21863,29 +21948,31 @@ def _session_rectification_status_label(chart, rectification_record):
 def _session_status_rows(chart, rectification_record, transit_pack):
     birth = chart.get("birth") or {}
     data_quality = chart.get("data_quality") or {}
-    explicit_status = birth.get("rectification_status")
     period = (transit_pack or {}).get("period") or {}
     period_context = _session_transit_period_context(transit_pack)
-    return [
-        ["Doğum", f"{birth.get('date', '')} {birth.get('time', '')}".strip()],
+    rows = [
+        [
+            "Doğum",
+            f"{birth.get('date', '')} "
+            f"{'saat bilinmiyor' if birth.get('calculation_reference_only') else birth.get('time', '')}".strip(),
+        ],
         ["Yer", birth.get("place", "")],
         [
-            "Saat güveni",
+            "Müşteri saat beyanı",
             _birth_time_confidence_display_label(birth)
             or data_quality.get("birth_time_confidence"),
         ],
         [
-            "Rektifikasyon",
-            _session_rectification_status_label(chart, rectification_record),
+            "Rektifikasyonlu kabul",
+            "evet" if data_quality.get("accepted_as_rectified") else "hayır",
         ],
         [
-            "Rektifikasyon kaynağı",
-            (
-                data_quality.get("rectification_source_label")
-                or _rectification_source_label(birth.get("rectification_source"))
-                if explicit_status == "yapıldı"
-                else "yok"
-            ),
+            "Ev referansı",
+            data_quality.get("reference_frame", "birth_lagna"),
+        ],
+        [
+            "Teknik hesaplama saati",
+            data_quality.get("calculation_reference_time") or "doğum saati",
         ],
         [
             "Lagna/ev yorum güveni",
@@ -21901,6 +21988,21 @@ def _session_status_rows(chart, rectification_record, transit_pack):
             ),
         ],
     ]
+    if rectification_record:
+        rows[6:6] = [
+            [
+                "Rektifikasyon",
+                _session_rectification_status_label(chart, rectification_record),
+            ],
+            [
+                "Rektifikasyon kaynağı",
+                (chart.get("data_quality") or {}).get("rectification_source_label")
+                or _rectification_source_label(birth.get("rectification_source"))
+                if birth.get("rectification_status") == "yapıldı"
+                else "kayıt içinde",
+            ],
+        ]
+    return rows
 
 
 def _build_session_preparation_package_markdown(
@@ -21913,6 +22015,11 @@ def _build_session_preparation_package_markdown(
     file_modified_at = datetime.now().astimezone().isoformat(timespec="seconds")
     title = f"{person_name} - Seans Hazırlık Teknik Veri Paketi"
     period_context = _session_transit_period_context(transit_pack)
+    first_step = (
+        "1. Müşteri saat beyanı ile uzman rektifikasyon kaydını ayrı ayrı kontrol et."
+        if rectification_record
+        else "1. Müşteri saat beyanı, ev referansı ve varga güvenlerini kontrol et."
+    )
     return "\n".join([
         "---",
         f'title: "{title}"',
@@ -21986,7 +22093,7 @@ def _build_session_preparation_package_markdown(
         "",
         "## Astrolog İçin Okuma Sırası",
         "",
-        "1. Saat güveni ve rektifikasyon durumunu kontrol et.",
+        first_step,
         "2. Yaşam olaylarında yeni veya belgesiz kayıtları ayır.",
         "3. Güncel Vimshottari zinciri ve aktif gezegen rollerini birlikte oku.",
         "4. Seçili dönem değişim noktalarından yalnız seans konusuyla ilgili tarihleri seç.",
@@ -22496,9 +22603,13 @@ def _parse_vault_natal_birth(text):
         latitude,
         longitude,
     )
-    confidence_match = re.search(r"^- Zaman güveni:\s*(.+)$", text, re.MULTILINE)
+    confidence_match = re.search(
+        r"^- (?:Zaman güveni|Müşteri saat beyanı):\s*(.+)$",
+        text,
+        re.MULTILINE,
+    )
     rectification_source_match = re.search(
-        r"^- Rektifikasyon kaynağı:\s*(.+)$",
+        r"^- (?:Uzman )?[Rr]ektifikasyon kaynağı:\s*(.+)$",
         text,
         re.MULTILINE,
     )
@@ -22594,6 +22705,14 @@ def _load_vault_natal_chart(natal_path):
         },
     }
     chart_payload = _build_v2_chart(chart, request_data, birth, birth["tz_offset"], timezone_id)
+    if birth.get("rectification_source"):
+        chart_payload["birth"]["rectification_status"] = "yapıldı"
+        chart_payload["birth"]["rectification_source"] = birth["rectification_source"]
+        chart_payload["data_quality"]["rectification_source"] = birth["rectification_source"]
+        chart_payload["data_quality"]["rectification_source_label"] = _rectification_source_label(
+            birth["rectification_source"]
+        )
+        _apply_rectified_varga_confidence_to_chart(chart_payload)
     chart_payload["life_period_analysis"] = _build_life_period_analysis_for_chart(chart_payload)
     return chart_payload, person
 
@@ -28629,7 +28748,6 @@ BETA_TOPIC_KEYWORDS = {
     "marriage": {"evlilik", "ilişki", "iliski", "partner", "eş", "es", "aşk", "ask", "d7"},
     "wealth": {"para", "finans", "gelir", "kazanç", "kazanc", "servet", "yatırım"},
     "health": {"sağlık", "saglik", "hastalık", "hastalik", "beden", "d12"},
-    "rectification": {"rektifikasyon", "doğum saati", "dogum saati", "saat düzeltme"},
     "transit": {"transit", "güncel", "bugün", "bugun", "şimdi", "simdi"},
 }
 
@@ -28652,6 +28770,14 @@ BETA_TIMING_KEYWORDS = {
     "üç aylık",
     "uc aylik",
     "3 aylık",
+}
+
+BETA_RECTIFICATION_KEYWORDS = {
+    "rektifikasyon",
+    "doğum saati düzeltme",
+    "dogum saati duzeltme",
+    "saat düzeltme",
+    "saat duzeltme",
 }
 
 
@@ -29204,8 +29330,11 @@ def _beta_chart_summary(chart):
     ]
     vargas = {}
     for division in VARGA_NAMES:
-        varga_lagna = _varga_lagna(chart, division)
+        varga = (chart.get("vargas") or {}).get(division) or {}
+        varga_lagna = varga.get("lagna") or {}
         vargas[division] = {
+            "confidence": varga.get("confidence"),
+            "reference_frame": varga.get("reference_frame") or "birth_lagna",
             "lagna": {
                 "longitude": (
                     varga_lagna.get("sign_index", 0) * 30.0
@@ -29220,16 +29349,16 @@ def _beta_chart_summary(chart):
                 {
                     "id": planet.get("id"),
                     "longitude": (
-                        (planet.get("varga_status") or {}).get(division, {}).get("sign_index", 0) * 30.0
-                        + ((planet.get("varga_status") or {}).get(division, {}).get("degree") or 0.0)
+                        planet.get("sign_index", 0) * 30.0
+                        + (planet.get("degree") or 0.0)
                     ),
-                    "sign": (planet.get("varga_status") or {}).get(division, {}).get("sign"),
-                    "sign_tr": (planet.get("varga_status") or {}).get(division, {}).get("sign_tr"),
-                    "degree": (planet.get("varga_status") or {}).get(division, {}).get("degree"),
-                    "degree_str": (planet.get("varga_status") or {}).get(division, {}).get("degree_str"),
+                    "sign": planet.get("sign"),
+                    "sign_tr": planet.get("sign_tr"),
+                    "degree": planet.get("degree"),
+                    "degree_str": planet.get("degree_str"),
                 }
-                for planet in chart.get("planets", [])
-                if planet.get("name") in supported_planets
+                for planet in varga.get("planets", [])
+                if planet.get("id")
             ],
         }
     active_periods = []
@@ -29245,7 +29374,7 @@ def _beta_chart_summary(chart):
                 "actual_end_jd": period.get("actual_end_jd"),
             })
     return {
-        "schema_version": "vedic-pwa-chart-summary-v1",
+        "schema_version": "vedic-pwa-chart-summary-v2",
         "display_name": ((birth.get("person") or {}).get("name")),
         "birth": {
             "date": birth.get("date"),
@@ -29253,12 +29382,18 @@ def _beta_chart_summary(chart):
             "place": birth.get("place"),
             "timezone": birth.get("timezone_label") or birth.get("timezone"),
             "time_confidence": birth.get("time_confidence"),
+            "time_confidence_label": birth.get("time_confidence_label"),
+            "calculation_reference_time": birth.get("calculation_reference_time"),
+            "calculation_reference_only": bool(birth.get("calculation_reference_only")),
         },
         "lagna": {
             "sign": lagna.get("sign"),
             "sign_tr": lagna.get("sign_tr"),
             "longitude": lagna.get("longitude"),
             "degree": lagna.get("degree_str"),
+            "reference_frame": lagna.get("reference_frame") or "birth_lagna",
+            "is_birth_ascendant": lagna.get("is_birth_ascendant", True),
+            "confidence": lagna.get("interpretation_confidence"),
         },
         "ayanamsa": (chart.get("ayanamsa") or {}).get("type") or "Lahiri",
         "planets": planets,
@@ -29276,6 +29411,11 @@ def _beta_detect_topic(question):
         if any(keyword.casefold() in normalized for keyword in keywords):
             return topic
     return "general"
+
+
+def _beta_is_rectification_question(question):
+    normalized = str(question or "").casefold()
+    return any(keyword.casefold() in normalized for keyword in BETA_RECTIFICATION_KEYWORDS)
 
 
 def _beta_detect_subject_topic(question):
@@ -29702,64 +29842,6 @@ def vedic_life_period_analysis():
         return jsonify({"error": f"Geçersiz veri: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Life period analysis hatası: {str(e)}"}), 500
-
-
-@app.route("/api/v2/rectification/analyze", methods=["POST"])
-def api_v2_rectification_analyze():
-    try:
-        data = request.get_json() or {}
-        result = _build_rectification_analysis(data)
-        return jsonify(result)
-
-    except (KeyError, TypeError, ValueError) as e:
-        return jsonify({"error": f"Geçersiz veri: {str(e)}"}), 400
-    except Exception as e:
-        return jsonify({"error": f"Rektifikasyon hatası: {str(e)}"}), 500
-
-
-@app.route("/api/v2/rectification/report", methods=["POST"])
-def api_v2_rectification_report():
-    try:
-        data = request.get_json() or {}
-        result = _build_rectification_report(data)
-        return jsonify(result)
-
-    except (KeyError, TypeError, ValueError) as e:
-        return jsonify({"error": f"Geçersiz rektifikasyon rapor verisi: {str(e)}"}), 400
-    except Exception as e:
-        return jsonify({"error": f"Rektifikasyon rapor hatası: {str(e)}"}), 500
-
-
-@app.route("/api/v2/rectification/save", methods=["POST"])
-def api_v2_rectification_save():
-    try:
-        data = request.get_json() or {}
-        record = _rectification_payload_from_save_data(data)
-        overwrite = bool(data.get("overwrite", False))
-        save_gate = _rectification_save_gate(record)
-        result = {
-            "person": record["person"],
-            "birth_base": record["birth_base"],
-            "birth_window": record["birth_window"],
-            "source_docs": record["source_docs"],
-            "search_window": record["search_window"],
-            "events": record["events"],
-            "event_count": len(record["events"]),
-        }
-        if save_gate:
-            http_status = save_gate.pop("_http_status", 400)
-            result.update(save_gate)
-            return jsonify(result), http_status
-
-        save_result = _save_rectification_record(record, overwrite=overwrite)
-        http_status = save_result.pop("_http_status", 200)
-        result.update(save_result)
-        return jsonify(result), http_status
-
-    except (KeyError, TypeError, ValueError) as e:
-        return jsonify({"error": f"Geçersiz rektifikasyon kayıt verisi: {str(e)}"}), 400
-    except Exception as e:
-        return jsonify({"error": f"Rektifikasyon kayıt hatası: {str(e)}"}), 500
 
 
 @app.route("/api/v2/transits/pack", methods=["POST"])
@@ -30241,6 +30323,13 @@ def api_v2_beta_chat_draft():
         question = str(data.get("question") or "").strip()
         if not question:
             raise ValueError("question boş olamaz")
+        if _beta_is_rectification_question(question):
+            return jsonify({
+                "ok": False,
+                "status": "rectification_service_separate",
+                "error_code": "rectification_not_available_in_customer_api",
+                "message": "Rektifikasyon uzman servisi ana müşteri API'sinden ayrıdır.",
+            }), 422
 
         profile_id = data.get("profile_id")
         chart_id = data.get("chart_id")
@@ -30317,6 +30406,13 @@ def api_v2_beta_chat_compare():
             raise ValueError("question boş olamaz")
         if len(question) > 2_000:
             raise ValueError("question çok uzun")
+        if _beta_is_rectification_question(question):
+            return jsonify({
+                "ok": False,
+                "status": "rectification_service_separate",
+                "error_code": "rectification_not_available_in_customer_api",
+                "message": "Rektifikasyon uzman servisi ana müşteri API'sinden ayrıdır.",
+            }), 422
         comparison_id = _beta_comparison_id(data.get("comparison_id"))
 
         with closing(_beta_db()) as conn:
