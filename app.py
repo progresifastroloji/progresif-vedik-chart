@@ -55,8 +55,16 @@ DEFAULT_PERSISTENT_ROOT = (
     else Path(__file__).resolve().parent / "data"
 )
 
-VAULT_ASTROLOGY_ROOT = Path(
+LOCAL_VAULT_ASTROLOGY_ROOT = Path(
     "/Users/leventkalayci/Documents/progresifastrolog/20-Areas/Personal/Astroloji"
+)
+VAULT_ASTROLOGY_ROOT = Path(
+    os.environ.get("PROGRESIF_VAULT_ASTROLOGY_ROOT")
+    or (
+        str(DEFAULT_PERSISTENT_ROOT / "vault" / "Astroloji")
+        if RAILWAY_VOLUME_ROOT
+        else str(LOCAL_VAULT_ASTROLOGY_ROOT)
+    )
 )
 app.config["VAULT_ASTROLOGY_ROOT"] = str(VAULT_ASTROLOGY_ROOT)
 app.config["BETA_DB_PATH"] = os.environ.get(
