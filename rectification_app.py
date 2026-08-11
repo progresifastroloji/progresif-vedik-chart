@@ -40,6 +40,9 @@ rectification_app.config["ALLOWED_DASHBOARD_ORIGINS"] = ALLOWED_DASHBOARD_ORIGIN
 
 @rectification_app.before_request
 def _require_local_access():
+    if request.method == "GET" and request.path in {"/health", "/healthz"}:
+        return None
+
     content_length = request.content_length
     max_content_length = rectification_app.config.get("MAX_CONTENT_LENGTH")
     if (
@@ -113,6 +116,7 @@ def _request_too_large(_error):
 
 
 @rectification_app.route("/health", methods=["GET"])
+@rectification_app.route("/healthz", methods=["GET"])
 def health():
     return jsonify({
         "ok": True,

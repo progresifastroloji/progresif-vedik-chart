@@ -3045,6 +3045,7 @@ class ChartApiV2Test(unittest.TestCase):
             "rectification_service_ready",
         )
         self.assertEqual(health_response.headers["Cache-Control"], "no-store")
+        self.assertEqual(rectification_client.get("/healthz").status_code, 200)
 
         cors_health_response = rectification_client.get(
             "/health",
@@ -3097,22 +3098,34 @@ class ChartApiV2Test(unittest.TestCase):
             "/health",
             environ_base={"REMOTE_ADDR": "192.0.2.10"},
         )
-        self.assertEqual(external_response.status_code, 403)
-        self.assertIn("yalnızca yerel cihazdan", external_response.get_json()["error"])
+        self.assertEqual(external_response.status_code, 200)
+        self.assertEqual(
+            external_response.get_json()["status"],
+            "rectification_service_ready",
+        )
 
         old_local = rectification_app.config["LOCAL_ACCESS_ONLY"]
         old_token = rectification_app.config["API_TOKEN"]
         try:
             rectification_app.config["LOCAL_ACCESS_ONLY"] = False
             rectification_app.config["API_TOKEN"] = "separate-test-token"
-            self.assertEqual(rectification_client.get("/health").status_code, 401)
-            authorized = rectification_client.get(
-                "/health",
+            self.assertEqual(rectification_client.get("/health").status_code, 200)
+            self.assertEqual(
+                rectification_client.post("/api/v2/rectification/analyze", json={}).status_code,
+                401,
+            )
+            authorized = rectification_client.post(
+                "/api/v2/rectification/analyze",
+                json={},
                 headers={"Authorization": "Bearer separate-test-token"},
             )
-            self.assertEqual(authorized.status_code, 200)
+            self.assertEqual(authorized.status_code, 400)
             rectification_app.config["API_TOKEN"] = ""
-            self.assertEqual(rectification_client.get("/health").status_code, 503)
+            self.assertEqual(rectification_client.get("/health").status_code, 200)
+            self.assertEqual(
+                rectification_client.post("/api/v2/rectification/analyze", json={}).status_code,
+                503,
+            )
         finally:
             rectification_app.config["LOCAL_ACCESS_ONLY"] = old_local
             rectification_app.config["API_TOKEN"] = old_token
