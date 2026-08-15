@@ -192,8 +192,6 @@ def _model_request(candidate, evidence):
         + ". status yalnız applied|not_applicable|missing olabilir. "
         "Zorunlu bir adım missing ise analysis_status INCOMPLETE olmalıdır. "
         "Her evidence_path evidence. ile başlamalı ve paketteki gerçek alana işaret etmelidir. "
-        "Shadbala veya strength_ratio hakkında her supporting_evidence/challenging_evidence iddiası "
-        "evidence.strength_summary yolunu ya da onun altındaki gerçek bir yolu kullanmalıdır. "
         "Uzun zaman serilerindeki birden fazla satırı destekleyen iddia için dizinin kök yolunu "
         "(örneğin evidence.transits.daily_timing) kullan. "
         "Konu paketindeki houses, planets, lordships, yogas, vargas ve active_dasha alanları "
@@ -274,11 +272,23 @@ def _evidence_rows(value, evidence):
             raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
         claim = str(item.get("claim") or "").strip()
         evidence_path = str(item.get("evidence_path") or "").strip()
-        canonical_path = (
-            _canonical_evidence_path(evidence, evidence_path)
-            if EVIDENCE_PATH_PATTERN.fullmatch(evidence_path)
-            else None
+        is_strength_claim = bool(
+            re.search(r"\b(?:shadbala|strength_ratio)\b", claim, re.IGNORECASE)
         )
+        strength_summary = evidence.get("strength_summary")
+        if (
+            is_strength_claim
+            and isinstance(strength_summary, dict)
+            and isinstance(strength_summary.get("ranking"), list)
+            and strength_summary["ranking"]
+        ):
+            canonical_path = "evidence.strength_summary"
+        else:
+            canonical_path = (
+                _canonical_evidence_path(evidence, evidence_path)
+                if EVIDENCE_PATH_PATTERN.fullmatch(evidence_path)
+                else None
+            )
         if (
             not claim
             or not canonical_path

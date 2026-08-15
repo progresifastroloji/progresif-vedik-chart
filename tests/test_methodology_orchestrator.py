@@ -242,6 +242,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
         value["supporting_evidence"][0]["claim"] = "En yüksek Shadbala oranı Güneş'tedir."
+        value["supporting_evidence"][0]["evidence_path"] = "evidence.strength_summary.planets.0"
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
         evidence = {
             "topic": "career",
