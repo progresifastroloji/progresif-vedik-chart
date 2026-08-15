@@ -89,6 +89,75 @@ class QuestionClassifierTest(unittest.TestCase):
             "application/json",
         )
 
+    def test_classifier_repairs_bounded_evidence_omissions(self):
+        def model_call(request_id, _request):
+            incomplete = _classification(
+                required_evidence=["natal_core", "active_dasha"],
+                sensitivity="standard",
+            )
+            return request_id, _model_payload(incomplete)
+
+        result = classify_question(
+            "İyi hissetmiyorum.",
+            "route-test-evidence",
+            model_call,
+            "2026-08-15T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["primary_topic"], "wellbeing")
+        self.assertEqual(result["sensitivity"], "mental_wellbeing")
+        self.assertIn("natal_emotional_core", result["required_evidence"])
+
+    def test_explicit_daily_career_context_overrides_model_misroute(self):
+        def model_call(request_id, _request):
+            wrong = _classification(
+                primary_topic="wellbeing",
+                time_scope="instant",
+                target_start=None,
+                target_end=None,
+                target_datetime="now",
+            )
+            return request_id, _model_payload(wrong)
+
+        result = classify_question(
+            "Bugün işte neden gerginim?",
+            "route-test-daily-career",
+            model_call,
+            "2026-08-15T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["primary_topic"], "career")
+        self.assertEqual(result["time_scope"], "daily")
+        self.assertEqual(result["target_start"], "2026-08-15")
+        self.assertEqual(result["target_end"], "2026-08-15")
+        self.assertIsNone(result["target_datetime"])
+
+    def test_none_scope_discards_model_supplied_dates(self):
+        def model_call(request_id, _request):
+            wrong = _classification(
+                primary_topic="career",
+                time_scope="none",
+                timing_required=False,
+                target_start="2026-08-15",
+                target_end="2026-08-15",
+                target_datetime=None,
+                required_evidence=["natal_core", "active_dasha"],
+                sensitivity="standard",
+            )
+            return request_id, _model_payload(wrong)
+
+        result = classify_question(
+            "İşimde neden mutsuzum?",
+            "route-test-no-time",
+            model_call,
+            "2026-08-15T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["primary_topic"], "career")
+        self.assertEqual(result["time_scope"], "none")
+        self.assertIsNone(result["target_start"])
+        self.assertIsNone(result["target_end"])
+
     def test_prompt_explicitly_blocks_hissetmiyorum_career_substring_bug(self):
         request = build_request(
             "İyi hissetmiyorum.",
