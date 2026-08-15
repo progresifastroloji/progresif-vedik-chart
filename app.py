@@ -71,8 +71,16 @@ app.config["BETA_DB_PATH"] = os.environ.get(
     "PROGRESIF_BETA_DB_PATH",
     str(DEFAULT_PERSISTENT_ROOT / "beta.sqlite3"),
 )
-app.config["BETA_DAILY_CHAT_LIMIT"] = 20
-app.config["BETA_DAILY_HEAVY_LIMIT"] = 3
+# Customer question rights are reserved and finalized by the Supabase product
+# entitlement ledger. These legacy local beta guards must not impose a second,
+# contradictory limit on premium/unlimited accounts. Environment overrides stay
+# available as an emergency operational circuit breaker.
+app.config["BETA_DAILY_CHAT_LIMIT"] = int(
+    os.environ.get("BETA_DAILY_CHAT_LIMIT", "1000000")
+)
+app.config["BETA_DAILY_HEAVY_LIMIT"] = int(
+    os.environ.get("BETA_DAILY_HEAVY_LIMIT", "1000000")
+)
 app.config["USER_DATA_ROOT"] = os.environ.get(
     "VEDIC_USER_DATA_ROOT",
     str(DEFAULT_PERSISTENT_ROOT / "users"),
