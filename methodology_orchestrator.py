@@ -418,6 +418,76 @@ def _validate_wellbeing_language(summary, evidence_rows, evidence):
             502,
         )
 
+
+def _wellbeing_timing_fact(evidence):
+    if evidence.get("subject_topic") != "wellbeing":
+        return None
+    question_route = evidence.get("question_route") or {}
+    scope = question_route.get("time_scope")
+    if scope not in {"daily", "instant"}:
+        return None
+
+    transits = evidence.get("transits") or {}
+    if scope == "instant":
+        record = transits.get("instant_snapshot") or {}
+        evidence_path = "evidence.transits.instant_snapshot.panchanga"
+        if not record:
+            records = transits.get("daily_records") or []
+            record = records[0] if records else {}
+            evidence_path = "evidence.transits.daily_records.0.panchanga"
+    else:
+        records = transits.get("daily_records") or []
+        record = records[0] if records else {}
+        evidence_path = "evidence.transits.daily_records.0.panchanga"
+    panchanga = record.get("panchanga") or {}
+    planets = record.get("planets") or []
+    moon = next(
+        (
+            planet for planet in planets
+            if str(planet.get("name") or "").casefold() == "moon"
+        ),
+        {},
+    )
+    nakshatra = panchanga.get("moon_nakshatra") or {}
+    tithi = panchanga.get("tithi") or {}
+    vara = panchanga.get("vara") or {}
+    moon_sign = moon.get("sign_tr") or moon.get("sign")
+    nakshatra_name = nakshatra.get("name")
+    tithi_name = tithi.get("name") or tithi.get("sanskrit")
+    vara_name = vara.get("sanskrit") or vara.get("name")
+    if not nakshatra_name or not (tithi_name or vara_name):
+        return None
+
+    location = f" {moon_sign} burcunda" if moon_sign else ""
+    calendar_parts = [
+        f"Tithi {tithi_name}" if tithi_name else None,
+        f"Vara {vara_name}" if vara_name else None,
+    ]
+    calendar_text = ", ".join(item for item in calendar_parts if item)
+    claim = (
+        f"Transit Ay{location} {nakshatra_name} nakshatrasında; "
+        f"Panchanga kaydında {calendar_text}."
+    )
+    return {"claim": claim, "evidence_path": evidence_path}
+
+
+def _ensure_wellbeing_timing_evidence(summary, supporting_evidence, evidence):
+    fact = _wellbeing_timing_fact(evidence)
+    if not fact:
+        return summary, supporting_evidence
+    moon_pattern = re.compile(r"(?:\bay\b|\bay['’]|\bmoon\b)", re.IGNORECASE)
+    panchanga_pattern = re.compile(
+        r"\b(?:panchanga|tithi|vara|nakshatra|yoga|karana)\w*\b",
+        re.IGNORECASE,
+    )
+    if not moon_pattern.search(summary) or not panchanga_pattern.search(summary):
+        summary = f"{summary.rstrip()} {fact['claim']}"
+    cited_claims = "\n".join(row["claim"] for row in supporting_evidence)
+    if not moon_pattern.search(cited_claims) or not panchanga_pattern.search(cited_claims):
+        supporting_evidence = [*supporting_evidence, fact]
+    return summary, supporting_evidence
+
+
 def validate_methodology_response(payload, evidence):
     try:
         value = json.loads(_response_text(payload))
@@ -472,6 +542,11 @@ def validate_methodology_response(payload, evidence):
     challenging_evidence = [
         _validated_strength_claim(row, evidence) for row in challenging_evidence
     ]
+    summary, supporting_evidence = _ensure_wellbeing_timing_evidence(
+        summary,
+        supporting_evidence,
+        evidence,
+    )
     if expected_timing:
         cited_paths = {
             row["evidence_path"]

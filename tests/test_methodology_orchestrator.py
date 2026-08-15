@@ -266,7 +266,10 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "transits": {
                 "daily_records": [{
                     "date": "2026-08-15",
-                    "panchanga": {"tithi": {"name": "Shukla Dvitiya"}},
+                    "panchanga": {
+                        "tithi": {"name": "Shukla Dvitiya"},
+                        "moon_nakshatra": {"name": "Uttara Phalguni"},
+                    },
                     "planets": [{"name": "Moon", "degree": "10° 00' 00\""}],
                 }],
             },
@@ -300,7 +303,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "methodology_model_wellbeing_safety_invalid",
         )
 
-    def test_instant_wellbeing_requires_moon_and_panchanga_in_summary(self):
+    def test_instant_wellbeing_adds_verified_moon_and_panchanga_fact(self):
         payload = _payload("Bugünün transitleri duygusal yoğunluğu açıklıyor.")
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
         value["supporting_evidence"][0] = {
@@ -319,19 +322,23 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "transits": {
                 "daily_records": [{
                     "date": "2026-08-15",
-                    "panchanga": {"tithi": {"name": "Shukla Dvitiya"}},
+                    "panchanga": {
+                        "tithi": {"name": "Shukla Dvitiya"},
+                        "moon_nakshatra": {"name": "Uttara Phalguni"},
+                    },
                     "planets": [{"name": "Moon", "degree": "10° 00' 00\""}],
                 }],
             },
         }
 
-        with self.assertRaises(MethodologyOrchestrationError) as raised:
-            validate_methodology_response(payload, evidence)
+        validated = validate_methodology_response(payload, evidence)
 
-        self.assertEqual(
-            raised.exception.code,
-            "methodology_model_timing_evidence_invalid",
-        )
+        self.assertIn("Transit Ay", validated["summary"])
+        self.assertIn("Panchanga", validated["summary"])
+        self.assertTrue(any(
+            row["evidence_path"].endswith(".panchanga")
+            for row in validated["supporting_evidence"]
+        ))
 
     def test_timing_response_rejects_degree_not_present_in_evidence(self):
         payload = _payload()
