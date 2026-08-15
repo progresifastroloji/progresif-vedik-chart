@@ -185,8 +185,11 @@ def _model_request(candidate, evidence):
         "Shadbala gezegen sıralamasında yalnız evidence.strength_summary içindeki strength_ratio kullanılır; "
         "legacy_raw_total gezegenler arası güç karşılaştırması değildir. "
         "mental_wellbeing veya wellbeing sorularında psikolojik/psikiyatrik teşhis, "
-        "kişilik bozukluğu hükmü ya da kriz güvencesi üretme; yalnız sağlanan "
+        "kişilik bozukluğu hükmü, klinik durum var/yok hükmü ya da kriz güvencesi üretme; yalnız sağlanan "
         "astrolojik örüntüyü teşhis dışı dille açıkla. "
+        "Wellbeing konulu daily veya instant soruda ana summary içinde transit Ay'ı ve en az bir "
+        "Panchanga bileşenini (Tithi, Vara, Nakshatra, Yoga veya Karana) değerlendir. Bunları birlikte "
+        "adlandıran en az bir kanıt satırı gerçek daily_records veya instant_snapshot yolunu kullansın. "
         "Teknik analiz tamamlanmadan koçluk veya motivasyon ekleme. "
         "Yanıt yalnız geçerli JSON olsun.\n\n"
         f"METODOLOJİ KİMLİĞİ: {candidate['id']}@{candidate['version']}\n"
@@ -364,6 +367,53 @@ def _validate_timing_claim_tokens(summary, evidence_rows, evidence):
         )
 
 
+def _validate_wellbeing_language(summary, evidence_rows, evidence):
+    if evidence.get("subject_topic") != "wellbeing":
+        return
+
+    normalized_summary = summary.casefold()
+    forbidden = (
+        r"klinik\s+(?:bir\s+)?durum\s+değil",
+        r"psikolojik\s+(?:bir\s+)?hastalık\s+değil",
+        r"psikiyatrik\s+(?:bir\s+)?durum\s+değil",
+        r"tedavi\s+gerektirmez",
+    )
+    if any(re.search(pattern, normalized_summary) for pattern in forbidden):
+        raise MethodologyOrchestrationError(
+            "methodology_model_wellbeing_safety_invalid",
+            502,
+        )
+
+    question_route = evidence.get("question_route") or {}
+    if question_route.get("time_scope") not in {"daily", "instant"}:
+        return
+
+    moon_pattern = re.compile(r"(?:\bay\b|\bay['’]|\bmoon\b)", re.IGNORECASE)
+    panchanga_pattern = re.compile(
+        r"\b(?:panchanga|tithi|vara|nakshatra|yoga|karana)\b",
+        re.IGNORECASE,
+    )
+    if not moon_pattern.search(summary) or not panchanga_pattern.search(summary):
+        raise MethodologyOrchestrationError(
+            "methodology_model_timing_evidence_invalid",
+            502,
+        )
+
+    has_joint_transit_citation = any(
+        row["evidence_path"].startswith((
+            "evidence.transits.daily_records",
+            "evidence.transits.instant_snapshot",
+        ))
+        and moon_pattern.search(row["claim"])
+        and panchanga_pattern.search(row["claim"])
+        for row in evidence_rows
+    )
+    if not has_joint_transit_citation:
+        raise MethodologyOrchestrationError(
+            "methodology_model_timing_evidence_invalid",
+            502,
+        )
+
 def validate_methodology_response(payload, evidence):
     try:
         value = json.loads(_response_text(payload))
@@ -433,6 +483,11 @@ def validate_methodology_response(payload, evidence):
             [*supporting_evidence, *challenging_evidence],
             evidence,
         )
+    _validate_wellbeing_language(
+        summary,
+        [*supporting_evidence, *challenging_evidence],
+        evidence,
+    )
     return {
         "question_intent": {
             "interpreted_question": interpreted_question,

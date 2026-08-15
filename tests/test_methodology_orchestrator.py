@@ -247,7 +247,9 @@ class MethodologyOrchestratorTest(unittest.TestCase):
     def test_timing_response_requires_real_transit_citation_and_real_date(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
-        value["summary"] = "2026-08-15 tarihindeki göstergeler bugünün temasını destekliyor."
+        value["summary"] = (
+            "2026-08-15 tarihinde transit Ay ve Tithi birlikte bugünün temasını destekliyor."
+        )
         value["supporting_evidence"][0] = {
             "claim": "2026-08-15 günü Ay kaydı ve Panchanga birlikte incelendi.",
             "evidence_path": "evidence.transits.daily_records.0",
@@ -260,6 +262,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         evidence = {
             "topic": "transit",
             "subject_topic": "wellbeing",
+            "question_route": {"time_scope": "instant"},
             "transits": {
                 "daily_records": [{
                     "date": "2026-08-15",
@@ -276,6 +279,55 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
         with self.assertRaises(MethodologyOrchestrationError) as raised:
             validate_methodology_response(payload, evidence)
+        self.assertEqual(
+            raised.exception.code,
+            "methodology_model_timing_evidence_invalid",
+        )
+
+    def test_wellbeing_response_rejects_clinical_reassurance(self):
+        payload = _payload("Bu süreç klinik bir durum değil; geçici bir astrolojik etkidir.")
+        evidence = {
+            "topic": "character",
+            "subject_topic": "wellbeing",
+            "topic_packet": {},
+        }
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_methodology_response(payload, evidence)
+
+        self.assertEqual(
+            raised.exception.code,
+            "methodology_model_wellbeing_safety_invalid",
+        )
+
+    def test_instant_wellbeing_requires_moon_and_panchanga_in_summary(self):
+        payload = _payload("Bugünün transitleri duygusal yoğunluğu açıklıyor.")
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"][0] = {
+            "claim": "Transit Ay kaydı incelendi.",
+            "evidence_path": "evidence.transits.daily_records.0",
+        }
+        value["challenging_evidence"][0] = {
+            "claim": "Günün transit sınırları dikkate alındı.",
+            "evidence_path": "evidence.transits.daily_records.0",
+        }
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic": "transit",
+            "subject_topic": "wellbeing",
+            "question_route": {"time_scope": "instant"},
+            "transits": {
+                "daily_records": [{
+                    "date": "2026-08-15",
+                    "panchanga": {"tithi": {"name": "Shukla Dvitiya"}},
+                    "planets": [{"name": "Moon", "degree": "10° 00' 00\""}],
+                }],
+            },
+        }
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_methodology_response(payload, evidence)
+
         self.assertEqual(
             raised.exception.code,
             "methodology_model_timing_evidence_invalid",

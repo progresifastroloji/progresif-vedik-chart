@@ -30985,9 +30985,7 @@ def _beta_build_chat_draft(
     evidence = {
         "chart_summary": _beta_chart_summary(chart),
         "active_dasha": _beta_active_dasha_evidence(chart),
-        "strength_summary": (
-            None if topic == "transit" else _beta_shadbala_strength_summary(chart)
-        ),
+        "strength_summary": _beta_shadbala_strength_summary(chart),
         "topic_packet": packet,
         "natal_sections": _beta_selected_natal_sections(
             chart,
