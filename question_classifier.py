@@ -122,6 +122,10 @@ def normalize_classification(value, question, now_iso):
         normalized["time_scope"] = "instant"
     elif explicit_daily:
         normalized["time_scope"] = "daily"
+    elif emotional_context and normalized.get("time_scope") == "instant":
+        # A present-tense feeling is not automatically an hour-specific
+        # transit question. Instant mode requires an explicit "now" signal.
+        normalized["time_scope"] = "none"
 
     time_scope = str(normalized.get("time_scope") or "").strip()
     primary_topic = str(normalized.get("primary_topic") or "").strip()

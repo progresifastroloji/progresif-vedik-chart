@@ -105,6 +105,7 @@ class QuestionClassifierTest(unittest.TestCase):
         )
 
         self.assertEqual(result["primary_topic"], "wellbeing")
+        self.assertEqual(result["time_scope"], "none")
         self.assertEqual(result["sensitivity"], "mental_wellbeing")
         self.assertIn("natal_emotional_core", result["required_evidence"])
 
