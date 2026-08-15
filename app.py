@@ -31993,6 +31993,13 @@ def api_v2_beta_chat_compare():
             comparison_id,
             call_vertex_bridge,
         )
+        # Preserve the server-controlled route and evidence provenance beside
+        # the model result. The PWA uses this trace to show the exact transit
+        # source/date/time without asking the model to repeat infrastructure
+        # metadata in prose.
+        comparison["context_trace"] = draft.get("context_trace")
+        comparison["question_route"] = draft.get("question_route")
+        comparison["routing_comparison"] = draft.get("routing_comparison")
 
         with closing(_beta_db()) as conn:
             updated_at = _beta_now()
