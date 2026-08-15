@@ -79,6 +79,7 @@ app.config["USER_DATA_ROOT"] = os.environ.get(
 )
 PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v3"
 PWA_ARTIFACT_MANIFEST_VERSION = "vedic-pwa-artifact-manifest-v2"
+PWA_ARTIFACT_GENERATOR_REVISION = "compact-natal-20260815-2"
 PWA_ARTIFACT_PROFILE_COMPACT = "compact_natal_v1"
 PWA_ARTIFACT_PROFILE_LEGACY = "legacy_full_v2"
 PWA_ARTIFACT_DEFAULT_PROFILE = os.environ.get(
@@ -29584,7 +29585,7 @@ def _build_natal_interpretation_package_markdown(
             "byte_size": len(encoded_block),
             "sha256": _pwa_artifact_sha256(encoded_block),
         })
-    return content.rstrip() + "\n", section_index
+    return content, section_index
 
 
 PWA_ARTIFACT_BUILDERS = (
@@ -29672,6 +29673,7 @@ def _pwa_artifact_existing_manifest(
     if (
         manifest.get("contract_version") != PWA_ARTIFACT_MANIFEST_VERSION
         or manifest.get("schema_version") != PWA_ARTIFACT_SCHEMA_VERSION
+        or manifest.get("generator_revision") != PWA_ARTIFACT_GENERATOR_REVISION
         or manifest.get("artifact_profile") != artifact_profile
         or manifest.get("owner_user_id") != owner_user_id
         or manifest.get("profile_id") != profile_id
@@ -29825,6 +29827,7 @@ def _generate_pwa_artifact_set(
     manifest = {
         "contract_version": PWA_ARTIFACT_MANIFEST_VERSION,
         "schema_version": PWA_ARTIFACT_SCHEMA_VERSION,
+        "generator_revision": PWA_ARTIFACT_GENERATOR_REVISION,
         "artifact_profile": artifact_profile,
         "required_codes": list(PWA_ARTIFACT_PROFILE_CODES[artifact_profile]),
         "owner_user_id": owner_user_id,

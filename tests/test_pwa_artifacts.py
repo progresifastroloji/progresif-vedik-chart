@@ -104,6 +104,7 @@ class PwaArtifactEndpointTest(unittest.TestCase):
         self.assertEqual(natal["sections"][0]["id"], "gemini_reading_protocol")
         self.assertEqual(natal["sections"][-1]["id"], "technical_layer_status")
         self.assertEqual(len({item["id"] for item in natal["sections"]}), 32)
+        self.assertEqual(natal["sections"][-1]["byte_end"], natal["byte_size"])
 
         root = (
             Path(app.config["USER_DATA_ROOT"])
