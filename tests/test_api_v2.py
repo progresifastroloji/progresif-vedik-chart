@@ -24,6 +24,7 @@ from app import (  # noqa: E402
     _build_rectification_decision,
     _build_rectification_v1_status,
     _build_parivartana_yogas,
+    _build_planet_role_activation_package_markdown,
     _build_rectification_embedded_markdown,
     _rectification_ranking_mode,
     _build_session_preparation_package_markdown,
@@ -51,6 +52,8 @@ from app import (  # noqa: E402
     _parse_vault_natal_birth,
     _parashari_drik_aspect_virupa,
     _planet_package_point,
+    _planet_role_shadbala_display,
+    _planet_role_shadbala_label,
     _rectification_event_rule,
     _rectification_score_event,
     _rectification_expected_lagna_from_birth_base,
@@ -166,6 +169,85 @@ class ChartApiV2Test(unittest.TestCase):
             _planet_package_point(chart, "Rahu")["sign_index"],
             2,
         )
+
+    def test_planet_role_shadbala_uses_ratio_and_excludes_nodes(self):
+        chart = {
+            "shadbala": {
+                "planets": [
+                    {
+                        "planet": "Sun",
+                        "total_score": 175.55,
+                        "grade": "moderate",
+                        "professional_total": {"strength_ratio": 1.4391},
+                    },
+                ],
+            },
+        }
+
+        self.assertEqual(_planet_role_shadbala_label(1.25), "strong")
+        self.assertEqual(_planet_role_shadbala_label(1.05), "moderate")
+        self.assertEqual(_planet_role_shadbala_label(1.0499), "weak")
+        self.assertEqual(
+            _planet_role_shadbala_display(chart, "Sun"),
+            "175.55 ham / 1.4391 oran / strong",
+        )
+        self.assertEqual(
+            _planet_role_shadbala_display(chart, "Rahu"),
+            "hesaplanmaz (gölge gezegen)",
+        )
+        self.assertEqual(
+            _planet_role_shadbala_display(chart, "Ketu"),
+            "hesaplanmaz (gölge gezegen)",
+        )
+
+    def test_planet_role_markdown_clarifies_connections_and_hides_local_path(self):
+        chart = self._sample_v2_chart()
+        markdown = _build_planet_role_activation_package_markdown(
+            chart,
+            "levo",
+            "Grup-01",
+            transit_pack={
+                "period": {
+                    "type": "three_month",
+                    "range_start": "2026-07-01",
+                    "range_end": "2026-09-30",
+                    "day_count": 92,
+                },
+                "_source_path": (
+                    "/Users/leventkalayci/private/"
+                    "levo-3 Aylık Transit-2026-07_2026-09.md"
+                ),
+            },
+        )
+        summary = markdown[
+            markdown.index("## GPT İçin Hızlı Okuma"):
+            markdown.index("## Ev Bazlı Drishti Özeti")
+        ]
+        sun = markdown[markdown.index("## Güneş"):markdown.index("## Ay")]
+
+        self.assertIn(
+            "175.57 ham / 1.4391 oran / strong",
+            summary,
+        )
+        self.assertEqual(
+            summary.count("hesaplanmaz (gölge gezegen)"),
+            2,
+        )
+        self.assertIn("### Bu Gezegenin Kendi Bağlantıları", sun)
+        self.assertIn(
+            "### Bu Gezegeni Dispozitör / Nakshatra Lordu Alan Gezegenler",
+            sun,
+        )
+        self.assertIn(
+            "| Saturn | burç dispozitörü | Aslan (Leo), ev 8 |",
+            sun,
+        )
+        self.assertIn(
+            "levo-3 Aylık Transit-2026-07_2026-09.md",
+            markdown,
+        )
+        self.assertNotIn("/Users/leventkalayci/", markdown)
+        self.assertNotIn("[[", markdown)
 
     def test_d16_shodasamsha_uses_classical_modality_starts_and_boundaries(self):
         segment = 30.0 / 16.0
@@ -7380,7 +7462,8 @@ class ChartApiV2Test(unittest.TestCase):
                     career_package_text,
                 )
                 self.assertIn(
-                    f"- Kaynak transit dosyası: {range_data['paths']['transit_pack']}",
+                    "- Kaynak transit dosyası: "
+                    f"{Path(range_data['paths']['transit_pack']).name}",
                     career_package_text,
                 )
 
@@ -7725,7 +7808,34 @@ class ChartApiV2Test(unittest.TestCase):
                 self.assertIn("Aktivasyon notu:", planets_package_text)
                 self.assertIn("natal/Jaimini omurga kanıtıdır", planets_package_text)
                 self.assertIn("ev yöneticiliği", planets_package_text)
-                self.assertIn("### Dispozitör ve Nakshatra Bağlantıları", planets_package_text)
+                self.assertEqual(
+                    planets_package_text.count("### Bu Gezegenin Kendi Bağlantıları"),
+                    9,
+                )
+                self.assertEqual(
+                    planets_package_text.count(
+                        "### Bu Gezegeni Dispozitör / Nakshatra Lordu Alan Gezegenler"
+                    ),
+                    9,
+                )
+                self.assertEqual(
+                    planets_package_text.count(
+                        "Bu tablo gelen bağlantıları gösterir. Bu gezegenin kendi dispozitörü"
+                    ),
+                    9,
+                )
+                self.assertIn(
+                    "| Bağımlı Gezegen | Bağlantı Türü | Teknik Değer | Kanıt |",
+                    planets_package_text,
+                )
+                self.assertRegex(
+                    summary_text,
+                    r"\d+(?:\.\d+)? ham / \d+\.\d{4} oran / (strong|moderate|weak)",
+                )
+                self.assertIn(
+                    "hesaplanmaz (gölge gezegen)",
+                    summary_text,
+                )
                 self.assertIn("### Açı Bağlantıları", planets_package_text)
                 self.assertIn("### Varga Konumları", planets_package_text)
                 self.assertIn("vargas.D1.planets.rahu", planets_package_text)
@@ -7755,6 +7865,12 @@ class ChartApiV2Test(unittest.TestCase):
                 )
                 self.assertIn("transit_pack.days[]", session_package_text)
                 self.assertNotIn("kesin gerçekleşecek", session_package_text)
+                self.assertIn(
+                    "| Dosya | Dosya Adı |",
+                    session_package_text,
+                )
+                self.assertNotIn(str(Path(tmp_dir).resolve()), session_package_text)
+                self.assertNotIn(str(Path(tmp_dir).resolve()), planets_package_text)
                 transit_3_month_path = Path(data["transit_3_month"]["paths"]["transit_pack"])
                 self.assertIn("Test Kisi-3 Aylık Transit-", transit_3_month_path.name)
                 self.assertTrue(transit_3_month_path.exists())
@@ -7789,7 +7905,8 @@ class ChartApiV2Test(unittest.TestCase):
                 self.assertIn("Dignity", person_text)
                 self.assertIn("Combustion", person_text)
                 self.assertIn("War", person_text)
-                self.assertIn("[[Test Kisi-Yorumlar|Yorumlar]]", person_text)
+                self.assertIn("Yorumlar (Test Kisi-Yorumlar)", person_text)
+                self.assertNotIn("[[", person_text)
                 self.assertIn("## D9 Navamsha", person_text)
                 self.assertIn("## Jaimini Chara Karakalar", person_text)
                 self.assertIn("## Vimshottari Dasha Özeti", person_text)

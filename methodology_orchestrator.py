@@ -9,10 +9,25 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
-CONTRACT_VERSION = "vedic-methodology-comparison-v1"
+CONTRACT_VERSION = "vedic-system-analysis-v2"
 MAX_METHODOLOGY_BYTES = 64 * 1024
 MAX_PROMPT_BYTES = 220 * 1024
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
+COVERAGE_STATUSES = {"applied", "not_applicable", "missing"}
+REQUIRED_METHODOLOGY_STEPS = (
+    "question_and_scope",
+    "topic_package",
+    "data_gate",
+    "d1_natal_promise",
+    "bhava_lord_karaka",
+    "dispositor_and_nakshatra",
+    "strength_capacity_delivery",
+    "relevant_varga",
+    "dasha_access",
+    "transit_trigger",
+    "counter_evidence",
+    "thematic_synthesis",
+)
 RETRYABLE_RESPONSE_ERRORS = {
     "methodology_model_json_invalid",
     "methodology_model_response_empty",
@@ -22,28 +37,12 @@ EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
 CANDIDATE_MANIFEST = (
     {
-        "id": "vedic-classical-strict-v1",
-        "title": "Klasik ve Sıkı Vedik Metodoloji",
+        "id": "vedic-system-methodology-v1",
+        "title": "Vedik Analiz Sistem Metodolojisi",
         "version": "1.0.0",
-        "status": "candidate",
-        "filename": "vedic-classical-strict-v1.md",
-        "sha256": "f38a9dfb3f6954f46c2e8b2b5863aaeecb7983aef709a3a5e2b644ec0a78cd1d",
-    },
-    {
-        "id": "vedic-comprehensive-deep-v1",
-        "title": "Geniş ve Derin Vedik Metodoloji",
-        "version": "1.0.0",
-        "status": "candidate",
-        "filename": "vedic-comprehensive-deep-v1.md",
-        "sha256": "f6d9a85e35029d096d2cc681399a5620d9aece2fa4b7647b186b77d759fa7d88",
-    },
-    {
-        "id": "vedic-ai-application-v1",
-        "title": "AI ve Uygulama Odaklı Vedik Metodoloji",
-        "version": "1.0.0",
-        "status": "candidate",
-        "filename": "vedic-ai-application-v1.md",
-        "sha256": "b89d8db41983c9a8589b9cd33a8a14eb2cf64bac2cca65334493c2f9e1a8147b",
+        "status": "active",
+        "filename": "SYSTEM_METHODOLOGY.txt",
+        "sha256": "8f86a845acdbdb1fc402439b883eb8432f3277f66f451d22455fcb30bf72a10a",
     },
 )
 
@@ -82,7 +81,7 @@ def _frontmatter(document):
 
 
 def load_methodology_candidates(root=None):
-    root_path = Path(root or Path(__file__).resolve().parent / "methodologies" / "candidates")
+    root_path = Path(root or Path(__file__).resolve().parent / "methodologies")
     candidates = []
     for expected in CANDIDATE_MANIFEST:
         path = root_path / expected["filename"]
@@ -100,9 +99,10 @@ def load_methodology_candidates(root=None):
         except UnicodeDecodeError as exc:
             raise MethodologyOrchestrationError("methodology_encoding_invalid") from exc
         metadata = _frontmatter(document)
-        for key in ("id", "title", "version", "status"):
-            if metadata.get(key) != expected[key]:
-                raise MethodologyOrchestrationError("methodology_metadata_mismatch")
+        if metadata.get("document") != "SYSTEM_METHODOLOGY":
+            raise MethodologyOrchestrationError("methodology_metadata_mismatch")
+        if metadata.get("version") != expected["version"]:
+            raise MethodologyOrchestrationError("methodology_metadata_mismatch")
         candidates.append({
             "id": expected["id"],
             "title": expected["title"],
@@ -126,7 +126,9 @@ def compact_evidence(draft):
         "chart_summary": source.get("chart_summary"),
         "active_dasha": source.get("active_dasha"),
         "topic_packet": source.get("topic_packet"),
+        "natal_sections": source.get("natal_sections") or [],
         "data_quality": source.get("data_quality"),
+        "context_strategy": draft.get("context_strategy"),
         "missing": draft.get("missing") or [],
         "safety_notes": draft.get("safety_notes") or [],
     }
@@ -145,10 +147,10 @@ def _evidence_path_catalog(evidence):
                 paths.append(path)
                 walk(child, path)
         elif isinstance(value, list):
-            # Long repeated time-series would make the path catalogue larger than
-            # the evidence itself. The array root remains a valid citation path;
-            # one representative row documents its shape.
-            children = value[:1] if len(value) > 20 else value
+            # The array root remains a valid citation path. One representative
+            # row documents shape without duplicating every table row in the
+            # prompt path catalogue.
+            children = value[:1]
             for index, child in enumerate(children):
                 path = f"{prefix}.{index}"
                 paths.append(path)
@@ -162,20 +164,29 @@ def _model_request(candidate, evidence):
     evidence_json = _canonical_json(evidence)
     evidence_path_catalog_json = _canonical_json(_evidence_path_catalog(evidence))
     system_text = (
-        "Yalnız aşağıdaki tek Vedik/Jyotisha metodoloji adayını uygula. "
+        "Yalnız aşağıdaki tek ve aktif Vedik/Jyotisha sistem metodolojisini uygula. "
         "Başka metodoloji, Batı/Tropical astroloji veya hesap uydurma kullanma. "
         "Sadece verilen kanıt paketindeki teknik gerçekleri yorumla. Eksik veri varsa açıkça sınırla. "
-        "Adayı diğer adaylarla kıyaslama, seçme veya nihai ilan etme. "
+        "Metodolojide anılan fakat kanıt paketinde bulunmayan registry içeriğini uydurma. "
+        "Önce soruyu sınıflandır; sonra doğru konu, veri kapısı ve zorunlu analiz sırasını uygula. "
+        "Teknik analiz tamamlanmadan koçluk veya motivasyon ekleme. "
         "Yanıt yalnız geçerli JSON olsun.\n\n"
         f"METODOLOJİ KİMLİĞİ: {candidate['id']}@{candidate['version']}\n"
         f"METODOLOJİ SHA256: {candidate['sha256']}\n\n"
         f"METODOLOJİ BELGESİ:\n{candidate['document']}"
     )
     user_text = (
-        "Aşağıdaki kanıt paketini metodolojiye göre incele. JSON alanları tam olarak şunlar olsun: "
-        "summary (string), supporting_evidence (claim ve evidence_path içeren array), "
+        "Aşağıdaki kanıt paketini metodolojiye göre eksiksiz incele. JSON alanları tam olarak şunlar olsun: "
+        "question_intent (interpreted_question string, primary_topic string, timing_required boolean), "
+        "analysis_status (COMPLETE|INCOMPLETE), methodology_coverage (array; her satır step, status ve note içerir), "
+        "summary (soruyu doğrudan yanıtlayan, teknik liste olmayan zengin string), "
+        "supporting_evidence (claim ve evidence_path içeren array), "
         "challenging_evidence (claim ve evidence_path içeren array), missing_layers (string array), "
         "confidence (low|medium|high), limitations (string array). "
+        "methodology_coverage şu adımların her birini tam bir kez ve bu sırada içermeli: "
+        + ", ".join(REQUIRED_METHODOLOGY_STEPS)
+        + ". status yalnız applied|not_applicable|missing olabilir. "
+        "Zorunlu bir adım missing ise analysis_status INCOMPLETE olmalıdır. "
         "Her evidence_path evidence. ile başlamalı ve paketteki gerçek alana işaret etmelidir. "
         "Uzun zaman serilerindeki birden fazla satırı destekleyen iddia için dizinin kök yolunu "
         "(örneğin evidence.transits.daily_timing) kullan. "
@@ -191,7 +202,7 @@ def _model_request(candidate, evidence):
         "contents": [{"role": "user", "parts": [{"text": user_text}]}],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 4096,
+            "maxOutputTokens": 8192,
             "responseMimeType": "application/json",
             "thinkingConfig": {"thinkingLevel": "MINIMAL"},
         },
@@ -284,11 +295,44 @@ def validate_methodology_response(payload, evidence):
         raise MethodologyOrchestrationError("methodology_model_json_invalid", 502) from exc
     if not isinstance(value, dict):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    question_intent = value.get("question_intent")
+    analysis_status = str(value.get("analysis_status") or "").strip().upper()
+    coverage = value.get("methodology_coverage")
+    if not isinstance(question_intent, dict):
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    interpreted_question = str(question_intent.get("interpreted_question") or "").strip()
+    primary_topic = str(question_intent.get("primary_topic") or "").strip()
+    timing_required = question_intent.get("timing_required")
+    if not interpreted_question or not primary_topic or not isinstance(timing_required, bool):
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    if analysis_status not in {"COMPLETE", "INCOMPLETE"} or not isinstance(coverage, list):
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    normalized_coverage = []
+    for expected_step, row in zip(REQUIRED_METHODOLOGY_STEPS, coverage, strict=False):
+        if not isinstance(row, dict):
+            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        step = str(row.get("step") or "").strip()
+        status = str(row.get("status") or "").strip()
+        note = str(row.get("note") or "").strip()
+        if step != expected_step or status not in COVERAGE_STATUSES or not note:
+            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        normalized_coverage.append({"step": step, "status": status, "note": note})
+    if len(coverage) != len(REQUIRED_METHODOLOGY_STEPS):
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    if any(row["status"] == "missing" for row in normalized_coverage) and analysis_status != "INCOMPLETE":
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
     summary = str(value.get("summary") or "").strip()
     confidence = str(value.get("confidence") or "").strip().lower()
     if not summary or confidence not in CONFIDENCE_LEVELS:
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
     return {
+        "question_intent": {
+            "interpreted_question": interpreted_question,
+            "primary_topic": primary_topic,
+            "timing_required": timing_required,
+        },
+        "analysis_status": analysis_status,
+        "methodology_coverage": normalized_coverage,
         "summary": summary,
         "supporting_evidence": _evidence_rows(value.get("supporting_evidence"), evidence),
         "challenging_evidence": _evidence_rows(value.get("challenging_evidence"), evidence),
@@ -386,8 +430,8 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "evidence_sha256": evidence_sha256,
         "methodology_order": [item["id"] for item in CANDIDATE_MANIFEST],
         "methodology_results": results,
-        "selection": None,
-        "selection_status": "user_review_required",
+        "selection": CANDIDATE_MANIFEST[0]["id"],
+        "selection_status": "system_methodology_active",
         "completed_count": completed,
         "candidate_count": len(results),
     }

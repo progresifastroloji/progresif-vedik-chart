@@ -2,9 +2,26 @@ import hashlib
 import json
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
-from app import PWA_ARTIFACT_SCHEMA_VERSION, app
+from app import (
+    PWA_ARTIFACT_MANIFEST_VERSION,
+    PWA_ARTIFACT_PROFILE_COMPACT,
+    PWA_ARTIFACT_PROFILE_LEGACY,
+    PWA_ARTIFACT_SCHEMA_VERSION,
+    _beta_build_chat_draft,
+    _beta_db,
+    _beta_load_json,
+    app,
+)
+from methodology_orchestrator import (
+    MAX_PROMPT_BYTES,
+    _canonical_json,
+    _model_request,
+    compact_evidence,
+    load_methodology_candidates,
+)
 
 
 OWNER_USER_ID = "55555555-5555-4555-8555-555555555555"
@@ -16,9 +33,11 @@ class PwaArtifactEndpointTest(unittest.TestCase):
     def setUp(self):
         self._old_beta_db_path = app.config["BETA_DB_PATH"]
         self._old_user_data_root = app.config["USER_DATA_ROOT"]
+        self._old_testing = app.config.get("TESTING")
         self._tmp = tempfile.TemporaryDirectory()
         app.config["BETA_DB_PATH"] = f"{self._tmp.name}/beta.sqlite3"
         app.config["USER_DATA_ROOT"] = f"{self._tmp.name}/users"
+        app.config["TESTING"] = True
         self.client = app.test_client()
 
         response = self.client.post(
@@ -47,16 +66,20 @@ class PwaArtifactEndpointTest(unittest.TestCase):
     def tearDown(self):
         app.config["BETA_DB_PATH"] = self._old_beta_db_path
         app.config["USER_DATA_ROOT"] = self._old_user_data_root
+        app.config["TESTING"] = self._old_testing
         self._tmp.cleanup()
 
-    def _generate(self, owner_user_id=OWNER_USER_ID):
+    def _generate(self, owner_user_id=OWNER_USER_ID, artifact_profile=None):
+        payload = {
+            "owner_user_id": owner_user_id,
+            "profile_id": OWNER_USER_ID,
+            "chart_id": CHART_ID,
+        }
+        if artifact_profile:
+            payload["artifact_profile"] = artifact_profile
         return self.client.post(
             "/api/v2/pwa/artifacts/generate",
-            json={
-                "owner_user_id": owner_user_id,
-                "profile_id": OWNER_USER_ID,
-                "chart_id": CHART_ID,
-            },
+            json=payload,
         )
 
     def test_generates_exact_artifact_set_and_replays_from_verified_manifest(self):
@@ -67,23 +90,27 @@ class PwaArtifactEndpointTest(unittest.TestCase):
         self.assertFalse(payload["replayed"])
         manifest = payload["manifest"]
         self.assertEqual(manifest["schema_version"], PWA_ARTIFACT_SCHEMA_VERSION)
-        self.assertEqual(manifest["artifact_count"], 15)
-        self.assertEqual(len(manifest["artifacts"]), 15)
+        self.assertEqual(manifest["contract_version"], PWA_ARTIFACT_MANIFEST_VERSION)
+        self.assertEqual(manifest["artifact_profile"], PWA_ARTIFACT_PROFILE_COMPACT)
+        self.assertEqual(manifest["artifact_count"], 2)
+        self.assertEqual(len(manifest["artifacts"]), 2)
         self.assertEqual(
             {item["code"] for item in manifest["artifacts"]},
-            {
-                "main_chart", "career", "health", "family", "education",
-                "relocation", "finance", "relationship", "character",
-                "spiritual", "varshaphala", "legal", "planet_roles",
-                "session", "transit_three_month",
-            },
+            {"natal_interpretation", "transit_three_month"},
         )
+        natal = next(item for item in manifest["artifacts"] if item["code"] == "natal_interpretation")
+        self.assertEqual(natal["section_count"], 32)
+        self.assertEqual(len(natal["sections"]), 32)
+        self.assertEqual(natal["sections"][0]["id"], "gemini_reading_protocol")
+        self.assertEqual(natal["sections"][-1]["id"], "technical_layer_status")
+        self.assertEqual(len({item["id"] for item in natal["sections"]}), 32)
 
         root = (
             Path(app.config["USER_DATA_ROOT"])
             / OWNER_USER_ID
             / CHART_ID
             / PWA_ARTIFACT_SCHEMA_VERSION
+            / PWA_ARTIFACT_PROFILE_COMPACT
         )
         self.assertTrue((root / "manifest.json").is_file())
         self.assertTrue((root / "canonical-snapshot.json").is_file())
@@ -99,6 +126,7 @@ class PwaArtifactEndpointTest(unittest.TestCase):
 
         download = self.client.get(
             f"/api/v2/pwa/artifacts/{OWNER_USER_ID}/{CHART_ID}/canonical_snapshot"
+            f"?profile={PWA_ARTIFACT_PROFILE_COMPACT}"
         )
         self.assertEqual(download.status_code, 200)
         download_data = download.data
@@ -108,6 +136,53 @@ class PwaArtifactEndpointTest(unittest.TestCase):
         )
         self.assertEqual(json.loads(download_data)["birth"]["person"]["id"], OWNER_USER_ID)
         download.close()
+
+    def test_legacy_profile_remains_available_as_server_side_rollback(self):
+        response = self._generate(artifact_profile=PWA_ARTIFACT_PROFILE_LEGACY)
+
+        self.assertEqual(response.status_code, 200)
+        manifest = response.get_json()["manifest"]
+        self.assertEqual(manifest["artifact_profile"], PWA_ARTIFACT_PROFILE_LEGACY)
+        self.assertEqual(manifest["artifact_count"], 15)
+        self.assertEqual(
+            {item["code"] for item in manifest["artifacts"]},
+            {
+                "main_chart", "career", "health", "family", "education",
+                "relocation", "finance", "relationship", "character",
+                "spiritual", "varshaphala", "legal", "planet_roles",
+                "session", "transit_three_month",
+            },
+        )
+        root = (
+            Path(app.config["USER_DATA_ROOT"])
+            / OWNER_USER_ID
+            / CHART_ID
+            / PWA_ARTIFACT_SCHEMA_VERSION
+            / PWA_ARTIFACT_PROFILE_LEGACY
+        )
+        self.assertTrue((root / "manifest.json").is_file())
+
+    def test_real_chart_question_contexts_stay_below_model_gateway_limit(self):
+        with closing(_beta_db()) as conn:
+            row = conn.execute(
+                "SELECT chart_json FROM beta_charts WHERE id = ?",
+                (CHART_ID,),
+            ).fetchone()
+        chart = _beta_load_json(row["chart_json"])
+        methodology = load_methodology_candidates()[0]
+
+        for question in (
+            "Genel haritamı zengin biçimde yorumla",
+            "Kariyerimde güçlü ve zorlayıcı yanlarım neler?",
+            "Önümüzdeki üç ay kariyerimde neler öne çıkıyor?",
+        ):
+            draft = _beta_build_chat_draft(question, chart)
+            evidence = compact_evidence(draft)
+            request, _ = _model_request(methodology, evidence)
+            self.assertLess(
+                len(_canonical_json(request).encode("utf-8")),
+                MAX_PROMPT_BYTES,
+            )
 
     def test_rejects_cross_user_artifact_generation(self):
         response = self._generate(OTHER_USER_ID)

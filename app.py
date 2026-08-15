@@ -77,7 +77,34 @@ app.config["USER_DATA_ROOT"] = os.environ.get(
     "VEDIC_USER_DATA_ROOT",
     str(DEFAULT_PERSISTENT_ROOT / "users"),
 )
-PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v2"
+PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v3"
+PWA_ARTIFACT_MANIFEST_VERSION = "vedic-pwa-artifact-manifest-v2"
+PWA_ARTIFACT_PROFILE_COMPACT = "compact_natal_v1"
+PWA_ARTIFACT_PROFILE_LEGACY = "legacy_full_v2"
+PWA_ARTIFACT_DEFAULT_PROFILE = os.environ.get(
+    "PWA_ARTIFACT_PROFILE",
+    PWA_ARTIFACT_PROFILE_COMPACT,
+).strip()
+PWA_ARTIFACT_PROFILE_CODES = {
+    PWA_ARTIFACT_PROFILE_COMPACT: ("natal_interpretation", "transit_three_month"),
+    PWA_ARTIFACT_PROFILE_LEGACY: (
+        "main_chart",
+        "career",
+        "health",
+        "family",
+        "education",
+        "relocation",
+        "finance",
+        "relationship",
+        "character",
+        "spiritual",
+        "varshaphala",
+        "legal",
+        "planet_roles",
+        "session",
+        "transit_three_month",
+    ),
+}
 app.config["PLACES_DB_PATH"] = os.environ.get(
     "VEDIC_PLACES_DB",
     str(Path(__file__).resolve().parent / "data" / "places" / "places.sqlite3"),
@@ -6129,6 +6156,12 @@ SHADBALA_REQUIRED_RUPA = {
     "Jupiter": 6.5,
     "Venus": 5.5,
     "Saturn": 5.0,
+}
+
+# TODO: eşikler kullanıcı onayı bekliyor
+PLANET_ROLE_SHADBALA_RATIO_THRESHOLDS = {
+    "strong": 1.25,
+    "moderate": 1.05,
 }
 
 
@@ -14892,8 +14925,14 @@ def _frontmatter(title, person_name, group_name, chart, note_type, modified_at=N
 
 def _wiki_link(note_name, label=None):
     if label and label != note_name:
-        return f"[[{note_name}|{label}]]"
-    return f"[[{note_name}]]"
+        return f"{label} ({note_name})"
+    return str(note_name)
+
+
+def _display_file_name(path_value):
+    if path_value in {None, ""}:
+        return ""
+    return Path(str(path_value)).name
 
 
 def _vault_link_rows(person_name):
@@ -17646,7 +17685,10 @@ def _active_transit_source_markdown(transit_pack):
         f"- Günlük kayıt sayısı: {period.get('day_count', '')}",
     ])
     if transit_pack.get("_source_path"):
-        lines.append(f"- Kaynak transit dosyası: {transit_pack['_source_path']}")
+        lines.append(
+            "- Kaynak transit dosyası: "
+            f"{_display_file_name(transit_pack['_source_path'])}"
+        )
     lines.extend([
         "- Yalnız bu tarih aralığındaki günlük transit kayıtları ayrıntılı zamanlama katmanı olarak kullanılabilir.",
         "- Bu ilk entegrasyon adımı konuya özel günlük pencere sıralaması üretmez.",
@@ -17742,7 +17784,10 @@ def _career_selected_transit_coverage_markdown(life_period, transit_pack):
     lines.extend([
         f"- Seçili transit aralığı: {period.get('range_start')} → {period.get('range_end')}",
         *(
-            [f"- Kaynak transit dosyası: {transit_pack.get('_source_path')}"]
+            [
+                "- Kaynak transit dosyası: "
+                f"{_display_file_name(transit_pack.get('_source_path'))}"
+            ]
             if transit_pack.get("_source_path")
             else []
         ),
@@ -20964,7 +21009,6 @@ def _planet_package_varga_point(chart, division, planet_name):
 
 def _planet_natal_condition_rows(chart, planet_name):
     planet = _planet_package_point(chart, planet_name) or {}
-    shadbala = _topic_shadbala(chart, planet_name)
     dignity = planet.get("dignity") or {}
     motion = planet.get("motion") or {}
     combustion = planet.get("combustion") or {}
@@ -20988,13 +21032,65 @@ def _planet_natal_condition_rows(chart, planet_name):
         ["Graha Yuddha", war.get("status", ""), "planets[].war"],
         [
             "Shadbala",
-            f"{_topic_value(shadbala.get('total_score'))} / {_topic_value(shadbala.get('grade'))}",
+            _planet_role_shadbala_display(chart, planet_name),
             "shadbala.planets[]",
         ],
         [
             "Nakshatra lordu",
             nakshatra.get("lord", ""),
             "planets[].nakshatra.lord",
+        ],
+    ]
+
+
+def _planet_role_shadbala_label(ratio):
+    if ratio is None:
+        return "veri yok"
+    if ratio >= PLANET_ROLE_SHADBALA_RATIO_THRESHOLDS["strong"]:
+        return "strong"
+    if ratio >= PLANET_ROLE_SHADBALA_RATIO_THRESHOLDS["moderate"]:
+        return "moderate"
+    return "weak"
+
+
+def _planet_role_shadbala_display(chart, planet_name):
+    if _planet_package_name_matches(planet_name, "Rahu") or _planet_package_name_matches(
+        planet_name,
+        "Ketu",
+    ):
+        return "hesaplanmaz (gölge gezegen)"
+
+    shadbala = _topic_shadbala(chart, planet_name)
+    professional_total = shadbala.get("professional_total") or {}
+    raw_total = shadbala.get("total_score")
+    ratio = professional_total.get("strength_ratio")
+    if raw_total is None or ratio is None:
+        return "veri yok"
+    return (
+        f"{_topic_value(raw_total)} ham / "
+        f"{float(ratio):.4f} oran / "
+        f"{_planet_role_shadbala_label(float(ratio))}"
+    )
+
+
+def _planet_own_connection_rows(chart, planet_name):
+    planet = _planet_package_point(chart, planet_name) or {}
+    sign_lord = SIGN_LORDS.get(planet.get("sign_index"))
+    nakshatra_lord = (planet.get("nakshatra") or {}).get("lord")
+    sign_lord_planet = _planet_package_point(chart, sign_lord) or {}
+    nakshatra_lord_planet = _planet_package_point(chart, nakshatra_lord) or {}
+    return [
+        [
+            "burç dispozitörü",
+            _planet_package_label(sign_lord),
+            _topic_sign_house_text(sign_lord_planet),
+            "SIGN_LORDS + planets[]",
+        ],
+        [
+            "nakshatra lordu",
+            _planet_package_label(nakshatra_lord),
+            _topic_sign_house_text(nakshatra_lord_planet),
+            "planets[].nakshatra.lord + planets[]",
         ],
     ]
 
@@ -21007,21 +21103,21 @@ def _planet_dispositor_rows(chart, planet_name):
             continue
         if SIGN_LORDS.get(planet.get("sign_index")) == planet_name:
             rows.append([
-                "burç dispozitörü",
                 subject,
+                "burç dispozitörü",
                 _topic_sign_house_text(planet),
                 f"planets.{planet.get('id')}.sign",
             ])
         if (planet.get("nakshatra") or {}).get("lord") == planet_name:
             rows.append([
-                "nakshatra lordu",
                 subject,
+                "nakshatra lordu",
                 _career_nakshatra_text(planet),
                 f"planets.{planet.get('id')}.nakshatra",
             ])
     return rows or [[
-        "bağlantı yok",
         "",
+        "bağlantı yok",
         "Bu haritada doğrudan dispozitör veya nakshatra lordluğu bağlantısı yok.",
         "not_available",
     ]]
@@ -21069,7 +21165,7 @@ def _planet_aspect_rows(chart, planet_name):
 
 def _planet_varga_rows(chart, planet_name):
     rows = []
-    for division, varga in sorted(
+    for division, _varga in sorted(
         (chart.get("vargas") or {}).items(),
         key=lambda item: int(item[0][1:]) if item[0][1:].isdigit() else 999,
     ):
@@ -21086,7 +21182,6 @@ def _planet_varga_rows(chart, planet_name):
             _markdown_sign(planet),
             house,
             planet.get("degree_str", ""),
-            varga.get("confidence", ""),
             f"vargas.{division}.planets.{planet.get('id')}",
         ])
     return rows
@@ -21102,6 +21197,8 @@ def _planet_dasha_activation_rows(chart, planet_name):
     rows = []
     for level in DASHA_LEVELS:
         period = active.get(level) or {}
+        if isinstance(period, str):
+            period = {"lord": period, "path": [period]}
         path = period.get("path") or []
         if planet_name not in path:
             continue
@@ -21580,7 +21677,6 @@ def _planet_role_activation_summary_rows(chart):
     rows = []
     for planet_name, planet_label in PLANET_ROLE_PACKAGE_ORDER:
         planet = _planet_package_point(chart, planet_name) or {}
-        shadbala = _topic_shadbala(chart, planet_name)
         role_rows = _planet_role_rows(chart, planet_name)
 
         personal_role_rows = [
@@ -21630,7 +21726,7 @@ def _planet_role_activation_summary_rows(chart):
             "; ".join(personal_roles) or "doğrudan kişisel rol yok",
             ", ".join(natural_roles) or "yok",
             _topic_sign_house_text(planet),
-            f"{_topic_value(shadbala.get('total_score'))} / {_topic_value(shadbala.get('grade'))}",
+            _planet_role_shadbala_display(chart, planet_name),
             "; ".join(activations) or "aktif Vimshottari zincirinde değil",
             ", ".join(kp_houses) or "KP göstergesi yok",
         ])
@@ -21678,10 +21774,27 @@ def _planet_role_activation_sections(chart, planet_name, planet_label):
             _planet_natal_condition_rows(chart, planet_name),
         ),
         "",
-        "### Dispozitör ve Nakshatra Bağlantıları",
+        "### Bu Gezegenin Kendi Bağlantıları",
         "",
         _markdown_table(
-            ["Bağlantı", "Gezegen", "Teknik Değer", "Kanıt"],
+            [
+                "Bağlantı Türü",
+                "Bağlı Olduğu Gezegen",
+                "Gezegenin D1 Konumu",
+                "Kanıt",
+            ],
+            _planet_own_connection_rows(chart, planet_name),
+        ),
+        "",
+        "### Bu Gezegeni Dispozitör / Nakshatra Lordu Alan Gezegenler",
+        "",
+        (
+            "Bu tablo gelen bağlantıları gösterir. Bu gezegenin kendi dispozitörü "
+            "için üstteki \"Derin Bağlantı Zinciri\" tablosuna bakılır."
+        ),
+        "",
+        _markdown_table(
+            ["Bağımlı Gezegen", "Bağlantı Türü", "Teknik Değer", "Kanıt"],
             _planet_dispositor_rows(chart, planet_name),
         ),
         "",
@@ -21695,7 +21808,7 @@ def _planet_role_activation_sections(chart, planet_name, planet_label):
         "### Varga Konumları",
         "",
         _markdown_table(
-            ["Varga", "Burç", "Ev", "Derece", "Güven", "Kanıt"],
+            ["Varga", "Burç", "Ev", "Derece", "Kanıt"],
             _planet_varga_rows(chart, planet_name),
         ),
         "",
@@ -21877,7 +21990,6 @@ def _session_active_planet_rows(chart):
             continue
         seen.add(lord)
         planet = _topic_planet(chart, lord)
-        shadbala = _topic_shadbala(chart, lord)
         kp_rows = [
             row
             for row in _planet_kp_rows(chart, lord)
@@ -21888,7 +22000,7 @@ def _session_active_planet_rows(chart):
             lord,
             _topic_sign_house_text(planet),
             _career_lordship_houses(chart, lord) or "yok",
-            f"{_topic_value(shadbala.get('total_score'))} / {_topic_value(shadbala.get('grade'))}",
+            _planet_role_shadbala_display(chart, lord),
             ", ".join(
                 f"{row[0]}. ev ({_topic_value(row[1])})"
                 for row in kp_rows
@@ -22030,7 +22142,11 @@ def _session_related_file_rows(group_name, person_name, transit_pack=None):
     rows = [
         [
             label,
-            str(_person_analysis_package_path(group_name, person_name, package_name)),
+            _person_analysis_package_path(
+                group_name,
+                person_name,
+                package_name,
+            ).name,
         ]
         for label, package_name in package_names
     ]
@@ -22062,7 +22178,7 @@ def _session_related_file_rows(group_name, person_name, transit_pack=None):
             range_start,
             range_end,
         )
-    rows.append([transit_label, str(transit_path)])
+    rows.append([transit_label, transit_path.name])
     return rows
 
 
@@ -22265,7 +22381,7 @@ def _build_session_preparation_package_markdown(
         "## Ayrıntılı Teknik Dosyalar",
         "",
         _markdown_table(
-            ["Dosya", "Yol"],
+            ["Dosya", "Dosya Adı"],
             _session_related_file_rows(
                 group_name,
                 person_name,
@@ -29213,6 +29329,264 @@ def _delete_user_data_directory(user_id):
     return True
 
 
+def _pwa_nested_markdown(value):
+    """Place an existing technical block below a numbered natal section."""
+
+    lines = str(value or "").strip().splitlines()
+    if lines and lines[0].startswith("## "):
+        lines = lines[1:]
+        while lines and not lines[0].strip():
+            lines.pop(0)
+    nested = []
+    for line in lines:
+        if line.startswith("#"):
+            hashes = len(line) - len(line.lstrip("#"))
+            line = "#" * min(hashes + 1, 6) + line[hashes:]
+        nested.append(line)
+    return "\n".join(nested).strip()
+
+
+def _pwa_natal_section(section_id, title, body, topics):
+    return {
+        "id": section_id,
+        "title": title,
+        "topics": list(topics),
+        "body": str(body or "").strip(),
+    }
+
+
+def _pwa_natal_sections(chart, person_name, group_name, rectification_record=None):
+    """Return the single-source, ordered Natal Yorum Paketi section registry."""
+
+    birth = chart.get("birth") or {}
+    data_quality = chart.get("data_quality") or {}
+    meta = chart.get("meta") or {}
+    lagna = chart.get("lagna") or {}
+    planets = chart.get("planets") or []
+    moon = next((item for item in planets if item.get("name") == "Moon"), {})
+    sun = next((item for item in planets if item.get("name") == "Sun"), {})
+    ayanamsa = meta.get("ayanamsa") or chart.get("ayanamsa") or {}
+    jaimini = chart.get("jaimini") or {}
+    arudha = jaimini.get("arudha") or {}
+    karakamsa = jaimini.get("karakamsa") or {}
+    upapada = arudha.get("upapada_detail") or {}
+    doshas = chart.get("doshas") or {}
+    ashtakavarga = chart.get("ashtakavarga") or {}
+    sav = ashtakavarga.get("sarva") or ashtakavarga.get("sarvashtakavarga") or {}
+    varga_divisions = [division for division in VARGA_NAMES if division != "D1"]
+
+    identity = "\n".join([
+        f"- İsim: {person_name}",
+        f"- Grup: {group_name}",
+        f"- Ayanamsa: {ayanamsa.get('type', '')} {ayanamsa.get('value', '')}",
+        f"- Zodyak: {meta.get('zodiac', 'sidereal')}",
+        f"- Ev sistemi: {meta.get('house_system', '')}",
+        "",
+        _markdown_table(["Alan", "Değer"], _expert_analysis_profile_rows(chart)),
+    ])
+    birth_details = "\n".join([
+        f"- Tarih: {birth.get('date', '')}",
+        f"- Saat: {'bilinmiyor; teknik referans saati kullanıldı' if birth.get('calculation_reference_only') else birth.get('time', '')}",
+        f"- Yer: {_birth_place_label(birth.get('place'), birth.get('latitude'), birth.get('longitude_geo'))}",
+        f"- Saat dilimi: {birth.get('timezone_label') or birth.get('timezone_id') or birth.get('timezone', '')}",
+        f"- Koordinatlar: {birth.get('latitude', '')}, {birth.get('longitude_geo', '')}",
+        f"- Kullanıcı saat beyanı: {_birth_time_confidence_display_label(birth)}",
+        f"- Rektifikasyonlu kabul: {'evet' if data_quality.get('accepted_as_rectified') else 'hayır'}",
+        f"- Ev referansı: {data_quality.get('reference_frame', 'birth_lagna')}",
+        f"- Teknik hesaplama saati: {data_quality.get('calculation_reference_time') or 'doğum saati'}",
+        f"- Lagna/ev yorum güveni: {data_quality.get('house_interpretation_confidence', '')}",
+    ])
+    main_indicators = "\n".join([
+        f"- {'Ay Lagnası' if lagna.get('reference_frame') == 'chandra_lagna' else 'Lagna'}: {_markdown_sign(lagna)} {lagna.get('degree_str', '')}",
+        f"- Ay: {_markdown_sign(moon)} {moon.get('degree_str', '')}",
+        f"- Güneş: {_markdown_sign(sun)} {sun.get('degree_str', '')}",
+        f"- Atmakaraka: {karakamsa.get('atmakaraka', '')}",
+        f"- Karakamsa: {_markdown_sign(karakamsa.get('karakamsa_lagna'))}",
+        f"- Upapada: {_markdown_sign((arudha.get('upapada') or {}).get('pada'))}",
+    ])
+    varga_status = "\n".join([
+        _markdown_table(
+            ["Varga", "Durum", "API Adı", "Güven", "Kaynak Kural", "Dış Doğrulama"],
+            _expert_varga_status_rows(chart, list(VARGA_NAMES.keys())),
+        ),
+        "",
+        _expert_varga_validation_note(chart),
+        "- D16 Shodasamsha yeni eklenmiştir ve dış doğrulaması yoktur (internal_formula). D16 üzerinden kesin hüküm kurulmaz.",
+    ])
+    shadbala = "\n".join([
+        _markdown_table(["Özet", "Değer"], _expert_shadbala_summary_rows(chart)),
+        "",
+        _markdown_table(
+            ["Gezegen", "Ham Toplam", "Rupa", "Gerekli Rupa", "Oran", "Durum", "En Güçlü", "En Zayıf", "Yuddha Ayarı"],
+            _expert_shadbala_rows(chart),
+        ),
+        "",
+        _markdown_table(["Gezegen", "Teknik Not"], _expert_shadbala_note_rows(chart)),
+    ])
+    ashtakavarga_body = "\n".join([
+        f"- SAV toplam: {sav.get('total', '')}",
+        "- SAV toplamı kontrol toplamıdır; harita gücü yorumu için tek başına eşik değildir.",
+        f"- Kural seti: {(ashtakavarga.get('ruleset') or {}).get('name') or (ashtakavarga.get('ruleset') or {}).get('method', '')}",
+        "",
+        "### SAV Ev Bazında",
+        "",
+        _markdown_table(["Ev", "Burç", "SAV"], _expert_sav_rows(chart)),
+        "",
+        "### BAV Ev Bazında",
+        "",
+        _markdown_table(["Ev", "Burç", *_expert_bav_headers(chart)], _expert_bav_rows(chart)),
+    ])
+    kp_body = "\n".join([
+        "### Gezegen Star / Sub / Sub-Sub",
+        "",
+        _markdown_table(["Gezegen", "Burç", "Star Lord", "Sub Lord", "Sub-Sub Lord"], _expert_kp_planet_rows(chart)),
+        "",
+        "### Ev Göstergeleri",
+        "",
+        _markdown_table(["Ev", "Gösterge Gezegenler"], _expert_kp_house_rows(chart)),
+    ])
+    jaimini_body = "\n".join([
+        _markdown_table(["Rol", "Gezegen", "Burç", "Derece", "Nakshatra"], _jaimini_rows(chart)),
+        "",
+        f"- Arudha Lagna: {_markdown_sign((arudha.get('padas') or {}).get('A1', {}).get('pada'))}",
+        f"- Upapada Lordu: {(upapada.get('upapada_lord') or {}).get('planet', '')}",
+        f"- Upapada'dan 2.: {_markdown_sign(upapada.get('second_from_upapada'))}",
+        "",
+        _markdown_table(["D9 Gezegen", "D9 Burç", "Derece", "Karakamsa'dan Ev", "Sınıf"], _expert_karakamsa_rows(chart)),
+    ])
+    dosha_body = "\n".join([
+        f"- Mangala: {(doshas.get('mangala') or {}).get('status', '')} / {(doshas.get('mangala') or {}).get('net_severity') or (doshas.get('mangala') or {}).get('severity', '')}",
+        f"- Kala Sarpa: {(doshas.get('kala_sarpa') or {}).get('status', '')} / {(doshas.get('kala_sarpa') or {}).get('subtype', '')}",
+        "- Bu bölüm teknik özet verir; tek başına kesin hüküm kurulmaz.",
+    ])
+    planet_blocks = []
+    for planet_name, planet_label in PLANET_ROLE_PACKAGE_ORDER:
+        planet_blocks.extend(_planet_role_activation_sections(chart, planet_name, planet_label))
+    life_events = _markdown_table(
+        ["Tarih", "Olay", "Tür", "Konu", "Güven", "Belgeli", "Kaynak", "Önem"],
+        _session_event_rows(rectification_record),
+    )
+    if not rectification_record:
+        life_events = "- Yaşam olayı veri kaynağı bu PWA üretim yoluna bağlı değildir; kayıt uydurulmaz.\n\n" + life_events
+    validation_registry = (meta.get("calculation_validation_registry") or _calculation_validation_registry())
+
+    return [
+        _pwa_natal_section("gemini_reading_protocol", "Gemini Okuma Protokolü", "\n".join([
+            "1. Kullanıcı sorusunun niyetini ve zamanlama içerip içermediğini belirle.",
+            "2. Soruyla ilgili natal bölümleri seç; ilgisiz bölümleri cevapta yığma.",
+            "3. Teknik kanıtları destekleyen, zorlayan ve eksik katmanlar olarak birlikte değerlendir.",
+            "4. Bulguları birleştirerek soruya doğrudan, zengin ve doğal bir yanıt ver.",
+            "5. Dosyada olmayan hesabı veya olayı üretme; belirsizliği açıkça yaz.",
+            "6. Zamanlama sorusunda ayrıca üç aylık transit paketinin gerçek tarih aralığını doğrula.",
+            "7. Ana yanıtı danışmanlık dilinde ver; teknik dayanağı ayrı gösterilebilir katmanda tut.",
+        ]), ["all", "protocol"]),
+        _pwa_natal_section("usage_limits", "Kullanım Sınırı", "\n".join([
+            "- Bu paket doğrulanmış teknik veridir; model ek astrolojik hesap yapmaz.",
+            "- Kesin olay, kader hükmü, tıbbi veya psikolojik teşhis üretmez.",
+            "- Tek göstergeyle hüküm kurulmaz; ana ve karşı göstergeler birlikte okunur.",
+            "- Transit dosyasının kapsamadığı tarihler için transit kanıtı varmış gibi konuşulmaz.",
+            "- Eksik veya dış doğrulaması olmayan katmanlar açıkça belirtilir.",
+        ]), ["all", "safety"]),
+        _pwa_natal_section("identity_settings", "Kimlik ve Hesap Ayarları", identity, ["all", "identity"]),
+        _pwa_natal_section("birth_time_confidence", "Doğum Bilgisi ve Saat Güveni", birth_details, ["all", "birth_time"]),
+        _pwa_natal_section("lagna", "Lagna", "\n".join([
+            f"- Referans: {'Chandra Lagna' if lagna.get('reference_frame') == 'chandra_lagna' else 'Doğum Lagnası'}",
+            f"- Burç: {_markdown_sign(lagna)}",
+            f"- Derece: {lagna.get('degree_str', '')}",
+            f"- Nakshatra: {(lagna.get('nakshatra') or {}).get('name', '')} Pada {(lagna.get('nakshatra') or {}).get('pada', '')} / Lord {(lagna.get('nakshatra') or {}).get('lord', '')}",
+        ]), ["all", "character", "health"]),
+        _pwa_natal_section("d1_planets", "D1 Gezegen Tablosu", _markdown_table(
+            ["Gezegen", "D1", "Ev", "Derece", "Nakshatra", "D9", "Dignity", "Combustion", "War", "Vargottama", "R"],
+            _planet_rows(chart),
+        ), ["all", "character", "relationship", "career", "finance", "health"]),
+        _pwa_natal_section("main_indicators", "Ana Göstergeler", main_indicators, ["all", "character", "spiritual"]),
+        _pwa_natal_section("panchanga", "Panchanga Teknik Paketi", _pwa_nested_markdown(_expert_panchanga_markdown(chart)), ["all", "character", "timing"]),
+        _pwa_natal_section("varga_tables", "Varga Tabloları (D2-D60)", _pwa_nested_markdown("\n".join(_expert_varga_full_markdown_sections(chart, varga_divisions))), ["all", "vargas", "career", "relationship", "finance", "health", "spiritual"]),
+        _pwa_natal_section("varga_confidence", "Varga Güven Durumu", varga_status, ["all", "vargas", "birth_time"]),
+        _pwa_natal_section("shadbala", "Shadbala", shadbala, ["all", "planet_strength"]),
+        _pwa_natal_section("vimshopaka_bala", "Vimshopaka Bala", _pwa_nested_markdown(_expert_vimshopaka_bala_markdown(chart)), ["all", "vargas", "planet_strength"]),
+        _pwa_natal_section("bhava_bala", "Bhava Bala ve Ev Bazlı Kanıt", _pwa_nested_markdown(_expert_bhava_bala_markdown(chart)), ["all", "houses"]),
+        _pwa_natal_section("ashtakavarga", "Ashtakavarga (SAV / BAV)", ashtakavarga_body, ["all", "houses", "timing"]),
+        _pwa_natal_section("avasthas", "Avasthalar", _pwa_nested_markdown(_expert_avasthas_markdown(chart)), ["all", "planet_condition"]),
+        _pwa_natal_section("bhava_chalit", "Bhava Chalit ve Sripati Cusp", _pwa_nested_markdown(_expert_bhava_chalit_markdown(chart)), ["all", "houses", "birth_time"]),
+        _pwa_natal_section("graha_yuddha", "Graha Yuddha", _markdown_table(["Gezegen", "Durum", "Savaşta", "Rakip", "Orb", "Sonuç"], _expert_graha_yuddha_rows(chart)), ["all", "planet_condition"]),
+        _pwa_natal_section("kp", "KP Star / Sub / Sub-Sub ve Ev Göstergeleri", kp_body, ["all", "kp", "timing"]),
+        _pwa_natal_section("jaimini", "Jaimini", jaimini_body, ["all", "jaimini", "career", "relationship", "spiritual"]),
+        _pwa_natal_section("yogas", "Yoga Listesi", _markdown_table(["Yoga", "Konu", "Etki", "Güç", "Güven", "Kural"], _expert_yoga_rows(chart)), ["all", "yogas"]),
+        _pwa_natal_section("doshas", "Dosha Teknik Özeti", dosha_body, ["all", "doshas", "relationship", "health"]),
+        _pwa_natal_section("planet_quick_read", "Gezegen Hızlı Okuma Tablosu", _markdown_table(
+            ["Gezegen", "Kişisel Roller", "Doğal Karaka", "D1 Konum", "Shadbala", "Güncel Aktivasyon", "KP İlk 3 Ev"],
+            _planet_role_activation_summary_rows(chart),
+        ), ["all", "planet_roles"]),
+        _pwa_natal_section("house_drishti", "Ev Bazlı Drishti Özeti", _markdown_table(
+            ["Ev", "Burç", "Graha Drishti Alanlar", "Rashi Drishti Alanlar", "Sayım"],
+            _house_drishti_summary_rows(chart),
+        ), ["all", "houses", "aspects"]),
+        _pwa_natal_section("planet_role_blocks", "Gezegen Rol Blokları", _pwa_nested_markdown("\n".join(planet_blocks)), ["all", "planet_roles", "career", "relationship", "finance", "health", "spiritual"]),
+        _pwa_natal_section("vimshottari_current", "Güncel Vimshottari Zinciri", _markdown_table(["Seviye", "Lord", "Başlangıç", "Bitiş", "Yıl"], _active_dasha_rows(chart)), ["all", "timing"]),
+        _pwa_natal_section("active_planets", "Aktif Gezegen Teknik Özeti", _markdown_table(
+            ["Seviye", "Gezegen", "D1 Konum", "Yönettiği Evler", "Shadbala", "KP İlk 3 Ev"],
+            _session_active_planet_rows(chart),
+        ), ["all", "timing", "planet_roles"]),
+        _pwa_natal_section("chara_dasha", "Chara Dasha v1 Aktif Periyot", _pwa_nested_markdown("\n".join(_expert_chara_dasha_markdown(chart))), ["all", "timing", "jaimini"]),
+        _pwa_natal_section("yogini_dasha", "Yogini Dasha v1 Aktif Periyot", _pwa_nested_markdown("\n".join(_expert_yogini_dasha_markdown(chart))), ["all", "timing"]),
+        _pwa_natal_section("career_packet", "Kariyer Analiz Veri Paketi", _pwa_nested_markdown(_expert_career_analysis_pack_markdown(chart, person_name, group_name)), ["career"]),
+        _pwa_natal_section("topic_summaries", "Konu Analiz Özetleri", _pwa_nested_markdown(_expert_topic_summaries_markdown(chart)), ["career", "relationship", "finance", "spiritual"]),
+        _pwa_natal_section("life_events", "Kayıtlı Yaşam Olayları", life_events, ["all", "rectification", "history"]),
+        _pwa_natal_section("technical_layer_status", "Teknik Katman Durumu", "```json\n" + json.dumps(validation_registry, ensure_ascii=False, sort_keys=True, indent=2) + "\n```", ["all", "validation"]),
+    ]
+
+
+def _build_natal_interpretation_package_markdown(
+    chart,
+    person_name,
+    group_name,
+    transit_pack=None,
+    rectification_record=None,
+):
+    """Build the 32-section user artifact and its byte-addressable index."""
+
+    title = f"{person_name}-Natal-Yorum-Paketi"
+    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    preamble = "\n".join([
+        "---",
+        f'title: "{title}"',
+        'type: "natal_interpretation_package"',
+        'profile: "compact_natal_v1"',
+        f'person: "{person_name}"',
+        f'group: "{group_name}"',
+        'source: "progresif-vedic-chart"',
+        f'generated: "{generated_at}"',
+        "---",
+        "",
+        f"# {title}",
+        "",
+        "Bu dosya yorum metni değil; Gemini'nin soruya göre seçerek kullanacağı teknik natal veri paketidir.",
+        "",
+    ])
+    content = preamble
+    section_index = []
+    for order, section in enumerate(
+        _pwa_natal_sections(chart, person_name, group_name, rectification_record),
+        start=1,
+    ):
+        block = f"## {order}. {section['title']}\n\n{section['body']}\n\n"
+        byte_start = len(content.encode("utf-8"))
+        content += block
+        encoded_block = block.encode("utf-8")
+        section_index.append({
+            "id": section["id"],
+            "order": order,
+            "title": section["title"],
+            "topics": section["topics"],
+            "byte_start": byte_start,
+            "byte_end": byte_start + len(encoded_block),
+            "byte_size": len(encoded_block),
+            "sha256": _pwa_artifact_sha256(encoded_block),
+        })
+    return content.rstrip() + "\n", section_index
+
+
 PWA_ARTIFACT_BUILDERS = (
     ("main_chart", "main-chart.md", "chart_markdown", lambda chart, name, group, transit: _build_natal_markdown(chart, name, group)),
     ("career", "career.md", "topic_markdown", _build_career_analysis_data_package_markdown),
@@ -29244,13 +29618,26 @@ def _pwa_artifact_chart_id(value):
     return chart_id
 
 
-def _pwa_artifact_set_root(owner_user_id, chart_id):
+def _pwa_artifact_profile(value=None):
+    profile = str(value or PWA_ARTIFACT_DEFAULT_PROFILE).strip()
+    if profile not in PWA_ARTIFACT_PROFILE_CODES:
+        raise ValueError("Geçerli artifact_profile gerekli")
+    return profile
+
+
+def _pwa_artifact_set_root(owner_user_id, chart_id, artifact_profile=None):
     owner_user_id = _account_deletion_user_id(owner_user_id)
     chart_id = _pwa_artifact_chart_id(chart_id)
+    artifact_profile = _pwa_artifact_profile(artifact_profile)
     user_root = Path(app.config["USER_DATA_ROOT"]).resolve()
-    target = (user_root / owner_user_id / chart_id / PWA_ARTIFACT_SCHEMA_VERSION).resolve()
-    expected_parent = (user_root / owner_user_id / chart_id).resolve()
-    if target.parent != expected_parent or expected_parent.parent.parent != user_root:
+    schema_root = (user_root / owner_user_id / chart_id / PWA_ARTIFACT_SCHEMA_VERSION).resolve()
+    target = (schema_root / artifact_profile).resolve()
+    expected_chart_root = (user_root / owner_user_id / chart_id).resolve()
+    if (
+        target.parent != schema_root
+        or schema_root.parent != expected_chart_root
+        or expected_chart_root.parent.parent != user_root
+    ):
         raise ValueError("Artefakt veri yolu güvenli değil")
     return target
 
@@ -29267,7 +29654,14 @@ def _pwa_artifact_write(path, content):
     }
 
 
-def _pwa_artifact_existing_manifest(root, owner_user_id, profile_id, chart_id, chart_sha256):
+def _pwa_artifact_existing_manifest(
+    root,
+    owner_user_id,
+    profile_id,
+    chart_id,
+    chart_sha256,
+    artifact_profile,
+):
     path = root / "manifest.json"
     if not path.is_file():
         return None
@@ -29276,14 +29670,17 @@ def _pwa_artifact_existing_manifest(root, owner_user_id, profile_id, chart_id, c
     except (OSError, ValueError):
         return None
     if (
-        manifest.get("contract_version") != "vedic-pwa-artifact-manifest-v1"
+        manifest.get("contract_version") != PWA_ARTIFACT_MANIFEST_VERSION
         or manifest.get("schema_version") != PWA_ARTIFACT_SCHEMA_VERSION
+        or manifest.get("artifact_profile") != artifact_profile
         or manifest.get("owner_user_id") != owner_user_id
         or manifest.get("profile_id") != profile_id
         or manifest.get("chart_id") != chart_id
         or manifest.get("canonical_snapshot", {}).get("sha256") != chart_sha256
-        or manifest.get("artifact_count") != 15
-        or len(manifest.get("artifacts") or []) != 15
+        or manifest.get("artifact_count") != len(PWA_ARTIFACT_PROFILE_CODES[artifact_profile])
+        or len(manifest.get("artifacts") or []) != len(PWA_ARTIFACT_PROFILE_CODES[artifact_profile])
+        or tuple(item.get("code") for item in manifest.get("artifacts") or [])
+        != PWA_ARTIFACT_PROFILE_CODES[artifact_profile]
     ):
         return None
     for item in [manifest.get("canonical_snapshot"), *(manifest.get("artifacts") or [])]:
@@ -29327,14 +29724,22 @@ def _pwa_transit_pack(chart, person_name, group_name):
     return _build_transit_pack(payload)
 
 
-def _generate_pwa_artifact_set(owner_user_id, profile_id, chart_id, chart, person_name):
+def _generate_pwa_artifact_set(
+    owner_user_id,
+    profile_id,
+    chart_id,
+    chart,
+    person_name,
+    artifact_profile=None,
+):
     owner_user_id = _account_deletion_user_id(owner_user_id)
     profile_id = str(profile_id or "").strip()
     chart_id = _pwa_artifact_chart_id(chart_id)
     if not profile_id or not isinstance(chart, dict):
         raise ValueError("Profil ve chart verisi gerekli")
 
-    root = _pwa_artifact_set_root(owner_user_id, chart_id)
+    artifact_profile = _pwa_artifact_profile(artifact_profile)
+    root = _pwa_artifact_set_root(owner_user_id, chart_id, artifact_profile)
     canonical_json = json.dumps(chart, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     chart_sha256 = _pwa_artifact_sha256(canonical_json)
     existing = _pwa_artifact_existing_manifest(
@@ -29343,6 +29748,7 @@ def _generate_pwa_artifact_set(owner_user_id, profile_id, chart_id, chart, perso
         profile_id,
         chart_id,
         chart_sha256,
+        artifact_profile,
     )
     if existing:
         manifest_bytes = (root / "manifest.json").read_bytes()
@@ -29356,26 +29762,48 @@ def _generate_pwa_artifact_set(owner_user_id, profile_id, chart_id, chart, perso
     transit_pack["_source_path"] = "transit-three-month.md"
 
     artifacts = []
-    for code, filename, artifact_type, builder in PWA_ARTIFACT_BUILDERS:
-        if code == "session":
-            content = builder(
-                chart_for_render,
-                person_name,
-                group_name,
-                rectification_record=None,
-                transit_pack=transit_pack,
-            )
-        else:
-            content = builder(chart_for_render, person_name, group_name, transit_pack)
-        metadata = _pwa_artifact_write(root / filename, content)
+    if artifact_profile == PWA_ARTIFACT_PROFILE_COMPACT:
+        natal_content, section_index = _build_natal_interpretation_package_markdown(
+            chart_for_render,
+            person_name,
+            group_name,
+            transit_pack=transit_pack,
+            rectification_record=None,
+        )
+        natal_filename = "natal-interpretation.md"
+        natal_metadata = _pwa_artifact_write(root / natal_filename, natal_content)
         artifacts.append({
-            "code": code,
-            "filename": filename,
-            "artifact_type": artifact_type,
+            "code": "natal_interpretation",
+            "filename": natal_filename,
+            "download_filename": f"{person_name}-Natal-Yorum-Paketi.md",
+            "artifact_type": "natal_markdown",
             "content_type": "text/markdown; charset=utf-8",
             "required": True,
-            **metadata,
+            "section_count": len(section_index),
+            "sections": section_index,
+            **natal_metadata,
         })
+    else:
+        for code, filename, artifact_type, builder in PWA_ARTIFACT_BUILDERS:
+            if code == "session":
+                content = builder(
+                    chart_for_render,
+                    person_name,
+                    group_name,
+                    rectification_record=None,
+                    transit_pack=transit_pack,
+                )
+            else:
+                content = builder(chart_for_render, person_name, group_name, transit_pack)
+            metadata = _pwa_artifact_write(root / filename, content)
+            artifacts.append({
+                "code": code,
+                "filename": filename,
+                "artifact_type": artifact_type,
+                "content_type": "text/markdown; charset=utf-8",
+                "required": True,
+                **metadata,
+            })
 
     transit_filename = "transit-three-month.md"
     transit_metadata = _pwa_artifact_write(
@@ -29395,8 +29823,10 @@ def _generate_pwa_artifact_set(owner_user_id, profile_id, chart_id, chart, perso
     snapshot_metadata = _pwa_artifact_write(root / snapshot_filename, canonical_json)
     generated_at = _beta_now()
     manifest = {
-        "contract_version": "vedic-pwa-artifact-manifest-v1",
+        "contract_version": PWA_ARTIFACT_MANIFEST_VERSION,
         "schema_version": PWA_ARTIFACT_SCHEMA_VERSION,
+        "artifact_profile": artifact_profile,
+        "required_codes": list(PWA_ARTIFACT_PROFILE_CODES[artifact_profile]),
         "owner_user_id": owner_user_id,
         "profile_id": profile_id,
         "chart_id": chart_id,
@@ -29417,13 +29847,18 @@ def _generate_pwa_artifact_set(owner_user_id, profile_id, chart_id, chart, perso
     return manifest, manifest_metadata["sha256"], False
 
 
-def _pwa_artifact_file(owner_user_id, chart_id, artifact_code):
-    root = _pwa_artifact_set_root(owner_user_id, chart_id)
+def _pwa_artifact_file(owner_user_id, chart_id, artifact_code, artifact_profile=None):
+    artifact_profile = _pwa_artifact_profile(artifact_profile)
+    root = _pwa_artifact_set_root(owner_user_id, chart_id, artifact_profile)
     manifest_path = root / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError("Artefakt manifesti bulunamadı")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("owner_user_id") != owner_user_id or manifest.get("chart_id") != chart_id:
+    if (
+        manifest.get("owner_user_id") != owner_user_id
+        or manifest.get("chart_id") != chart_id
+        or manifest.get("artifact_profile") != artifact_profile
+    ):
         raise ValueError("Artefakt sahipliği doğrulanamadı")
     candidates = [
         manifest.get("canonical_snapshot"),
@@ -29549,6 +29984,8 @@ def _beta_chart_summary(chart):
     active_periods = []
     for level in ("maha", "antara", "pratyantar", "sookshma"):
         period = active.get(level) or {}
+        if isinstance(period, str):
+            period = {"lord": period}
         if period:
             active_periods.append({
                 "level": level,
@@ -29792,6 +30229,102 @@ def _beta_safety_notes(topic):
     return notes
 
 
+PWA_NATAL_CORE_SECTION_IDS = {
+    "gemini_reading_protocol",
+    "usage_limits",
+    "birth_time_confidence",
+    "lagna",
+    "d1_planets",
+    "main_indicators",
+    "varga_confidence",
+    "vimshottari_current",
+    "active_planets",
+    "technical_layer_status",
+}
+
+PWA_NATAL_TOPIC_SECTION_IDS = {
+    "career": {
+        "shadbala", "vimshopaka_bala", "bhava_bala", "ashtakavarga",
+        "jaimini", "yogas", "planet_quick_read", "house_drishti",
+        "career_packet", "topic_summaries",
+    },
+    "marriage": {
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "jaimini", "yogas", "doshas", "planet_quick_read",
+        "house_drishti", "topic_summaries",
+    },
+    "wealth": {
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "planet_quick_read", "house_drishti", "topic_summaries",
+    },
+    "health": {
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "avasthas", "bhava_chalit", "yogas", "doshas",
+        "planet_quick_read", "house_drishti",
+    },
+    "spiritual": {
+        "varga_tables", "shadbala", "jaimini", "yogas", "doshas",
+        "planet_quick_read", "topic_summaries",
+    },
+}
+
+
+def _beta_selected_natal_sections(
+    chart,
+    subject_topic,
+    include_all=False,
+    timing_mode=False,
+):
+    render_chart = json.loads(json.dumps(chart))
+    active = (
+        ((render_chart.get("dashas") or {}).get("vimshottari") or {})
+        .get("current_active")
+        or {}
+    )
+    for level in DASHA_LEVELS:
+        period = active.get(level)
+        if isinstance(period, str):
+            active[level] = {"lord": period, "path": [period]}
+    person = ((render_chart.get("birth") or {}).get("person") or {})
+    sections = _pwa_natal_sections(
+        render_chart,
+        person.get("name") or person.get("id") or "PWA User",
+        "PWA",
+        rectification_record=None,
+    )
+    selected_ids = set(PWA_NATAL_CORE_SECTION_IDS)
+    if timing_mode:
+        selected_ids.discard("varga_confidence")
+        selected_ids.discard("technical_layer_status")
+    if include_all:
+        selected_ids.update({
+            "panchanga", "varga_tables", "shadbala", "vimshopaka_bala",
+            "bhava_bala", "ashtakavarga", "avasthas", "bhava_chalit",
+            "graha_yuddha", "kp", "jaimini", "yogas", "doshas",
+            "planet_quick_read", "house_drishti", "chara_dasha",
+            "yogini_dasha", "career_packet", "topic_summaries",
+            "life_events",
+        })
+    elif timing_mode:
+        selected_ids.update({"planet_quick_read", "topic_summaries"})
+        if subject_topic == "career":
+            selected_ids.add("career_packet")
+        elif subject_topic in {"marriage", "wealth", "health", "spiritual"}:
+            selected_ids.add("varga_tables")
+    else:
+        selected_ids.update(PWA_NATAL_TOPIC_SECTION_IDS.get(subject_topic, set()))
+    return [
+        {
+            "id": section["id"],
+            "title": section["title"],
+            "topics": section["topics"],
+            "content": section["body"],
+        }
+        for section in sections
+        if section["id"] in selected_ids
+    ]
+
+
 def _beta_build_chat_draft(question, chart):
     topic = _beta_detect_topic(question)
     subject_topic = _beta_detect_subject_topic(question) if topic == "transit" else topic
@@ -29818,6 +30351,12 @@ def _beta_build_chat_draft(question, chart):
         "chart_summary": _beta_chart_summary(chart),
         "active_dasha": _beta_active_dasha_evidence(chart),
         "topic_packet": packet,
+        "natal_sections": _beta_selected_natal_sections(
+            chart,
+            subject_topic,
+            include_all=topic == "general",
+            timing_mode=topic == "transit",
+        ),
         "transits": transits,
         "data_quality": chart.get("data_quality"),
     }
@@ -29835,6 +30374,11 @@ def _beta_build_chat_draft(question, chart):
         "evidence": evidence,
         "missing": missing,
         "confidence": confidence,
+        "context_strategy": (
+            "full_natal_sections_v1"
+            if topic == "general"
+            else "topic_selected_natal_sections_v1"
+        ),
         "safety_notes": _beta_safety_notes(topic),
         "next_action": "Bu kanıt paketini yorum katmanına ver; hesap veya eksik katman uydurma.",
     }
@@ -30393,7 +30937,7 @@ def api_v2_beta_chart_summary():
 
 @app.route("/api/v2/pwa/artifacts/generate", methods=["POST"])
 def api_v2_pwa_artifacts_generate():
-    """Generate the immutable PWA chart snapshot and 15 user artifact files."""
+    """Generate one immutable, server-selected PWA artifact profile."""
 
     try:
         data = request.get_json(silent=True)
@@ -30402,8 +30946,12 @@ def api_v2_pwa_artifacts_generate():
         owner_user_id = _account_deletion_user_id(data.get("owner_user_id"))
         profile_id = str(data.get("profile_id") or "").strip()
         chart_id = _pwa_artifact_chart_id(data.get("chart_id"))
+        requested_profile = data.get("artifact_profile")
+        artifact_profile = _pwa_artifact_profile(requested_profile)
         if not profile_id:
             raise ValueError("profile_id gerekli")
+        if requested_profile and not app.config.get("TESTING"):
+            raise ValueError("artifact_profile yalnız sunucu yapılandırmasından seçilir")
 
         with closing(_beta_db()) as conn:
             row = conn.execute(
@@ -30435,12 +30983,14 @@ def api_v2_pwa_artifacts_generate():
             chart_id,
             _beta_load_json(row["chart_json"]),
             str(row["name"] or "Vedik AI Kullanıcısı"),
+            artifact_profile=artifact_profile,
         )
         return jsonify({
             "ok": True,
             "status": "artifacts_ready",
             "replayed": replayed,
             "manifest_sha256": manifest_sha256,
+            "artifact_profile": artifact_profile,
             "manifest": manifest,
         })
     except (KeyError, TypeError, ValueError) as exc:
@@ -30467,14 +31017,20 @@ def api_v2_pwa_artifact_download(owner_user_id, chart_id, artifact_code):
         owner_user_id = _account_deletion_user_id(owner_user_id)
         chart_id = _pwa_artifact_chart_id(chart_id)
         artifact_code = str(artifact_code or "").strip()
+        artifact_profile = _pwa_artifact_profile(request.args.get("profile"))
         if not re.fullmatch(r"[a-z0-9_]{1,80}", artifact_code):
             raise ValueError("Geçerli artifact_code gerekli")
-        path, item, sha256 = _pwa_artifact_file(owner_user_id, chart_id, artifact_code)
+        path, item, sha256 = _pwa_artifact_file(
+            owner_user_id,
+            chart_id,
+            artifact_code,
+            artifact_profile=artifact_profile,
+        )
         response = send_file(
             path,
             mimetype=item.get("content_type") or "application/octet-stream",
             as_attachment=True,
-            download_name=item["filename"],
+            download_name=item.get("download_filename") or item["filename"],
             conditional=False,
         )
         response.headers["X-Artifact-Sha256"] = sha256
@@ -30579,7 +31135,7 @@ def api_v2_beta_chat_draft():
 
 @app.route("/api/v2/beta/chat/compare", methods=["POST"])
 def api_v2_beta_chat_compare():
-    """Run the same evidence through all three isolated candidate methodologies."""
+    """Run selected evidence through the single active system methodology."""
 
     comparison_id = None
     try:

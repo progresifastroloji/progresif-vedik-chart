@@ -36,6 +36,22 @@ def _draft():
 
 def _payload(summary="Teknik özet"):
     analysis = {
+        "question_intent": {
+            "interpreted_question": "Kariyer alanındaki ana güçler ve sınırlar",
+            "primary_topic": "career",
+            "timing_required": False,
+        },
+        "analysis_status": "COMPLETE",
+        "methodology_coverage": [
+            {"step": step, "status": "applied", "note": f"{step} uygulandı"}
+            for step in (
+                "question_and_scope", "topic_package", "data_gate",
+                "d1_natal_promise", "bhava_lord_karaka",
+                "dispositor_and_nakshatra", "strength_capacity_delivery",
+                "relevant_varga", "dasha_access", "transit_trigger",
+                "counter_evidence", "thematic_synthesis",
+            )
+        ],
         "summary": summary,
         "supporting_evidence": [
             {"claim": "Destek var", "evidence_path": "evidence.topic_packet"},
@@ -45,7 +61,7 @@ def _payload(summary="Teknik özet"):
         ],
         "missing_layers": [],
         "confidence": "medium",
-        "limitations": ["Bu bir aday metodoloji çıktısıdır."],
+        "limitations": ["Yalnız sağlanan kanıt kullanıldı."],
     }
     return {
         "candidates": [{"content": {"parts": [{"text": json.dumps(analysis)}]}}],
@@ -59,17 +75,18 @@ def _payload(summary="Teknik özet"):
 
 
 class MethodologyOrchestratorTest(unittest.TestCase):
-    def test_manifest_loads_exact_three_candidate_documents(self):
+    def test_manifest_loads_single_active_system_methodology(self):
         candidates = load_methodology_candidates()
 
         self.assertEqual(
             [candidate["id"] for candidate in candidates],
             [candidate["id"] for candidate in CANDIDATE_MANIFEST],
         )
-        self.assertTrue(all(candidate["status"] == "candidate" for candidate in candidates))
+        self.assertEqual(len(candidates), 1)
+        self.assertTrue(all(candidate["status"] == "active" for candidate in candidates))
         self.assertTrue(all(candidate["document"].startswith("---\n") for candidate in candidates))
 
-    def test_comparison_runs_each_candidate_with_same_evidence_and_no_selection(self):
+    def test_analysis_runs_single_active_methodology_and_selects_it(self):
         calls = []
 
         def model_call(request_id, request):
@@ -83,10 +100,10 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "comparison_ready")
-        self.assertEqual(result["completed_count"], 3)
-        self.assertIsNone(result["selection"])
-        self.assertEqual(result["selection_status"], "user_review_required")
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(result["completed_count"], 1)
+        self.assertEqual(result["selection"], "vedic-system-methodology-v1")
+        self.assertEqual(result["selection_status"], "system_methodology_active")
+        self.assertEqual(len(calls), 1)
         self.assertEqual(
             {item["evidence_sha256"] for item in result["methodology_results"]},
             {result["evidence_sha256"]},
@@ -101,15 +118,9 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             user_text = request["contents"][0]["parts"][0]["text"]
             self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
 
-    def test_one_invalid_model_response_is_isolated_without_selecting_winner(self):
-        call_count = 0
-
+    def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:
-                return request_id, {"candidates": []}
-            return request_id, _payload()
+            return request_id, {"candidates": []}
 
         result = run_methodology_comparison(
             _draft(),
@@ -117,12 +128,11 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             model_call,
         )
 
-        self.assertEqual(result["status"], "partial")
-        self.assertEqual(result["completed_count"], 2)
-        self.assertIsNone(result["selection"])
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["completed_count"], 0)
         self.assertEqual(
             [item["status"] for item in result["methodology_results"]],
-            ["completed", "failed", "completed"],
+            ["failed"],
         )
 
     def test_schema_invalid_response_is_retried_once_without_relaxing_validation(self):
@@ -130,7 +140,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         def model_call(request_id, _request):
             calls.append(request_id)
-            if request_id.endswith("vedic-classical-strict-v1"):
+            if request_id.endswith("vedic-system-methodology-v1"):
                 invalid = _payload()
                 value = json.loads(invalid["candidates"][0]["content"]["parts"][0]["text"])
                 value["supporting_evidence"][0]["evidence_path"] = "evidence.nonexistent.layer"
@@ -145,12 +155,12 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "comparison_ready")
-        self.assertEqual(result["completed_count"], 3)
-        self.assertEqual(len(calls), 4)
-        classical = result["methodology_results"][0]
-        self.assertEqual(classical["status"], "completed")
-        self.assertEqual(classical["attempt_count"], 2)
-        self.assertTrue(classical["request_id"].endswith("-retry-1"))
+        self.assertEqual(result["completed_count"], 1)
+        self.assertEqual(len(calls), 2)
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["status"], "completed")
+        self.assertEqual(system_result["attempt_count"], 2)
+        self.assertTrue(system_result["request_id"].endswith("-retry-1"))
 
     def test_response_rejects_a_made_up_evidence_path(self):
         payload = _payload()
@@ -242,7 +252,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
     def test_checksum_mismatch_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source_root = Path(__file__).resolve().parents[1] / "methodologies" / "candidates"
+            source_root = Path(__file__).resolve().parents[1] / "methodologies"
             for candidate in CANDIDATE_MANIFEST:
                 content = (source_root / candidate["filename"]).read_text(encoding="utf-8")
                 (root / candidate["filename"]).write_text(content, encoding="utf-8")

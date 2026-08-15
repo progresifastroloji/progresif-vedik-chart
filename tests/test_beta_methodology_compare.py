@@ -22,6 +22,22 @@ CHART_ID = "chart-methodology-test"
 
 def _model_payload():
     analysis = {
+        "question_intent": {
+            "interpreted_question": "Kariyer göstergelerini değerlendirmek",
+            "primary_topic": "career",
+            "timing_required": False,
+        },
+        "analysis_status": "COMPLETE",
+        "methodology_coverage": [
+            {"step": step, "status": "applied", "note": f"{step} uygulandı"}
+            for step in (
+                "question_and_scope", "topic_package", "data_gate",
+                "d1_natal_promise", "bhava_lord_karaka",
+                "dispositor_and_nakshatra", "strength_capacity_delivery",
+                "relevant_varga", "dasha_access", "transit_trigger",
+                "counter_evidence", "thematic_synthesis",
+            )
+        ],
         "summary": "Kariyer konusunda destek ve sınırlar birlikte görülüyor.",
         "supporting_evidence": [
             {"claim": "Destekleyici faktör var", "evidence_path": "evidence.topic_packet"},
@@ -95,13 +111,13 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         replay = second.get_json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["status"], "comparison_ready")
-        self.assertEqual(data["completed_count"], 3)
-        self.assertEqual(len(data["methodology_results"]), 3)
-        self.assertIsNone(data["selection"])
+        self.assertEqual(data["completed_count"], 1)
+        self.assertEqual(len(data["methodology_results"]), 1)
+        self.assertEqual(data["selection"], "vedic-system-methodology-v1")
         self.assertFalse(data["replayed"])
         self.assertTrue(replay["replayed"])
         self.assertEqual(replay["usage"]["heavy"]["used"], 1)
-        self.assertEqual(bridge_call.call_count, 3)
+        self.assertEqual(bridge_call.call_count, 1)
         usage = self.client.get(f"/api/v2/beta/usage?profile_id={PROFILE_ID}").get_json()
         self.assertEqual(usage["counts"]["methodology_comparisons"], 1)
 
@@ -121,7 +137,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
 
         self.assertEqual(collision.status_code, 400)
         self.assertEqual(collision.get_json()["status"], "invalid_request")
-        self.assertEqual(bridge_call.call_count, 3)
+        self.assertEqual(bridge_call.call_count, 1)
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_blocks_before_model_when_heavy_limit_is_full(self, bridge_call):
