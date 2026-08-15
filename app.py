@@ -12,7 +12,7 @@ import shutil
 import sqlite3
 import uuid
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import quote
@@ -26,6 +26,10 @@ from methodology_orchestrator import (
     run_methodology_comparison,
 )
 from place_catalog import PlaceCatalogUnavailable, get_place, search_places
+from question_classifier import (
+    QuestionClassificationError,
+    classify_question,
+)
 from topic_pack_contract import (
     package_contract_markdown,
     package_data_gate_markdown,
@@ -81,6 +85,15 @@ app.config["BETA_DAILY_CHAT_LIMIT"] = int(
 app.config["BETA_DAILY_HEAVY_LIMIT"] = int(
     os.environ.get("BETA_DAILY_HEAVY_LIMIT", "1000000")
 )
+app.config["QUESTION_ROUTER_MODE"] = os.environ.get(
+    "VEDIC_QUESTION_ROUTER_MODE",
+    "off",
+).strip().lower()
+app.config["QUESTION_ROUTER_ACTIVE_USER_IDS"] = {
+    item.strip()
+    for item in os.environ.get("VEDIC_QUESTION_ROUTER_ACTIVE_USER_IDS", "").split(",")
+    if item.strip()
+}
 app.config["USER_DATA_ROOT"] = os.environ.get(
     "VEDIC_USER_DATA_ROOT",
     str(DEFAULT_PERSISTENT_ROOT / "users"),
@@ -29167,6 +29180,20 @@ def _beta_init_db(conn):
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS beta_question_routes (
+            id TEXT PRIMARY KEY,
+            profile_id TEXT,
+            chart_id TEXT NOT NULL,
+            owner_user_id TEXT,
+            question TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            status TEXT NOT NULL,
+            legacy_json TEXT NOT NULL,
+            model_json TEXT,
+            selected_json TEXT NOT NULL,
+            error_code TEXT,
+            created_at TEXT NOT NULL
+        );
         """
     )
     for table, column in (
@@ -29184,6 +29211,12 @@ def _beta_init_db(conn):
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS beta_charts_owner_user_id_idx ON beta_charts(owner_user_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS beta_question_routes_profile_id_idx ON beta_question_routes(profile_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS beta_question_routes_owner_user_id_idx ON beta_question_routes(owner_user_id)"
     )
     conn.commit()
 
@@ -29266,6 +29299,7 @@ def _delete_beta_user_records(conn, user_id):
     }
     profile_ids.add(user_id)
     counts = {
+        "question_routes": 0,
         "methodology_comparisons": 0,
         "feedback": 0,
         "chat_messages": 0,
@@ -29274,6 +29308,11 @@ def _delete_beta_user_records(conn, user_id):
         "usage_events": 0,
     }
     statements = (
+        (
+            "question_routes",
+            "DELETE FROM beta_question_routes WHERE profile_id = ? OR owner_user_id = ?",
+            (user_id, user_id),
+        ),
         (
             "methodology_comparisons",
             "DELETE FROM beta_methodology_comparisons WHERE profile_id = ?",
@@ -29709,7 +29748,17 @@ def _pwa_artifact_existing_manifest(
     return manifest
 
 
-def _pwa_transit_pack(chart, person_name, group_name):
+PWA_TRANSIT_RUNTIME_CACHE_CONTRACT = "vedic-transit-runtime-cache-v1"
+
+
+def _pwa_transit_pack(
+    chart,
+    person_name,
+    group_name,
+    start_date=None,
+    transit_time="12:00",
+    period="three_month",
+):
     birth = chart.get("birth") or {}
     current_date = datetime.now().date()
     if birth.get("timezone_id"):
@@ -29727,15 +29776,158 @@ def _pwa_transit_pack(chart, person_name, group_name):
             "node_type": "true",
             "language": "tr",
         },
-        "period": "three_month",
-        "start_date": current_date.isoformat(),
-        "transit_time": "12:00",
+        "period": period,
+        "start_date": str(start_date or current_date.isoformat()),
+        "transit_time": str(transit_time or "12:00"),
     }
     if birth.get("timezone_id"):
         payload["transit_timezone_id"] = birth.get("timezone_id")
     elif birth.get("tz_offset") not in {None, ""}:
         payload["transit_tz_offset"] = birth.get("tz_offset")
     return _build_transit_pack(payload)
+
+
+def _pwa_transit_runtime_cache_path(owner_user_id, chart_id, artifact_profile=None):
+    root = _pwa_artifact_set_root(owner_user_id, chart_id, artifact_profile)
+    return (root / "transit-three-month.runtime.json").resolve()
+
+
+def _pwa_write_transit_runtime_cache(
+    owner_user_id,
+    profile_id,
+    chart_id,
+    artifact_profile,
+    chart,
+    transit_pack,
+):
+    path = _pwa_transit_runtime_cache_path(owner_user_id, chart_id, artifact_profile)
+    root = _pwa_artifact_set_root(owner_user_id, chart_id, artifact_profile).resolve()
+    if path.parent != root or path.name != "transit-three-month.runtime.json":
+        raise ValueError("Transit çalışma önbelleği yolu güvenli değil")
+    canonical_chart = json.dumps(
+        chart,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    payload = {
+        "contract_version": PWA_TRANSIT_RUNTIME_CACHE_CONTRACT,
+        "generator_revision": PWA_ARTIFACT_GENERATOR_REVISION,
+        "owner_user_id": owner_user_id,
+        "profile_id": profile_id,
+        "chart_id": chart_id,
+        "artifact_profile": artifact_profile,
+        "canonical_chart_sha256": _pwa_artifact_sha256(canonical_chart),
+        "created_at": _beta_now(),
+        "pack": transit_pack,
+    }
+    _pwa_artifact_write(
+        path,
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+    )
+    return payload
+
+
+def _pwa_read_transit_runtime_cache(
+    owner_user_id,
+    profile_id,
+    chart_id,
+    artifact_profile,
+    chart,
+):
+    path = _pwa_transit_runtime_cache_path(owner_user_id, chart_id, artifact_profile)
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    canonical_chart = json.dumps(
+        chart,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if (
+        not isinstance(payload, dict)
+        or payload.get("contract_version") != PWA_TRANSIT_RUNTIME_CACHE_CONTRACT
+        or payload.get("generator_revision") != PWA_ARTIFACT_GENERATOR_REVISION
+        or payload.get("owner_user_id") != owner_user_id
+        or payload.get("profile_id") != profile_id
+        or payload.get("chart_id") != chart_id
+        or payload.get("artifact_profile") != artifact_profile
+        or payload.get("canonical_chart_sha256") != _pwa_artifact_sha256(canonical_chart)
+        or not isinstance(payload.get("pack"), dict)
+    ):
+        return None
+    return payload
+
+
+def _pwa_transit_pack_covers(transit_pack, range_start, range_end):
+    period = (transit_pack or {}).get("period") or {}
+    try:
+        pack_start = date.fromisoformat(str(period.get("range_start") or ""))
+        pack_end = date.fromisoformat(str(period.get("range_end") or ""))
+        wanted_start = date.fromisoformat(str(range_start))
+        wanted_end = date.fromisoformat(str(range_end))
+    except ValueError:
+        return False
+    return pack_start <= wanted_start <= wanted_end <= pack_end
+
+
+def _pwa_get_or_create_transit_runtime_cache(
+    owner_user_id,
+    profile_id,
+    chart_id,
+    artifact_profile,
+    chart,
+    person_name,
+    range_start,
+    range_end,
+):
+    root = _pwa_artifact_set_root(owner_user_id, chart_id, artifact_profile)
+    manifest_path = root / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError("Transit artefakt manifesti bulunamadı")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        manifest.get("owner_user_id") != owner_user_id
+        or manifest.get("profile_id") != profile_id
+        or manifest.get("chart_id") != chart_id
+        or manifest.get("artifact_profile") != artifact_profile
+        or "transit_three_month" not in {
+            item.get("code") for item in manifest.get("artifacts") or []
+        }
+    ):
+        raise ValueError("Transit artefakt sahipliği doğrulanamadı")
+
+    cached = _pwa_read_transit_runtime_cache(
+        owner_user_id,
+        profile_id,
+        chart_id,
+        artifact_profile,
+        chart,
+    )
+    if cached and _pwa_transit_pack_covers(cached["pack"], range_start, range_end):
+        return cached["pack"], "stored_runtime_artifact", False
+
+    # A missing, corrupt, stale or out-of-range cache is one of the explicitly
+    # allowed regeneration cases. It is generated once, persisted, and reused.
+    transit_pack = _pwa_transit_pack(
+        chart,
+        person_name,
+        "PWA",
+        start_date=range_start,
+    )
+    _pwa_write_transit_runtime_cache(
+        owner_user_id,
+        profile_id,
+        chart_id,
+        artifact_profile,
+        chart,
+        transit_pack,
+    )
+    return transit_pack, "runtime_artifact_regenerated", True
 
 
 def _generate_pwa_artifact_set(
@@ -29765,6 +29957,26 @@ def _generate_pwa_artifact_set(
         artifact_profile,
     )
     if existing:
+        # Old manifests can predate the structured runtime sidecar. Backfill it
+        # only during explicit artifact generation, never on normal sign-in.
+        runtime_cache = _pwa_read_transit_runtime_cache(
+            owner_user_id,
+            profile_id,
+            chart_id,
+            artifact_profile,
+            chart,
+        )
+        if runtime_cache is None:
+            transit_pack = _pwa_transit_pack(chart, person_name, "PWA")
+            transit_pack["_source_path"] = "transit-three-month.md"
+            _pwa_write_transit_runtime_cache(
+                owner_user_id,
+                profile_id,
+                chart_id,
+                artifact_profile,
+                chart,
+                transit_pack,
+            )
         manifest_bytes = (root / "manifest.json").read_bytes()
         return existing, _pwa_artifact_sha256(manifest_bytes), True
 
@@ -29774,6 +29986,14 @@ def _generate_pwa_artifact_set(
     group_name = "PWA"
     transit_pack = _pwa_transit_pack(chart_for_render, person_name, group_name)
     transit_pack["_source_path"] = "transit-three-month.md"
+    _pwa_write_transit_runtime_cache(
+        owner_user_id,
+        profile_id,
+        chart_id,
+        artifact_profile,
+        chart,
+        transit_pack,
+    )
 
     artifacts = []
     if artifact_profile == PWA_ARTIFACT_PROFILE_COMPACT:
@@ -30065,6 +30285,170 @@ def _beta_detect_subject_topic(question):
     return "general"
 
 
+def _beta_legacy_question_route(question):
+    """Expose the old keyword decision in the new route shape for comparison."""
+
+    normalized = str(question or "").casefold()
+    topic = _beta_detect_topic(question)
+    subject_topic = _beta_detect_subject_topic(question) if topic == "transit" else topic
+    if any(value in normalized for value in ("tam şu anda", "tam su anda", "şimdi", "simdi")):
+        time_scope = "instant"
+    elif any(value in normalized for value in ("bugün", "bugun")):
+        time_scope = "daily"
+    elif topic == "transit":
+        time_scope = "range"
+    else:
+        time_scope = "none"
+
+    today = _beta_day()
+    required = ["natal_core", "topic_packet", "active_dasha"]
+    if subject_topic == "wellbeing":
+        required.append("natal_emotional_core")
+    if time_scope != "none":
+        required.extend([
+            "stored_transit_days",
+            "transit_natal_contacts",
+            "ashtakavarga",
+        ])
+    if time_scope in {"instant", "daily"}:
+        required.append("moon_and_panchanga")
+    if time_scope == "instant":
+        required.append("current_transit_snapshot")
+    return {
+        "contract_version": "vedic-question-route-legacy-v1",
+        "interpreted_question": str(question or "").strip(),
+        "primary_topic": subject_topic,
+        "time_scope": time_scope,
+        "timing_required": time_scope != "none",
+        "target_start": today if time_scope in {"daily", "range"} else None,
+        "target_end": today if time_scope == "daily" else None,
+        "target_datetime": "now" if time_scope == "instant" else None,
+        "required_evidence": required,
+        "sensitivity": (
+            "medical" if subject_topic == "health" else "standard"
+        ),
+        "confidence": "low",
+        "clarification_required": False,
+        "clarification_question": None,
+    }
+
+
+def _beta_question_now(chart):
+    birth = chart.get("birth") or {}
+    timezone_id = str(birth.get("timezone_id") or "").strip()
+    if timezone_id:
+        try:
+            return datetime.now(ZoneInfo(timezone_id)).isoformat(timespec="seconds")
+        except ZoneInfoNotFoundError:
+            pass
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _beta_question_router_mode(owner_user_id=None):
+    configured = str(app.config.get("QUESTION_ROUTER_MODE") or "off").strip().lower()
+    if configured not in {"off", "shadow", "active"}:
+        configured = "off"
+    active_users = app.config.get("QUESTION_ROUTER_ACTIVE_USER_IDS") or set()
+    if owner_user_id and owner_user_id in active_users:
+        return "active"
+    if configured == "active" and active_users:
+        return "shadow"
+    return configured
+
+
+def _beta_question_route(
+    question,
+    chart,
+    request_id,
+    owner_user_id=None,
+    *,
+    mode_override=None,
+):
+    legacy = _beta_legacy_question_route(question)
+    mode = (
+        str(mode_override).strip().lower()
+        if mode_override is not None
+        else _beta_question_router_mode(owner_user_id)
+    )
+    if mode not in {"off", "shadow", "active"}:
+        raise ValueError("Geçerli soru yönlendirici modu gerekli")
+    model = None
+    error_code = None
+    if mode != "off":
+        try:
+            model = classify_question(
+                question,
+                f"{request_id}-question-route",
+                call_vertex_bridge,
+                _beta_question_now(chart),
+            )
+        except Exception as exc:
+            error_code = (
+                exc.code
+                if isinstance(exc, QuestionClassificationError)
+                else getattr(exc, "code", "question_classifier_failed")
+            )
+            if not str(error_code).startswith(("question_classifier_", "vertex_")):
+                error_code = "question_classifier_failed"
+    selected = model if mode == "active" and model else legacy
+    status = (
+        "model_selected"
+        if selected is model and model
+        else "model_shadowed"
+        if model
+        else "fallback_selected"
+        if error_code
+        else "legacy_selected"
+    )
+    return {
+        "mode": mode,
+        "status": status,
+        "legacy": legacy,
+        "model": model,
+        "selected": selected,
+        "error_code": error_code,
+        "agreement": bool(
+            model
+            and model.get("primary_topic") == legacy.get("primary_topic")
+            and model.get("time_scope") == legacy.get("time_scope")
+        ),
+    }
+
+
+def _beta_record_question_route(
+    route_id,
+    profile_id,
+    chart_id,
+    owner_user_id,
+    question,
+    routing,
+):
+    with closing(_beta_db()) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO beta_question_routes
+                (id, profile_id, chart_id, owner_user_id, question, mode, status,
+                 legacy_json, model_json, selected_json, error_code, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                route_id,
+                profile_id,
+                chart_id,
+                owner_user_id,
+                question,
+                routing["mode"],
+                routing["status"],
+                _beta_json(routing["legacy"]),
+                _beta_json(routing["model"]) if routing.get("model") else None,
+                _beta_json(routing["selected"]),
+                routing.get("error_code"),
+                _beta_now(),
+            ),
+        )
+        conn.commit()
+
+
 def _beta_compact_transit_planet(planet):
     if not planet:
         return None
@@ -30095,7 +30479,79 @@ def _beta_compact_transit_contact(contact):
     }
 
 
-def _beta_compact_transit_evidence(transit_pack):
+def _beta_full_transit_planet(planet):
+    if not planet:
+        return None
+    ashtakavarga = planet.get("ashtakavarga") or {}
+    return {
+        "name": planet.get("name"),
+        "sign": planet.get("sign"),
+        "sign_tr": planet.get("sign_tr"),
+        "sign_index": planet.get("sign_index"),
+        "degree": planet.get("degree_str"),
+        "nakshatra": planet.get("nakshatra"),
+        "nakshatra_lord": planet.get("nakshatra_lord"),
+        "pada": planet.get("nakshatra_pada"),
+        "house_from_lagna": planet.get("house_from_lagna"),
+        "house_from_moon": planet.get("house_from_moon"),
+        "retrograde": bool(planet.get("retrograde")),
+        "speed_status": planet.get("speed_status"),
+        "natal_planets_in_sign": planet.get("natal_planets_in_sign") or [],
+        "sav": ashtakavarga.get("sav"),
+        "bav": ashtakavarga.get("bav"),
+        "sav_support_level": ashtakavarga.get("sav_support_level"),
+        "bav_support_level": ashtakavarga.get("bav_support_level"),
+    }
+
+
+def _beta_full_transit_day(day):
+    return {
+        "date": day.get("date"),
+        "reference_datetime_utc": day.get("reference_datetime_utc"),
+        "requested_time": day.get("requested_time"),
+        "requested_tz_offset": day.get("requested_tz_offset"),
+        "active_dasha_path": day.get("active_dasha_path") or [],
+        "active_dasha": day.get("active_dasha") or [],
+        "panchanga": day.get("panchanga") or {},
+        "planets": [
+            _beta_full_transit_planet(planet)
+            for planet in day.get("planets") or []
+        ],
+        "natal_contacts": [
+            _beta_compact_transit_contact(contact)
+            for contact in day.get("natal_contacts") or []
+        ],
+        "dasha_cross_reference": day.get("dasha_cross_reference") or {},
+        "special_checks": day.get("special_checks") or {},
+    }
+
+
+def _beta_select_transit_pack(transit_pack, range_start, range_end):
+    selected_days = [
+        day
+        for day in (transit_pack or {}).get("days") or []
+        if range_start <= str(day.get("date") or "") <= range_end
+    ]
+    if not selected_days:
+        raise ValueError("İstenen tarih kayıtlı transit artefaktında bulunamadı")
+    selected = dict(transit_pack)
+    selected["days"] = selected_days
+    selected["selection"] = {
+        "range_start": range_start,
+        "range_end": range_end,
+        "day_count": len(selected_days),
+    }
+    return selected
+
+
+def _beta_compact_transit_evidence(
+    transit_pack,
+    *,
+    time_scope="range",
+    instant_pack=None,
+    source="generated",
+    regenerated=False,
+):
     """Bounded three-month evidence: every day for timing, sparse slow-planet snapshots."""
 
     days = (transit_pack or {}).get("days") or []
@@ -30104,6 +30560,7 @@ def _beta_compact_transit_evidence(transit_pack):
     slow_planet_snapshots = []
     previous_states = None
     closest_contacts = {}
+    full_daily_records = []
 
     for index, day in enumerate(days):
         degree_contacts = sorted(
@@ -30133,6 +30590,8 @@ def _beta_compact_transit_evidence(transit_pack):
                 for contact in selected_contacts
             ],
         })
+        if time_scope in {"instant", "daily"}:
+            full_daily_records.append(_beta_full_transit_day(day))
 
         current_states = {
             planet_name: (
@@ -30182,12 +30641,17 @@ def _beta_compact_transit_evidence(transit_pack):
             key=lambda item: (item[1] or "", item[0]),
         )
     ]
-    return {
-        "contract_version": "vedic-compact-transit-evidence-v1",
+    result = {
+        "contract_version": "vedic-compact-transit-evidence-v2",
         "calculation_policy": "api_only_no_model_calculation",
+        "time_scope": time_scope,
+        "source": source,
+        "three_month_recalculated_for_question": bool(regenerated),
         "period": (transit_pack or {}).get("period") or {},
+        "selection": (transit_pack or {}).get("selection") or {},
         "natal_reference": (transit_pack or {}).get("natal") or {},
         "daily_timing": daily_timing,
+        "daily_records": full_daily_records,
         "slow_planet_snapshots": slow_planet_snapshots,
         "closest_approaches": closest_approaches,
         "interpretation_limits": [
@@ -30197,6 +30661,12 @@ def _beta_compact_transit_evidence(transit_pack):
             "dates are technical evidence, not guaranteed event dates",
         ],
     }
+    if instant_pack:
+        instant_days = (instant_pack or {}).get("days") or []
+        if not instant_days:
+            raise ValueError("Anlık transit görüntüsü üretilemedi")
+        result["instant_snapshot"] = _beta_full_transit_day(instant_days[0])
+    return result
 
 
 def _beta_missing_for_topic(chart, packet):
@@ -30232,7 +30702,7 @@ def _beta_active_dasha_evidence(chart):
     }
 
 
-def _beta_safety_notes(topic):
+def _beta_safety_notes(topic, sensitivity=None):
     notes = [
         "Bu cevap taslağı yorum üretmez; API kanıt paketini sohbet katmanına hazırlar.",
         "Kesin hüküm, kader iddiası veya tıbbi/finansal/evlilik kararı üretmez.",
@@ -30241,6 +30711,10 @@ def _beta_safety_notes(topic):
         notes.append("Sağlık başlıkları için profesyonel tıbbi görüşün yerine geçmez.")
     if topic == "wealth":
         notes.append("Finans başlıkları yatırım tavsiyesi değildir.")
+    if topic == "wellbeing" or sensitivity == "mental_wellbeing":
+        notes.append(
+            "Ruh hâli sorularında psikolojik/psikiyatrik teşhis veya kriz güvencesi üretilmez."
+        )
     return notes
 
 
@@ -30258,6 +30732,11 @@ PWA_NATAL_CORE_SECTION_IDS = {
 }
 
 PWA_NATAL_TOPIC_SECTION_IDS = {
+    "wellbeing": {
+        "panchanga", "varga_tables", "shadbala", "bhava_bala",
+        "ashtakavarga", "avasthas", "planet_quick_read",
+        "house_drishti", "topic_summaries",
+    },
     "character": {
         "varga_tables", "shadbala", "vimshopaka_bala", "bhava_bala",
         "ashtakavarga", "avasthas", "jaimini", "yogas",
@@ -30354,6 +30833,8 @@ def _beta_selected_natal_sections(
         selected_ids.update({"planet_quick_read", "topic_summaries"})
         if subject_topic == "career":
             selected_ids.add("career_packet")
+        elif subject_topic == "wellbeing":
+            selected_ids.update({"shadbala", "bhava_bala", "avasthas"})
         elif subject_topic in {"marriage", "wealth", "health", "spiritual"}:
             selected_ids.add("varga_tables")
     else:
@@ -30370,22 +30851,79 @@ def _beta_selected_natal_sections(
     ]
 
 
-def _beta_build_chat_draft(question, chart):
-    topic = _beta_detect_topic(question)
-    subject_topic = _beta_detect_subject_topic(question) if topic == "transit" else topic
+def _beta_route_time_window(route, chart):
+    now_value = _beta_question_now(chart)
+    now_dt = datetime.fromisoformat(now_value)
+    scope = route.get("time_scope") or "none"
+    if scope == "instant":
+        target = route.get("target_datetime")
+        target_dt = now_dt if target in {None, "", "now"} else datetime.fromisoformat(
+            str(target).replace("Z", "+00:00")
+        )
+        target_date = target_dt.date().isoformat()
+        return target_date, target_date, target_dt
+    if scope == "daily":
+        target_date = str(route.get("target_start") or now_dt.date().isoformat())
+        return target_date, target_date, None
+    if scope == "range":
+        range_start = str(route.get("target_start") or now_dt.date().isoformat())
+        range_end = str(
+            route.get("target_end")
+            or (date.fromisoformat(range_start) + timedelta(days=91)).isoformat()
+        )
+        return range_start, range_end, None
+    return None, None, None
+
+
+def _beta_instant_transit_pack(chart, target_dt):
+    person = ((chart.get("birth") or {}).get("person") or {})
+    return _pwa_transit_pack(
+        chart,
+        person.get("name") or person.get("id") or "PWA User",
+        "PWA",
+        start_date=target_dt.date().isoformat(),
+        transit_time=target_dt.strftime("%H:%M"),
+        period="daily",
+    )
+
+
+def _beta_topic_packet(chart, subject_topic):
+    packet = (chart.get("topic_packets") or {}).get(subject_topic)
+    if packet:
+        return packet
+    if subject_topic not in {"character", "wellbeing", "general"}:
+        return None
+    selection_rules = {
+        "character": "Lagna, Lagna lordu, Ay, Atmakaraka, Shadbala, D9, yoga ve karşı kanıt birlikte okunur.",
+        "wellbeing": "Ay, Lagna, Lagna lordu, aktif daşa, duygusal bhavalar ve zaman sorusunda güncel Ay/Panchanga birlikte okunur.",
+        "general": "Genel harita sorusunda temel natal göstergeler ve karşı kanıt birlikte okunur.",
+    }
+    return {
+        "contract_version": "vedic-natal-topic-selection-v1",
+        "package_code": subject_topic.upper(),
+        "topic": subject_topic,
+        "source": "selected_natal_sections",
+        "confidence": "medium",
+        "missing_factors": [],
+        "required_but_missing": [],
+        "evidence": {"selection_rule": selection_rules[subject_topic]},
+    }
+
+
+def _beta_build_chat_draft(
+    question,
+    chart,
+    *,
+    routing=None,
+    owner_user_id=None,
+    profile_id=None,
+    chart_id=None,
+):
+    selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
+    subject_topic = selected_route["primary_topic"]
+    topic = "transit" if selected_route["timing_required"] else subject_topic
     packets = chart.get("topic_packets") or {}
-    packet = packets.get(subject_topic)
-    if not packet and subject_topic == "character":
-        packet = {
-            "contract_version": "vedic-natal-topic-selection-v1",
-            "package_code": "GENERAL",
-            "topic": "character",
-            "source": "selected_natal_sections",
-            "confidence": "medium",
-            "evidence": {
-                "selection_rule": "Lagna, Lagna lordu, Ay, Atmakaraka, Shadbala, D9, yoga ve karşı kanıt birlikte okunur.",
-            },
-        }
+    packet = _beta_topic_packet(chart, subject_topic)
     if packet:
         # Stored beta charts created before the current-active correction can
         # contain the birth-time dasha inside topic packets. Normalize at read
@@ -30395,14 +30933,55 @@ def _beta_build_chat_draft(question, chart):
             chart.get("dashas") or {}
         )
     transits = chart.get("transits")
+    transit_trace = None
     if topic == "transit":
         person = ((chart.get("birth") or {}).get("person") or {})
-        transit_pack = _pwa_transit_pack(
-            chart,
-            person.get("name") or person.get("id") or "PWA User",
-            "PWA",
+        range_start, range_end, target_dt = _beta_route_time_window(selected_route, chart)
+        source = "legacy_generated"
+        regenerated = True
+        if owner_user_id and profile_id and chart_id:
+            transit_pack, source, regenerated = _pwa_get_or_create_transit_runtime_cache(
+                owner_user_id,
+                profile_id,
+                chart_id,
+                PWA_ARTIFACT_DEFAULT_PROFILE,
+                chart,
+                person.get("name") or person.get("id") or "PWA User",
+                range_start,
+                range_end,
+            )
+        else:
+            transit_pack = _pwa_transit_pack(
+                chart,
+                person.get("name") or person.get("id") or "PWA User",
+                "PWA",
+                start_date=range_start,
+            )
+        selected_pack = _beta_select_transit_pack(transit_pack, range_start, range_end)
+        instant_pack = (
+            _beta_instant_transit_pack(chart, target_dt)
+            if selected_route["time_scope"] == "instant"
+            else None
         )
-        transits = _beta_compact_transit_evidence(transit_pack)
+        transits = _beta_compact_transit_evidence(
+            selected_pack,
+            time_scope=selected_route["time_scope"],
+            instant_pack=instant_pack,
+            source=source,
+            regenerated=regenerated,
+        )
+        transit_trace = {
+            "source": source,
+            "three_month_recalculated_for_question": bool(regenerated),
+            "range_start": range_start,
+            "range_end": range_end,
+            "instant_reference_datetime_utc": (
+                (transits.get("instant_snapshot") or {}).get("reference_datetime_utc")
+            ),
+            "instant_requested_time": (
+                (transits.get("instant_snapshot") or {}).get("requested_time")
+            ),
+        }
     evidence = {
         "chart_summary": _beta_chart_summary(chart),
         "active_dasha": _beta_active_dasha_evidence(chart),
@@ -30430,6 +31009,15 @@ def _beta_build_chat_draft(question, chart):
         "question": question,
         "topic": topic,
         "subject_topic": subject_topic,
+        "question_route": selected_route,
+        "routing_comparison": {
+            "mode": (routing or {}).get("mode", "off"),
+            "status": (routing or {}).get("status", "legacy_selected"),
+            "agreement": (routing or {}).get("agreement"),
+            "legacy": (routing or {}).get("legacy"),
+            "model": (routing or {}).get("model"),
+            "error_code": (routing or {}).get("error_code"),
+        },
         "evidence": evidence,
         "missing": missing,
         "confidence": confidence,
@@ -30438,7 +31026,17 @@ def _beta_build_chat_draft(question, chart):
             if topic == "general"
             else "topic_selected_natal_sections_v1"
         ),
-        "safety_notes": _beta_safety_notes(topic),
+        "context_trace": {
+            "route_contract_version": selected_route.get("contract_version"),
+            "primary_topic": subject_topic,
+            "time_scope": selected_route.get("time_scope"),
+            "required_evidence": selected_route.get("required_evidence") or [],
+            "transit": transit_trace,
+        },
+        "safety_notes": _beta_safety_notes(
+            subject_topic,
+            selected_route.get("sensitivity"),
+        ),
         "next_action": "Bu kanıt paketini yorum katmanına ver; hesap veya eksik katman uydurma.",
     }
 
@@ -30473,12 +31071,12 @@ def _beta_existing_comparison(conn, comparison_id, profile_id, chart_id, questio
 def _beta_load_chart(conn, chart_id=None, profile_id=None):
     if chart_id:
         row = conn.execute(
-            "SELECT id, profile_id, chart_json FROM beta_charts WHERE id = ?",
+            "SELECT id, profile_id, chart_json, owner_user_id FROM beta_charts WHERE id = ?",
             (chart_id,),
         ).fetchone()
     elif profile_id:
         row = conn.execute(
-            "SELECT id, profile_id, chart_json FROM beta_charts WHERE profile_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, profile_id, chart_json, owner_user_id FROM beta_charts WHERE profile_id = ? ORDER BY created_at DESC LIMIT 1",
             (profile_id,),
         ).fetchone()
     else:
@@ -30486,7 +31084,12 @@ def _beta_load_chart(conn, chart_id=None, profile_id=None):
 
     if not row:
         raise ValueError("Chart referansı bulunamadı")
-    return row["id"], row["profile_id"], _beta_load_json(row["chart_json"])
+    return (
+        row["id"],
+        row["profile_id"],
+        _beta_load_json(row["chart_json"]),
+        row["owner_user_id"],
+    )
 
 
 @app.route("/api/v1/places/search", methods=["GET"])
@@ -31133,6 +31736,9 @@ def api_v2_beta_chat_draft():
 
         profile_id = data.get("profile_id")
         chart_id = data.get("chart_id")
+        owner_user_id = data.get("owner_user_id")
+        if owner_user_id is not None:
+            owner_user_id = _account_deletion_user_id(owner_user_id)
         with closing(_beta_db()) as conn:
             usage_before = _beta_usage_status(conn, profile_id)
             if usage_before["chat"]["remaining"] <= 0:
@@ -31155,17 +31761,63 @@ def api_v2_beta_chat_draft():
                 profile_id = profile_id or chart.get("birth", {}).get("person", {}).get("id")
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO beta_charts (id, profile_id, chart_json, created_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT OR REPLACE INTO beta_charts
+                        (id, profile_id, chart_json, created_at, owner_user_id)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (chart_id, profile_id or "inline", _beta_json(chart), _beta_now()),
+                    (
+                        chart_id,
+                        profile_id or "inline",
+                        _beta_json(chart),
+                        _beta_now(),
+                        owner_user_id,
+                    ),
                 )
                 conn.commit()
             else:
-                chart_id, profile_id, chart = _beta_load_chart(conn, chart_id, profile_id)
+                chart_id, profile_id, chart, stored_owner_user_id = _beta_load_chart(
+                    conn,
+                    chart_id,
+                    profile_id,
+                )
+                if owner_user_id and stored_owner_user_id != owner_user_id:
+                    return jsonify({
+                        "ok": False,
+                        "status": "ownership_mismatch",
+                        "error_code": "beta_chart_ownership_mismatch",
+                    }), 403
+                owner_user_id = stored_owner_user_id
 
-            draft = _beta_build_chat_draft(question, chart)
             message_id = str(uuid.uuid4())
+            routing = _beta_question_route(
+                question,
+                chart,
+                message_id,
+                owner_user_id,
+            )
+            _beta_record_question_route(
+                message_id,
+                profile_id,
+                chart_id,
+                owner_user_id,
+                question,
+                routing,
+            )
+            if routing["selected"].get("clarification_required"):
+                return jsonify({
+                    "ok": False,
+                    "status": "clarification_required",
+                    "error_code": "question_clarification_required",
+                    "question": routing["selected"].get("clarification_question"),
+                }), 422
+            draft = _beta_build_chat_draft(
+                question,
+                chart,
+                routing=routing,
+                owner_user_id=owner_user_id,
+                profile_id=profile_id,
+                chart_id=chart_id,
+            )
             conn.execute(
                 """
                 INSERT INTO beta_chat_messages
@@ -31216,11 +31868,21 @@ def api_v2_beta_chat_compare():
         comparison_id = _beta_comparison_id(data.get("comparison_id"))
 
         with closing(_beta_db()) as conn:
-            chart_id, profile_id, chart = _beta_load_chart(
+            chart_id, profile_id, chart, stored_owner_user_id = _beta_load_chart(
                 conn,
                 data.get("chart_id"),
                 data.get("profile_id"),
             )
+            requested_owner_user_id = data.get("owner_user_id")
+            if requested_owner_user_id is not None:
+                requested_owner_user_id = _account_deletion_user_id(requested_owner_user_id)
+                if stored_owner_user_id != requested_owner_user_id:
+                    return jsonify({
+                        "ok": False,
+                        "status": "ownership_mismatch",
+                        "error_code": "beta_chart_ownership_mismatch",
+                    }), 403
+            owner_user_id = stored_owner_user_id
             existing = _beta_existing_comparison(
                 conn,
                 comparison_id,
@@ -31238,7 +31900,13 @@ def api_v2_beta_chat_compare():
                         "usage": usage,
                     }), 409
                 stored = _beta_load_json(existing["response_json"])
-                status_code = 200 if stored.get("completed_count", 0) else 502
+                status_code = (
+                    422
+                    if existing["status"] == "clarification_required"
+                    else 200
+                    if stored.get("completed_count", 0)
+                    else 502
+                )
                 return jsonify({
                     "ok": bool(stored.get("completed_count", 0)),
                     "replayed": True,
@@ -31268,7 +31936,58 @@ def api_v2_beta_chat_compare():
             )
             conn.commit()
 
-        draft = _beta_build_chat_draft(question, chart)
+        routing = _beta_question_route(
+            question,
+            chart,
+            comparison_id,
+            owner_user_id,
+        )
+        _beta_record_question_route(
+            comparison_id,
+            profile_id,
+            chart_id,
+            owner_user_id,
+            question,
+            routing,
+        )
+        if routing["selected"].get("clarification_required"):
+            clarification = {
+                "status": "clarification_required",
+                "completed_count": 0,
+                "error_code": "question_clarification_required",
+                "question_route": routing["selected"],
+                "clarification_question": routing["selected"].get(
+                    "clarification_question"
+                ),
+            }
+            with closing(_beta_db()) as conn:
+                conn.execute(
+                    """
+                    UPDATE beta_methodology_comparisons
+                    SET status = 'clarification_required', response_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (_beta_json(clarification), _beta_now(), comparison_id),
+                )
+                conn.commit()
+                usage = _beta_usage_status(conn, profile_id)
+            return jsonify({
+                "ok": False,
+                "replayed": False,
+                "profile_id": profile_id,
+                "chart_id": chart_id,
+                "comparison_id": comparison_id,
+                "usage": usage,
+                **clarification,
+            }), 422
+        draft = _beta_build_chat_draft(
+            question,
+            chart,
+            routing=routing,
+            owner_user_id=owner_user_id,
+            profile_id=profile_id,
+            chart_id=chart_id,
+        )
         comparison = run_methodology_comparison(
             draft,
             comparison_id,
@@ -31362,6 +32081,63 @@ def api_v2_beta_chat_compare():
             "status": "comparison_failed",
             "error_code": "methodology_orchestration_failed",
         }), 500
+
+
+@app.route("/api/v2/beta/question-route/diagnostic", methods=["POST"])
+def api_v2_beta_question_route_diagnostic():
+    """Compare legacy and Gemini routing without chart access or usage rights."""
+
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli yönlendirici deneme isteği gerekli")
+        questions = data.get("questions")
+        if not isinstance(questions, list) or not 1 <= len(questions) <= 20:
+            raise ValueError("questions 1 ile 20 soru içermeli")
+        timezone_id = str(data.get("timezone_id") or "Europe/Istanbul").strip()
+        chart_stub = {"birth": {"timezone_id": timezone_id}}
+        results = []
+        for raw_question in questions:
+            question = str(raw_question or "").strip()
+            if not question or len(question) > 2_000:
+                raise ValueError("Her soru 1 ile 2000 karakter arasında olmalı")
+            route_id = f"diagnostic-{uuid.uuid4()}"
+            routing = _beta_question_route(
+                question,
+                chart_stub,
+                route_id,
+                mode_override="shadow",
+            )
+            _beta_record_question_route(
+                route_id,
+                "__diagnostic__",
+                "question-router-diagnostic",
+                None,
+                question,
+                routing,
+            )
+            results.append({
+                "route_id": route_id,
+                "question": question,
+                "status": routing["status"],
+                "agreement": routing["agreement"],
+                "legacy": routing["legacy"],
+                "model": routing["model"],
+                "selected": routing["selected"],
+                "error_code": routing["error_code"],
+            })
+        return jsonify({
+            "ok": all(item["model"] is not None for item in results),
+            "mode": "shadow",
+            "count": len(results),
+            "results": results,
+        }), 200
+    except (TypeError, ValueError) as exc:
+        return jsonify({
+            "ok": False,
+            "status": "invalid_request",
+            "error": str(exc),
+        }), 400
 
 
 @app.route("/api/v2/ai/generate", methods=["POST"])

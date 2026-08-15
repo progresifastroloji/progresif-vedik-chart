@@ -10,6 +10,7 @@ from app import (
     _beta_db,
     _beta_detect_subject_topic,
     _beta_detect_topic,
+    _beta_question_route,
     _beta_shadbala_strength_summary,
     _beta_json,
     _beta_now,
@@ -57,13 +58,50 @@ def _model_payload():
     }
 
 
+def _route_payload(topic, time_scope, *, sensitivity="standard"):
+    required = ["natal_core", "active_dasha"]
+    if topic == "wellbeing":
+        required.append("natal_emotional_core")
+    if time_scope != "none":
+        required.extend([
+            "stored_transit_days",
+            "transit_natal_contacts",
+            "ashtakavarga",
+        ])
+    if time_scope in {"daily", "instant"}:
+        required.append("moon_and_panchanga")
+    if time_scope == "instant":
+        required.append("current_transit_snapshot")
+    value = {
+        "interpreted_question": "Soru doğru konu ve zaman kapsamıyla anlaşıldı.",
+        "primary_topic": topic,
+        "time_scope": time_scope,
+        "timing_required": time_scope != "none",
+        "target_start": "2026-08-15" if time_scope in {"daily", "range"} else None,
+        "target_end": "2026-11-14" if time_scope == "range" else None,
+        "target_datetime": "now" if time_scope == "instant" else None,
+        "required_evidence": required,
+        "sensitivity": sensitivity,
+        "confidence": "high",
+        "clarification_required": False,
+        "clarification_question": None,
+    }
+    return {
+        "candidates": [{"content": {"parts": [{"text": json.dumps(value)}]}}],
+    }
+
+
 class BetaMethodologyCompareEndpointTest(unittest.TestCase):
     def setUp(self):
         self._old_beta_db_path = app.config["BETA_DB_PATH"]
         self._old_heavy_limit = app.config["BETA_DAILY_HEAVY_LIMIT"]
+        self._old_router_mode = app.config["QUESTION_ROUTER_MODE"]
+        self._old_router_users = app.config["QUESTION_ROUTER_ACTIVE_USER_IDS"]
         self._tmp = tempfile.TemporaryDirectory()
         app.config["BETA_DB_PATH"] = f"{self._tmp.name}/beta.sqlite3"
         app.config["BETA_DAILY_HEAVY_LIMIT"] = 3
+        app.config["QUESTION_ROUTER_MODE"] = "off"
+        app.config["QUESTION_ROUTER_ACTIVE_USER_IDS"] = set()
         self.client = app.test_client()
         chart = {
             "birth": {"person": {"id": PROFILE_ID}, "date": "2000-01-01"},
@@ -91,6 +129,8 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
     def tearDown(self):
         app.config["BETA_DB_PATH"] = self._old_beta_db_path
         app.config["BETA_DAILY_HEAVY_LIMIT"] = self._old_heavy_limit
+        app.config["QUESTION_ROUTER_MODE"] = self._old_router_mode
+        app.config["QUESTION_ROUTER_ACTIVE_USER_IDS"] = self._old_router_users
         self._tmp.cleanup()
 
     @patch("app.call_vertex_bridge")
@@ -184,6 +224,68 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(_beta_detect_topic(question), "transit")
         self.assertEqual(_beta_detect_subject_topic(question), "career")
 
+    @patch("app.call_vertex_bridge")
+    def test_controlled_eight_question_shadow_comparison(self, bridge_call):
+        cases = [
+            ("İyi hissetmiyorum.", "wellbeing", "none", "mental_wellbeing"),
+            ("Tam şu anda neden böyle hissediyorum?", "wellbeing", "instant", "mental_wellbeing"),
+            ("Bugün kendimi neden gergin hissediyorum?", "wellbeing", "daily", "mental_wellbeing"),
+            ("İşimde neden mutsuzum?", "career", "none", "standard"),
+            ("Bugün işte neden gerginim?", "career", "daily", "standard"),
+            ("Kariyerimde güçlü tarafım nedir?", "career", "none", "standard"),
+            ("Önümüzdeki üç ay kariyerimde ne olur?", "career", "range", "standard"),
+            ("Bugün sevgilimle neden gerginiz?", "marriage", "daily", "standard"),
+        ]
+        payloads = [_route_payload(topic, scope, sensitivity=sensitivity) for _, topic, scope, sensitivity in cases]
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            payloads.pop(0),
+        )
+
+        response = self.client.post(
+            "/api/v2/beta/question-route/diagnostic",
+            json={"questions": [question for question, *_ in cases]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["mode"], "shadow")
+        self.assertEqual(data["count"], 8)
+        for result, (_, topic, scope, sensitivity) in zip(data["results"], cases):
+            self.assertEqual(result["model"]["primary_topic"], topic)
+            self.assertEqual(result["model"]["time_scope"], scope)
+            self.assertEqual(result["model"]["sensitivity"], sensitivity)
+            self.assertEqual(result["selected"], result["legacy"])
+        self.assertEqual(data["results"][0]["legacy"]["primary_topic"], "career")
+        self.assertEqual(data["results"][0]["model"]["primary_topic"], "wellbeing")
+
+        with closing(_beta_db()) as conn:
+            stored = conn.execute(
+                "SELECT COUNT(*) FROM beta_question_routes WHERE chart_id = ?",
+                ("question-router-diagnostic",),
+            ).fetchone()[0]
+        self.assertEqual(stored, 8)
+
+    @patch("app.call_vertex_bridge")
+    def test_active_router_fixes_hissetmiyorum_without_file_authority(self, bridge_call):
+        app.config["QUESTION_ROUTER_MODE"] = "active"
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            _route_payload("wellbeing", "instant", sensitivity="mental_wellbeing"),
+        )
+
+        routing = _beta_question_route(
+            "Tam şu anda neden böyle hissediyorum?",
+            {"birth": {"timezone_id": "Europe/Istanbul"}},
+            "active-route-test",
+        )
+
+        self.assertEqual(routing["legacy"]["primary_topic"], "career")
+        self.assertEqual(routing["selected"]["primary_topic"], "wellbeing")
+        self.assertEqual(routing["selected"]["time_scope"], "instant")
+        self.assertNotIn("path", routing["selected"])
+
     def test_character_router_and_shadbala_ranking_use_ratio(self):
         self.assertEqual(
             _beta_detect_topic("Haritamdaki en güçlü karakter özelliğim nedir?"),
@@ -257,6 +359,17 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         draft = _beta_build_chat_draft(
             "Önümüzdeki üç ay kariyerimde hangi dönemler öne çıkıyor?",
             chart,
+            routing={
+                "selected": {
+                    "contract_version": "test-route-v1",
+                    "primary_topic": "career",
+                    "time_scope": "range",
+                    "timing_required": True,
+                    "target_start": "2026-08-01",
+                    "target_end": "2026-08-02",
+                    "required_evidence": ["stored_transit_days"],
+                },
+            },
         )
         evidence = compact_evidence(draft)
         request, _ = _model_request(load_methodology_candidates()[0], evidence)

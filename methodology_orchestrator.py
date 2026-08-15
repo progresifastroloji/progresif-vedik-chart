@@ -38,6 +38,7 @@ RETRYABLE_RESPONSE_ERRORS = {
     "methodology_model_evidence_invalid",
     "methodology_model_list_invalid",
     "methodology_model_strength_invalid",
+    "methodology_model_timing_evidence_invalid",
 }
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
@@ -127,6 +128,7 @@ def compact_evidence(draft):
         "question": draft.get("question"),
         "topic": draft.get("topic"),
         "subject_topic": draft.get("subject_topic"),
+        "question_route": draft.get("question_route"),
         "status": draft.get("status"),
         "confidence": draft.get("confidence"),
         "chart_summary": source.get("chart_summary"),
@@ -175,11 +177,16 @@ def _model_request(candidate, evidence):
         "Başka metodoloji, Batı/Tropical astroloji veya hesap uydurma kullanma. "
         "Sadece verilen kanıt paketindeki teknik gerçekleri yorumla. Eksik veri varsa açıkça sınırla. "
         "Metodolojide anılan fakat kanıt paketinde bulunmayan registry içeriğini uydurma. "
-        "Önce soruyu sınıflandır; sonra doğru konu, veri kapısı ve zorunlu analiz sırasını uygula. "
+        "Sorunun sunucu tarafından doğrulanmış sınıflandırmasını evidence.question_route içinden oku; "
+        "onu yeniden adlandırma veya başka konuya taşıma. Sonra doğru konu, veri kapısı ve zorunlu "
+        "analiz sırasını uygula. "
         "question_intent.primary_topic değeri kanıt paketindeki subject_topic ile birebir aynı olmalı; "
         "timing_required yalnız topic=transit ise true olmalı. "
         "Shadbala gezegen sıralamasında yalnız evidence.strength_summary içindeki strength_ratio kullanılır; "
         "legacy_raw_total gezegenler arası güç karşılaştırması değildir. "
+        "mental_wellbeing veya wellbeing sorularında psikolojik/psikiyatrik teşhis, "
+        "kişilik bozukluğu hükmü ya da kriz güvencesi üretme; yalnız sağlanan "
+        "astrolojik örüntüyü teşhis dışı dille açıkla. "
         "Teknik analiz tamamlanmadan koçluk veya motivasyon ekleme. "
         "Yanıt yalnız geçerli JSON olsun.\n\n"
         f"METODOLOJİ KİMLİĞİ: {candidate['id']}@{candidate['version']}\n"
@@ -325,6 +332,38 @@ def _validated_strength_claim(row, evidence):
     return {**row, "evidence_path": "evidence.strength_summary"}
 
 
+def _validate_timing_claim_tokens(summary, evidence_rows, evidence):
+    """Reject explicit dates/degrees that do not exist in supplied evidence."""
+
+    source_text = _canonical_json(evidence)
+    answer_text = "\n".join([
+        summary,
+        *(row["claim"] for row in evidence_rows),
+    ])
+    source_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", source_text))
+    claimed_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", answer_text))
+    if not claimed_dates.issubset(source_dates):
+        raise MethodologyOrchestrationError(
+            "methodology_model_timing_evidence_invalid",
+            502,
+        )
+
+    degree_pattern = r"(?<!\d)(\d{1,3}(?:[.,]\d{1,6})?)\s*°"
+    source_degrees = {
+        value.replace(",", ".").rstrip("0").rstrip(".")
+        for value in re.findall(degree_pattern, source_text)
+    }
+    claimed_degrees = {
+        value.replace(",", ".").rstrip("0").rstrip(".")
+        for value in re.findall(degree_pattern, answer_text)
+    }
+    if not claimed_degrees.issubset(source_degrees):
+        raise MethodologyOrchestrationError(
+            "methodology_model_timing_evidence_invalid",
+            502,
+        )
+
+
 def validate_methodology_response(payload, evidence):
     try:
         value = json.loads(_response_text(payload))
@@ -379,6 +418,21 @@ def validate_methodology_response(payload, evidence):
     challenging_evidence = [
         _validated_strength_claim(row, evidence) for row in challenging_evidence
     ]
+    if expected_timing:
+        cited_paths = {
+            row["evidence_path"]
+            for row in [*supporting_evidence, *challenging_evidence]
+        }
+        if not any(path.startswith("evidence.transits") for path in cited_paths):
+            raise MethodologyOrchestrationError("methodology_model_timing_evidence_invalid", 502)
+        coverage_by_step = {row["step"]: row["status"] for row in normalized_coverage}
+        if coverage_by_step.get("transit_trigger") != "applied":
+            raise MethodologyOrchestrationError("methodology_model_timing_evidence_invalid", 502)
+        _validate_timing_claim_tokens(
+            summary,
+            [*supporting_evidence, *challenging_evidence],
+            evidence,
+        )
     return {
         "question_intent": {
             "interpreted_question": interpreted_question,
@@ -481,6 +535,10 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "status": comparison_status,
         "question": draft.get("question"),
         "topic": draft.get("topic"),
+        "subject_topic": draft.get("subject_topic"),
+        "question_route": draft.get("question_route"),
+        "routing_comparison": draft.get("routing_comparison"),
+        "context_trace": draft.get("context_trace"),
         "evidence_sha256": evidence_sha256,
         "methodology_order": [item["id"] for item in CANDIDATE_MANIFEST],
         "methodology_results": results,

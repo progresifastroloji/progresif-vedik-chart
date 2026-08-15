@@ -59,6 +59,10 @@ class AccountDeletionTest(unittest.TestCase):
                 "INSERT INTO beta_methodology_comparisons (id, profile_id, chart_id, question, status, response_json, created_at, updated_at) VALUES (?, ?, ?, 'question', 'comparison_ready', '{}', '2026-08-02', '2026-08-02')",
                 (f"comparison-{profile_id}", profile_id, f"chart-{profile_id}"),
             )
+            conn.execute(
+                "INSERT INTO beta_question_routes (id, profile_id, chart_id, owner_user_id, question, mode, status, legacy_json, model_json, selected_json, error_code, created_at) VALUES (?, ?, ?, ?, 'question', 'shadow', 'model_shadowed', '{}', '{}', '{}', NULL, '2026-08-02')",
+                (f"route-{profile_id}", profile_id, f"chart-{profile_id}", user_id),
+            )
             conn.commit()
 
         user_dir = Path(app.config["USER_DATA_ROOT"]) / user_id / "charts"
@@ -93,6 +97,7 @@ class AccountDeletionTest(unittest.TestCase):
             ("beta_feedback", "profile_id"),
             ("beta_usage_events", "profile_id"),
             ("beta_methodology_comparisons", "profile_id"),
+            ("beta_question_routes", "profile_id"),
         ):
             self.assertEqual(self._table_count(table, column, USER_ID), 0)
             self.assertEqual(self._table_count(table, column, OTHER_USER_ID), 1)
@@ -127,6 +132,7 @@ class AccountDeletionTest(unittest.TestCase):
             self.assertEqual(self._table_count("beta_profiles", "id", profile_id), 0)
             self.assertEqual(self._table_count("beta_charts", "profile_id", profile_id), 0)
             self.assertEqual(self._table_count("beta_methodology_comparisons", "profile_id", profile_id), 0)
+            self.assertEqual(self._table_count("beta_question_routes", "profile_id", profile_id), 0)
         self.assertEqual(self._table_count("beta_profiles", "id", other_profile), 1)
 
     def test_delete_endpoint_requires_service_bearer_token(self):

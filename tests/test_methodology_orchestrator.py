@@ -244,6 +244,74 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(validated["question_intent"]["primary_topic"], "character")
         self.assertFalse(validated["question_intent"]["timing_required"])
 
+    def test_timing_response_requires_real_transit_citation_and_real_date(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["summary"] = "2026-08-15 tarihindeki göstergeler bugünün temasını destekliyor."
+        value["supporting_evidence"][0] = {
+            "claim": "2026-08-15 günü Ay kaydı ve Panchanga birlikte incelendi.",
+            "evidence_path": "evidence.transits.daily_records.0",
+        }
+        value["challenging_evidence"][0] = {
+            "claim": "Aynı günün transit kanıtı sınırlarla birlikte okundu.",
+            "evidence_path": "evidence.transits.daily_records.0",
+        }
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic": "transit",
+            "subject_topic": "wellbeing",
+            "transits": {
+                "daily_records": [{
+                    "date": "2026-08-15",
+                    "panchanga": {"tithi": {"name": "Shukla Dvitiya"}},
+                    "planets": [{"name": "Moon", "degree": "10° 00' 00\""}],
+                }],
+            },
+        }
+
+        validated = validate_methodology_response(payload, evidence)
+        self.assertTrue(validated["question_intent"]["timing_required"])
+
+        value["summary"] = "2026-09-30 tarihinde kesin bir olay oluşur."
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_methodology_response(payload, evidence)
+        self.assertEqual(
+            raised.exception.code,
+            "methodology_model_timing_evidence_invalid",
+        )
+
+    def test_timing_response_rejects_degree_not_present_in_evidence(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["summary"] = "Ay 27.5° derecede görünüyor."
+        value["supporting_evidence"][0] = {
+            "claim": "Transit Ay kaydı kullanıldı.",
+            "evidence_path": "evidence.transits.daily_records.0",
+        }
+        value["challenging_evidence"][0] = {
+            "claim": "Transit kaydının sınırları dikkate alındı.",
+            "evidence_path": "evidence.transits.daily_records.0",
+        }
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic": "transit",
+            "subject_topic": "wellbeing",
+            "transits": {
+                "daily_records": [{
+                    "date": "2026-08-15",
+                    "planets": [{"name": "Moon", "degree": "10° 00' 00\""}],
+                }],
+            },
+        }
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_methodology_response(payload, evidence)
+        self.assertEqual(
+            raised.exception.code,
+            "methodology_model_timing_evidence_invalid",
+        )
+
     def test_shadbala_claim_is_verified_and_bound_to_ratio_summary(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
