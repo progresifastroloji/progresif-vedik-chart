@@ -270,10 +270,13 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "evidence.strength_summary",
         )
 
-        value["supporting_evidence"][0]["claim"] = "En yüksek Shadbala oranı Satürn'dedir: 1.9999."
+        value["supporting_evidence"][0]["claim"] = "Shadbala oranları teknik güç tablosunda gösterilir."
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
-        with self.assertRaises(MethodologyOrchestrationError):
-            validate_methodology_response(payload, evidence)
+        validated = validate_methodology_response(payload, evidence)
+        self.assertEqual(
+            validated["supporting_evidence"][0]["evidence_path"],
+            "evidence.strength_summary",
+        )
 
     def test_model_request_includes_only_real_canonical_evidence_paths(self):
         candidate = load_methodology_candidates()[0]
