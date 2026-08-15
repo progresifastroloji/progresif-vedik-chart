@@ -238,7 +238,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         with self.assertRaises(MethodologyOrchestrationError):
             validate_methodology_response(payload, evidence)
 
-    def test_shadbala_claim_must_cite_ratio_summary(self):
+    def test_shadbala_claim_is_verified_and_bound_to_ratio_summary(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
         value["supporting_evidence"][0]["claim"] = "En yüksek Shadbala oranı Güneş'tedir."
@@ -247,19 +247,33 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "topic": "career",
             "subject_topic": "career",
             "topic_packet": {},
-            "strength_summary": {"strongest_planet": "Sun"},
+            "strength_summary": {
+                "strongest_planet": "Sun",
+                "ranking": [
+                    {
+                        "planet": "Sun", "strength_ratio": 1.4391,
+                        "total_rupa": 7.1957, "required_rupa": 5.0,
+                        "legacy_raw_total": 175.55,
+                    },
+                    {
+                        "planet": "Saturn", "strength_ratio": 1.2682,
+                        "total_rupa": 6.341, "required_rupa": 5.0,
+                        "legacy_raw_total": 210.56,
+                    },
+                ],
+            },
         }
 
-        with self.assertRaises(MethodologyOrchestrationError):
-            validate_methodology_response(payload, evidence)
-
-        value["supporting_evidence"][0]["evidence_path"] = "evidence.strength_summary"
-        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
         validated = validate_methodology_response(payload, evidence)
         self.assertEqual(
             validated["supporting_evidence"][0]["evidence_path"],
             "evidence.strength_summary",
         )
+
+        value["supporting_evidence"][0]["claim"] = "En yüksek Shadbala oranı Satürn'dedir: 1.9999."
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        with self.assertRaises(MethodologyOrchestrationError):
+            validate_methodology_response(payload, evidence)
 
     def test_model_request_includes_only_real_canonical_evidence_paths(self):
         candidate = load_methodology_candidates()[0]

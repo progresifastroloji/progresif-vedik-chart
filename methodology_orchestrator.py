@@ -294,6 +294,48 @@ def _string_list(value):
     return [item.strip() for item in value if item.strip()]
 
 
+STRENGTH_PLANET_ALIASES = {
+    "Sun": ("sun", "güneş", "gunes"),
+    "Moon": ("moon", "ay"),
+    "Mars": ("mars", "mangal"),
+    "Mercury": ("mercury", "merkür", "merkur", "budha"),
+    "Jupiter": ("jupiter", "jüpiter", "jupiter", "guru"),
+    "Venus": ("venus", "venüs", "venus", "shukra"),
+    "Saturn": ("saturn", "satürn", "saturn", "shani"),
+}
+
+
+def _validated_strength_claim(row, evidence):
+    if not re.search(r"\b(?:shadbala|strength_ratio)\b", row["claim"], re.IGNORECASE):
+        return row
+    summary = evidence.get("strength_summary")
+    ranking = summary.get("ranking") if isinstance(summary, dict) else None
+    if not isinstance(ranking, list) or not ranking:
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+
+    normalized = row["claim"].casefold()
+    if any(term in normalized for term in ("en yüksek", "en güçlü", "highest", "strongest")):
+        strongest = str(summary.get("strongest_planet") or "")
+        aliases = STRENGTH_PLANET_ALIASES.get(strongest, (strongest.casefold(),))
+        if not any(alias and alias in normalized for alias in aliases):
+            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+
+    allowed_numbers = []
+    for item in ranking:
+        if not isinstance(item, dict):
+            continue
+        for key in ("strength_ratio", "total_rupa", "required_rupa", "legacy_raw_total"):
+            number = item.get(key)
+            if isinstance(number, (int, float)):
+                allowed_numbers.append(float(number))
+    for raw in re.findall(r"(?<!\d)(\d+[.,]\d+)(?!\d)", row["claim"]):
+        number = float(raw.replace(",", "."))
+        if not any(abs(number - expected) <= 0.005 for expected in allowed_numbers):
+            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+
+    return {**row, "evidence_path": "evidence.strength_summary"}
+
+
 def validate_methodology_response(payload, evidence):
     try:
         value = json.loads(_response_text(payload))
@@ -337,12 +379,12 @@ def validate_methodology_response(payload, evidence):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
     supporting_evidence = _evidence_rows(value.get("supporting_evidence"), evidence)
     challenging_evidence = _evidence_rows(value.get("challenging_evidence"), evidence)
-    for row in [*supporting_evidence, *challenging_evidence]:
-        if (
-            re.search(r"\b(?:shadbala|strength_ratio)\b", row["claim"], re.IGNORECASE)
-            and not row["evidence_path"].startswith("evidence.strength_summary")
-        ):
-            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    supporting_evidence = [
+        _validated_strength_claim(row, evidence) for row in supporting_evidence
+    ]
+    challenging_evidence = [
+        _validated_strength_claim(row, evidence) for row in challenging_evidence
+    ]
     return {
         "question_intent": {
             "interpreted_question": interpreted_question,
