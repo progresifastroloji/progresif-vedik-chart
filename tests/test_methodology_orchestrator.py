@@ -251,11 +251,11 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "2026-08-15 tarihinde transit Ay ve Tithi birlikte bugünün temasını destekliyor."
         )
         value["supporting_evidence"][0] = {
-            "claim": "2026-08-15 günü Ay kaydı ve Panchanga birlikte incelendi.",
+            "claim": "2026-08-15 günü transit Ay kaydı incelendi.",
             "evidence_path": "evidence.transits.daily_records.0",
         }
         value["challenging_evidence"][0] = {
-            "claim": "Aynı günün transit kanıtı sınırlarla birlikte okundu.",
+            "claim": "Aynı günün Tithi ve Panchanga sınırları birlikte okundu.",
             "evidence_path": "evidence.transits.daily_records.0",
         }
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)

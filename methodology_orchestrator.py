@@ -399,16 +399,20 @@ def _validate_wellbeing_language(summary, evidence_rows, evidence):
             502,
         )
 
-    has_joint_transit_citation = any(
-        row["evidence_path"].startswith((
+    transit_rows = [
+        row
+        for row in evidence_rows
+        if row["evidence_path"].startswith((
             "evidence.transits.daily_records",
             "evidence.transits.instant_snapshot",
         ))
-        and moon_pattern.search(row["claim"])
-        and panchanga_pattern.search(row["claim"])
-        for row in evidence_rows
+    ]
+    has_moon_citation = any(moon_pattern.search(row["claim"]) for row in transit_rows)
+    has_panchanga_citation = any(
+        panchanga_pattern.search(row["claim"])
+        for row in transit_rows
     )
-    if not has_joint_transit_citation:
+    if not has_moon_citation or not has_panchanga_citation:
         raise MethodologyOrchestrationError(
             "methodology_model_timing_evidence_invalid",
             502,
