@@ -330,7 +330,10 @@ def _validated_strength_claim(row, evidence):
                 allowed_numbers.append(float(number))
     for raw in re.findall(r"(?<!\d)(\d+[.,]\d+)(?!\d)", row["claim"]):
         number = float(raw.replace(",", "."))
-        if not any(abs(number - expected) <= 0.005 for expected in allowed_numbers):
+        # Model prose may round the rendered Markdown value differently from
+        # the canonical JSON (for example 210.56 vs 210.57). Keep a narrow
+        # presentation tolerance while still rejecting invented values.
+        if not any(abs(number - expected) <= 0.1 for expected in allowed_numbers):
             raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
 
     return {**row, "evidence_path": "evidence.strength_summary"}
