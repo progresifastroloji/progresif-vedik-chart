@@ -29046,6 +29046,10 @@ BETA_DEFAULT_OPTIONS = {
 }
 
 BETA_TOPIC_KEYWORDS = {
+    "character": {
+        "karakter", "kişilik", "kisilik", "mizaç", "mizac", "yetenek",
+        "güçlü yan", "guclu yan", "zayıf yan", "zayif yan",
+    },
     "career": {"kariyer", "meslek", "iş", "is", "çalışma", "para kazanma", "d10"},
     "marriage": {"evlilik", "ilişki", "iliski", "partner", "eş", "es", "aşk", "ask", "d7"},
     "wealth": {"para", "finans", "gelir", "kazanç", "kazanc", "servet", "yatırım"},
@@ -30246,6 +30250,11 @@ PWA_NATAL_CORE_SECTION_IDS = {
 }
 
 PWA_NATAL_TOPIC_SECTION_IDS = {
+    "character": {
+        "varga_tables", "shadbala", "vimshopaka_bala", "bhava_bala",
+        "ashtakavarga", "avasthas", "jaimini", "yogas",
+        "planet_quick_read", "house_drishti", "topic_summaries",
+    },
     "career": {
         "shadbala", "vimshopaka_bala", "bhava_bala", "ashtakavarga",
         "jaimini", "yogas", "planet_quick_read", "house_drishti",
@@ -30270,6 +30279,31 @@ PWA_NATAL_TOPIC_SECTION_IDS = {
         "planet_quick_read", "topic_summaries",
     },
 }
+
+
+def _beta_shadbala_strength_summary(chart):
+    rows = []
+    for item in (chart.get("shadbala") or {}).get("planets") or []:
+        professional = item.get("professional_total") or {}
+        ratio = professional.get("strength_ratio")
+        if not isinstance(ratio, (int, float)):
+            continue
+        rows.append({
+            "planet": item.get("planet"),
+            "strength_ratio": ratio,
+            "total_rupa": professional.get("total_rupa"),
+            "required_rupa": professional.get("required_rupa"),
+            "legacy_raw_total": item.get("total_score"),
+            "ratio_grade": professional.get("grade"),
+        })
+    rows.sort(key=lambda row: row["strength_ratio"], reverse=True)
+    return {
+        "comparison_basis": "strength_ratio_only",
+        "rule": "Gezegenler arası Shadbala sıralaması ham toplamla değil strength_ratio ile yapılır.",
+        "ranking": rows,
+        "strongest_planet": rows[0]["planet"] if rows else None,
+        "nodes": "Rahu ve Ketu için Shadbala hesaplanmaz (gölge gezegen).",
+    }
 
 
 def _beta_selected_natal_sections(
@@ -30333,6 +30367,17 @@ def _beta_build_chat_draft(question, chart):
     subject_topic = _beta_detect_subject_topic(question) if topic == "transit" else topic
     packets = chart.get("topic_packets") or {}
     packet = packets.get(subject_topic)
+    if not packet and subject_topic == "character":
+        packet = {
+            "contract_version": "vedic-natal-topic-selection-v1",
+            "package_code": "GENERAL",
+            "topic": "character",
+            "source": "selected_natal_sections",
+            "confidence": "medium",
+            "evidence": {
+                "selection_rule": "Lagna, Lagna lordu, Ay, Atmakaraka, Shadbala, D9, yoga ve karşı kanıt birlikte okunur.",
+            },
+        }
     if packet:
         # Stored beta charts created before the current-active correction can
         # contain the birth-time dasha inside topic packets. Normalize at read
@@ -30353,6 +30398,9 @@ def _beta_build_chat_draft(question, chart):
     evidence = {
         "chart_summary": _beta_chart_summary(chart),
         "active_dasha": _beta_active_dasha_evidence(chart),
+        "strength_summary": (
+            None if topic == "transit" else _beta_shadbala_strength_summary(chart)
+        ),
         "topic_packet": packet,
         "natal_sections": _beta_selected_natal_sections(
             chart,

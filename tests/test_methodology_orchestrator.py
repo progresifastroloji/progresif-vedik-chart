@@ -18,6 +18,7 @@ def _draft():
         "status": "evidence_ready",
         "question": "Kariyer alanındaki güçlü ve zorlayıcı göstergeler nelerdir?",
         "topic": "career",
+        "subject_topic": "career",
         "confidence": "medium",
         "missing": [],
         "safety_notes": ["Kesin hüküm üretme."],
@@ -178,7 +179,11 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
         value["supporting_evidence"][0]["evidence_path"] = "evidence.topic_packet.supporting_factors.0.code"
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
-        evidence = {"topic_packet": {"supporting_factors": [{"code": "career-support"}]}}
+        evidence = {
+            "topic": "career",
+            "subject_topic": "career",
+            "topic_packet": {"supporting_factors": [{"code": "career-support"}]},
+        }
 
         validated = validate_methodology_response(payload, evidence)
         self.assertEqual(
@@ -197,6 +202,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         value["supporting_evidence"][0]["evidence_path"] = "evidence.topic_packet.houses.0.occupants"
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
         evidence = {
+            "topic": "career",
+            "subject_topic": "career",
             "topic_packet": {
                 "evidence": {
                     "houses": [{"occupants": ["Moon"]}],
@@ -211,6 +218,22 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
 
         value["supporting_evidence"][0]["evidence_path"] = "evidence.topic_packet.houses.1.occupants"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        with self.assertRaises(MethodologyOrchestrationError):
+            validate_methodology_response(payload, evidence)
+
+    def test_response_rejects_topic_or_timing_that_disagrees_with_router(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["question_intent"]["primary_topic"] = "spiritual"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {"topic": "character", "subject_topic": "character", "topic_packet": {}}
+
+        with self.assertRaises(MethodologyOrchestrationError):
+            validate_methodology_response(payload, evidence)
+
+        value["question_intent"]["primary_topic"] = "character"
+        value["question_intent"]["timing_required"] = True
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
         with self.assertRaises(MethodologyOrchestrationError):
             validate_methodology_response(payload, evidence)

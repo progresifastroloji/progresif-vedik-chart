@@ -10,6 +10,7 @@ from app import (
     _beta_db,
     _beta_detect_subject_topic,
     _beta_detect_topic,
+    _beta_shadbala_strength_summary,
     _beta_json,
     _beta_now,
 )
@@ -162,6 +163,34 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
 
         self.assertEqual(_beta_detect_topic(question), "transit")
         self.assertEqual(_beta_detect_subject_topic(question), "career")
+
+    def test_character_router_and_shadbala_ranking_use_ratio(self):
+        self.assertEqual(
+            _beta_detect_topic("Haritamdaki en güçlü karakter özelliğim nedir?"),
+            "character",
+        )
+        summary = _beta_shadbala_strength_summary({
+            "shadbala": {
+                "planets": [
+                    {
+                        "planet": "Sun",
+                        "total_score": 175.55,
+                        "professional_total": {"strength_ratio": 1.4391, "total_rupa": 7.1957, "required_rupa": 5.0},
+                    },
+                    {
+                        "planet": "Saturn",
+                        "total_score": 210.56,
+                        "professional_total": {"strength_ratio": 1.2682, "total_rupa": 6.341, "required_rupa": 5.0},
+                    },
+                ],
+            },
+        })
+        self.assertEqual(summary["comparison_basis"], "strength_ratio_only")
+        self.assertEqual(summary["strongest_planet"], "Sun")
+        self.assertEqual(
+            [row["planet"] for row in summary["ranking"]],
+            ["Sun", "Saturn"],
+        )
 
     @patch("app._pwa_transit_pack")
     def test_transit_draft_keeps_subject_packet_and_bounded_daily_evidence(self, transit_pack):

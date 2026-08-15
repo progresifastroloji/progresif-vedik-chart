@@ -169,6 +169,10 @@ def _model_request(candidate, evidence):
         "Sadece verilen kanıt paketindeki teknik gerçekleri yorumla. Eksik veri varsa açıkça sınırla. "
         "Metodolojide anılan fakat kanıt paketinde bulunmayan registry içeriğini uydurma. "
         "Önce soruyu sınıflandır; sonra doğru konu, veri kapısı ve zorunlu analiz sırasını uygula. "
+        "question_intent.primary_topic değeri kanıt paketindeki subject_topic ile birebir aynı olmalı; "
+        "timing_required yalnız topic=transit ise true olmalı. "
+        "Shadbala gezegen sıralamasında yalnız evidence.strength_summary içindeki strength_ratio kullanılır; "
+        "legacy_raw_total gezegenler arası güç karşılaştırması değildir. "
         "Teknik analiz tamamlanmadan koçluk veya motivasyon ekleme. "
         "Yanıt yalnız geçerli JSON olsun.\n\n"
         f"METODOLOJİ KİMLİĞİ: {candidate['id']}@{candidate['version']}\n"
@@ -304,6 +308,10 @@ def validate_methodology_response(payload, evidence):
     primary_topic = str(question_intent.get("primary_topic") or "").strip()
     timing_required = question_intent.get("timing_required")
     if not interpreted_question or not primary_topic or not isinstance(timing_required, bool):
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    expected_topic = str(evidence.get("subject_topic") or "").strip()
+    expected_timing = evidence.get("topic") == "transit"
+    if primary_topic != expected_topic or timing_required is not expected_timing:
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
     if analysis_status not in {"COMPLETE", "INCOMPLETE"} or not isinstance(coverage, list):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
