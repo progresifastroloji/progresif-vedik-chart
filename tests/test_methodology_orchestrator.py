@@ -170,9 +170,13 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
 
         with self.assertRaises(MethodologyOrchestrationError) as raised:
-            validate_methodology_response(payload, {"topic_packet": {}})
+            validate_methodology_response(payload, {
+                "topic": "career",
+                "subject_topic": "career",
+                "topic_packet": {},
+            })
 
-        self.assertEqual(raised.exception.code, "methodology_model_schema_invalid")
+        self.assertEqual(raised.exception.code, "methodology_model_evidence_invalid")
 
     def test_response_accepts_only_existing_list_index_paths(self):
         payload = _payload()

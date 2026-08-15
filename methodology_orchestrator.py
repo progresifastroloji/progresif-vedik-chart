@@ -32,6 +32,12 @@ RETRYABLE_RESPONSE_ERRORS = {
     "methodology_model_json_invalid",
     "methodology_model_response_empty",
     "methodology_model_schema_invalid",
+    "methodology_model_intent_invalid",
+    "methodology_model_coverage_invalid",
+    "methodology_model_summary_invalid",
+    "methodology_model_evidence_invalid",
+    "methodology_model_list_invalid",
+    "methodology_model_strength_invalid",
 }
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
@@ -265,11 +271,11 @@ def _canonical_evidence_path(evidence, evidence_path):
 
 def _evidence_rows(value, evidence):
     if not isinstance(value, list):
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
     rows = []
     for item in value:
         if not isinstance(item, dict):
-            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+            raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
         claim = str(item.get("claim") or "").strip()
         evidence_path = str(item.get("evidence_path") or "").strip()
         is_strength_claim = bool(
@@ -293,14 +299,14 @@ def _evidence_rows(value, evidence):
             not claim
             or not canonical_path
         ):
-            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+            raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
         rows.append({"claim": claim, "evidence_path": canonical_path})
     return rows
 
 
 def _string_list(value):
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_list_invalid", 502)
     return [item.strip() for item in value if item.strip()]
 
 
@@ -310,7 +316,7 @@ def _validated_strength_claim(row, evidence):
     summary = evidence.get("strength_summary")
     ranking = summary.get("ranking") if isinstance(summary, dict) else None
     if not isinstance(ranking, list) or not ranking:
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_strength_invalid", 502)
 
     # The deterministic router supplies a ratio-sorted table. Models can pick
     # a nearby real path for a valid claim; bind it to the canonical table
@@ -329,41 +335,41 @@ def validate_methodology_response(payload, evidence):
     analysis_status = str(value.get("analysis_status") or "").strip().upper()
     coverage = value.get("methodology_coverage")
     if not isinstance(question_intent, dict):
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_intent_invalid", 502)
     interpreted_question = str(question_intent.get("interpreted_question") or "").strip()
     primary_topic = str(question_intent.get("primary_topic") or "").strip()
     timing_required = question_intent.get("timing_required")
     if not interpreted_question or not primary_topic or not isinstance(timing_required, bool):
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_intent_invalid", 502)
     expected_topic = str(evidence.get("subject_topic") or "").strip()
     expected_timing = evidence.get("topic") == "transit"
     if not expected_topic:
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_intent_invalid", 502)
     # Topic and timing are deterministic router decisions. The model still
     # explains its interpretation, but a synonymous or package-code label must
     # not override the server's selected subject or make a valid analysis fail.
     primary_topic = expected_topic
     timing_required = expected_timing
     if analysis_status not in {"COMPLETE", "INCOMPLETE"} or not isinstance(coverage, list):
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
     normalized_coverage = []
     for expected_step, row in zip(REQUIRED_METHODOLOGY_STEPS, coverage, strict=False):
         if not isinstance(row, dict):
-            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+            raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
         step = str(row.get("step") or "").strip()
         status = str(row.get("status") or "").strip()
         note = str(row.get("note") or "").strip()
         if step != expected_step or status not in COVERAGE_STATUSES or not note:
-            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+            raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
         normalized_coverage.append({"step": step, "status": status, "note": note})
     if len(coverage) != len(REQUIRED_METHODOLOGY_STEPS):
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
     if any(row["status"] == "missing" for row in normalized_coverage) and analysis_status != "INCOMPLETE":
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
     summary = str(value.get("summary") or "").strip()
     confidence = str(value.get("confidence") or "").strip().lower()
     if not summary or confidence not in CONFIDENCE_LEVELS:
-        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+        raise MethodologyOrchestrationError("methodology_model_summary_invalid", 502)
     supporting_evidence = _evidence_rows(value.get("supporting_evidence"), evidence)
     challenging_evidence = _evidence_rows(value.get("challenging_evidence"), evidence)
     supporting_evidence = [
