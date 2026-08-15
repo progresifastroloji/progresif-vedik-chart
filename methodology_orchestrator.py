@@ -337,8 +337,13 @@ def validate_methodology_response(payload, evidence):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
     expected_topic = str(evidence.get("subject_topic") or "").strip()
     expected_timing = evidence.get("topic") == "transit"
-    if primary_topic != expected_topic or timing_required is not expected_timing:
+    if not expected_topic:
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    # Topic and timing are deterministic router decisions. The model still
+    # explains its interpretation, but a synonymous or package-code label must
+    # not override the server's selected subject or make a valid analysis fail.
+    primary_topic = expected_topic
+    timing_required = expected_timing
     if analysis_status not in {"COMPLETE", "INCOMPLETE"} or not isinstance(coverage, list):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
     normalized_coverage = []

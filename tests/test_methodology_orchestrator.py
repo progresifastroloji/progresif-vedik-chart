@@ -222,21 +222,23 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         with self.assertRaises(MethodologyOrchestrationError):
             validate_methodology_response(payload, evidence)
 
-    def test_response_rejects_topic_or_timing_that_disagrees_with_router(self):
+    def test_response_uses_router_topic_and_timing_as_authority(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
         value["question_intent"]["primary_topic"] = "spiritual"
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
         evidence = {"topic": "character", "subject_topic": "character", "topic_packet": {}}
 
-        with self.assertRaises(MethodologyOrchestrationError):
-            validate_methodology_response(payload, evidence)
+        validated = validate_methodology_response(payload, evidence)
+        self.assertEqual(validated["question_intent"]["primary_topic"], "character")
+        self.assertFalse(validated["question_intent"]["timing_required"])
 
         value["question_intent"]["primary_topic"] = "character"
         value["question_intent"]["timing_required"] = True
         payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
-        with self.assertRaises(MethodologyOrchestrationError):
-            validate_methodology_response(payload, evidence)
+        validated = validate_methodology_response(payload, evidence)
+        self.assertEqual(validated["question_intent"]["primary_topic"], "character")
+        self.assertFalse(validated["question_intent"]["timing_required"])
 
     def test_shadbala_claim_is_verified_and_bound_to_ratio_summary(self):
         payload = _payload()
