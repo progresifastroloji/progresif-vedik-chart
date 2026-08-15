@@ -131,6 +131,7 @@ def compact_evidence(draft):
         "confidence": draft.get("confidence"),
         "chart_summary": source.get("chart_summary"),
         "active_dasha": source.get("active_dasha"),
+        "strength_summary": source.get("strength_summary"),
         "topic_packet": source.get("topic_packet"),
         "natal_sections": source.get("natal_sections") or [],
         "data_quality": source.get("data_quality"),

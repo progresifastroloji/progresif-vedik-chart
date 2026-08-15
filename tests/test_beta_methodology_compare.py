@@ -212,6 +212,14 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
             ["Sun", "Saturn"],
         )
 
+        compact = compact_evidence({
+            "question": "Karakterimdeki en güçlü özellik nedir?",
+            "topic": "character",
+            "subject_topic": "character",
+            "evidence": {"strength_summary": summary},
+        })
+        self.assertEqual(compact["strength_summary"]["strongest_planet"], "Sun")
+
     @patch("app._pwa_transit_pack")
     def test_transit_draft_keeps_subject_packet_and_bounded_daily_evidence(self, transit_pack):
         transit_pack.return_value = {
