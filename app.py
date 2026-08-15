@@ -31293,6 +31293,15 @@ def api_v2_beta_chat_compare():
             usage = _beta_usage_status(conn, profile_id)
 
         ok = comparison["completed_count"] > 0
+        if not ok:
+            failed_codes = [
+                item.get("error") or item.get("error_code")
+                for item in comparison.get("methodology_results") or []
+                if isinstance(item, dict) and (item.get("error") or item.get("error_code"))
+            ]
+            comparison["error_code"] = (
+                failed_codes[0] if failed_codes else "methodology_comparison_failed"
+            )
         return jsonify({
             "ok": ok,
             "replayed": False,
@@ -31504,6 +31513,12 @@ def api_v2_beta_usage():
 
     except Exception as e:
         return jsonify({"error": f"Beta kullanım hatası: {str(e)}"}), 500
+
+
+# --- daily_digest modulu (DIGEST_ENABLED=0 ise hic yuklenmez) ---
+if os.getenv("DIGEST_ENABLED") == "1":
+    from digest import digest_bp
+    app.register_blueprint(digest_bp)
 
 
 if __name__ == "__main__":

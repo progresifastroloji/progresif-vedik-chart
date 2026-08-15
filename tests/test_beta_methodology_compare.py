@@ -158,6 +158,26 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(response.get_json()["status"], "heavy_limit_exceeded")
         bridge_call.assert_not_called()
 
+    @patch("app.call_vertex_bridge")
+    def test_endpoint_exposes_single_methodology_failure_code(self, bridge_call):
+        bridge_call.return_value = ("invalid-response", {"candidates": []})
+
+        response = self.client.post(
+            "/api/v2/beta/chat/compare",
+            json={
+                "comparison_id": "methodology-compare-endpoint-failure-code",
+                "profile_id": PROFILE_ID,
+                "chart_id": CHART_ID,
+                "question": "Kariyer kanıtları nelerdir?",
+            },
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.get_json()["error_code"],
+            "methodology_model_response_invalid",
+        )
+
     def test_three_month_career_question_uses_transit_with_career_subject(self):
         question = "Önümüzdeki üç ay kariyerimde hangi dönemler öne çıkıyor?"
 
