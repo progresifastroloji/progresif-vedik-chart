@@ -248,7 +248,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
         value["summary"] = (
-            "2026-08-15 tarihinde transit Ay ve Tithi birlikte bugünün temasını destekliyor."
+            "2026-08-15 tarihinde transit Ay Uttara Phalguni nakshatrasında ilerliyor."
         )
         value["supporting_evidence"][0] = {
             "claim": "2026-08-15 günü transit Ay kaydı incelendi.",

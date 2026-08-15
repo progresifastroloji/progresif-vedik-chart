@@ -390,7 +390,7 @@ def _validate_wellbeing_language(summary, evidence_rows, evidence):
 
     moon_pattern = re.compile(r"(?:\bay\b|\bay['’]|\bmoon\b)", re.IGNORECASE)
     panchanga_pattern = re.compile(
-        r"\b(?:panchanga|tithi|vara|nakshatra|yoga|karana)\b",
+        r"\b(?:panchanga|tithi|vara|nakshatra|yoga|karana)\w*\b",
         re.IGNORECASE,
     )
     if not moon_pattern.search(summary) or not panchanga_pattern.search(summary):
