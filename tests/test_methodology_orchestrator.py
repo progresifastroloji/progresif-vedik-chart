@@ -238,6 +238,29 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         with self.assertRaises(MethodologyOrchestrationError):
             validate_methodology_response(payload, evidence)
 
+    def test_shadbala_claim_must_cite_ratio_summary(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"][0]["claim"] = "En yüksek Shadbala oranı Güneş'tedir."
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic": "career",
+            "subject_topic": "career",
+            "topic_packet": {},
+            "strength_summary": {"strongest_planet": "Sun"},
+        }
+
+        with self.assertRaises(MethodologyOrchestrationError):
+            validate_methodology_response(payload, evidence)
+
+        value["supporting_evidence"][0]["evidence_path"] = "evidence.strength_summary"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        validated = validate_methodology_response(payload, evidence)
+        self.assertEqual(
+            validated["supporting_evidence"][0]["evidence_path"],
+            "evidence.strength_summary",
+        )
+
     def test_model_request_includes_only_real_canonical_evidence_paths(self):
         candidate = load_methodology_candidates()[0]
         evidence = {

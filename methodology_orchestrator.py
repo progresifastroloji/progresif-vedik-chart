@@ -192,6 +192,8 @@ def _model_request(candidate, evidence):
         + ". status yalnız applied|not_applicable|missing olabilir. "
         "Zorunlu bir adım missing ise analysis_status INCOMPLETE olmalıdır. "
         "Her evidence_path evidence. ile başlamalı ve paketteki gerçek alana işaret etmelidir. "
+        "Shadbala veya strength_ratio hakkında her supporting_evidence/challenging_evidence iddiası "
+        "evidence.strength_summary yolunu ya da onun altındaki gerçek bir yolu kullanmalıdır. "
         "Uzun zaman serilerindeki birden fazla satırı destekleyen iddia için dizinin kök yolunu "
         "(örneğin evidence.transits.daily_timing) kullan. "
         "Konu paketindeki houses, planets, lordships, yogas, vargas ve active_dasha alanları "
@@ -333,6 +335,14 @@ def validate_methodology_response(payload, evidence):
     confidence = str(value.get("confidence") or "").strip().lower()
     if not summary or confidence not in CONFIDENCE_LEVELS:
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    supporting_evidence = _evidence_rows(value.get("supporting_evidence"), evidence)
+    challenging_evidence = _evidence_rows(value.get("challenging_evidence"), evidence)
+    for row in [*supporting_evidence, *challenging_evidence]:
+        if (
+            re.search(r"\b(?:shadbala|strength_ratio)\b", row["claim"], re.IGNORECASE)
+            and not row["evidence_path"].startswith("evidence.strength_summary")
+        ):
+            raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
     return {
         "question_intent": {
             "interpreted_question": interpreted_question,
@@ -342,8 +352,8 @@ def validate_methodology_response(payload, evidence):
         "analysis_status": analysis_status,
         "methodology_coverage": normalized_coverage,
         "summary": summary,
-        "supporting_evidence": _evidence_rows(value.get("supporting_evidence"), evidence),
-        "challenging_evidence": _evidence_rows(value.get("challenging_evidence"), evidence),
+        "supporting_evidence": supporting_evidence,
+        "challenging_evidence": challenging_evidence,
         "missing_layers": _string_list(value.get("missing_layers")),
         "confidence": confidence,
         "limitations": _string_list(value.get("limitations")),
