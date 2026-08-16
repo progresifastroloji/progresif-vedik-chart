@@ -30346,12 +30346,12 @@ def _beta_question_now(chart):
 
 def _beta_question_router_mode(owner_user_id=None):
     configured = str(app.config.get("QUESTION_ROUTER_MODE") or "off").strip().lower()
-    if configured not in {"off", "shadow", "active"}:
+    if configured not in {"off", "shadow", "active", "gemini_only"}:
         configured = "off"
     active_users = app.config.get("QUESTION_ROUTER_ACTIVE_USER_IDS") or set()
     if owner_user_id and owner_user_id in active_users:
-        return "active"
-    if configured == "active" and active_users:
+        return "gemini_only" if configured == "gemini_only" else "active"
+    if configured in {"active", "gemini_only"} and active_users:
         return "shadow"
     return configured
 
@@ -30370,7 +30370,7 @@ def _beta_question_route(
         if mode_override is not None
         else _beta_question_router_mode(owner_user_id)
     )
-    if mode not in {"off", "shadow", "active"}:
+    if mode not in {"off", "shadow", "active", "gemini_only"}:
         raise ValueError("Geçerli soru yönlendirici modu gerekli")
     model = None
     error_code = None
@@ -30381,6 +30381,7 @@ def _beta_question_route(
                 f"{request_id}-question-route",
                 call_vertex_bridge,
                 _beta_question_now(chart),
+                apply_server_normalization=mode != "gemini_only",
             )
         except Exception as exc:
             error_code = (
@@ -30390,7 +30391,11 @@ def _beta_question_route(
             )
             if not str(error_code).startswith(("question_classifier_", "vertex_")):
                 error_code = "question_classifier_failed"
-    selected = model if mode == "active" and model else legacy
+    if mode == "gemini_only" and not model:
+        # Explicit reversible experiment: never hide a Gemini routing failure
+        # by silently selecting the legacy keyword router.
+        raise QuestionClassificationError(error_code or "question_classifier_failed")
+    selected = model if mode in {"active", "gemini_only"} and model else legacy
     status = (
         "model_selected"
         if selected is model and model

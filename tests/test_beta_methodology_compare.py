@@ -16,6 +16,7 @@ from app import (
     _beta_now,
 )
 from methodology_orchestrator import MAX_PROMPT_BYTES, _canonical_json, _model_request, compact_evidence, load_methodology_candidates
+from question_classifier import QuestionClassificationError
 
 
 PROFILE_ID = "33333333-3333-4333-8333-333333333333"
@@ -289,6 +290,37 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(routing["selected"]["primary_topic"], "wellbeing")
         self.assertEqual(routing["selected"]["time_scope"], "instant")
         self.assertNotIn("path", routing["selected"])
+
+    @patch("app.call_vertex_bridge")
+    def test_gemini_only_router_bypasses_keyword_and_server_overrides(self, bridge_call):
+        app.config["QUESTION_ROUTER_MODE"] = "gemini_only"
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            _route_payload("general", "none"),
+        )
+
+        routing = _beta_question_route(
+            "Kariyerimde neden mutsuzum?",
+            {"birth": {"timezone_id": "Europe/Istanbul"}},
+            "gemini-only-route-test",
+        )
+
+        self.assertEqual(routing["mode"], "gemini_only")
+        self.assertEqual(routing["legacy"]["primary_topic"], "career")
+        self.assertEqual(routing["selected"]["primary_topic"], "general")
+        self.assertEqual(routing["status"], "model_selected")
+
+    @patch("app.call_vertex_bridge")
+    def test_gemini_only_router_never_silently_falls_back(self, bridge_call):
+        app.config["QUESTION_ROUTER_MODE"] = "gemini_only"
+        bridge_call.side_effect = RuntimeError("bridge unavailable")
+
+        with self.assertRaises(QuestionClassificationError):
+            _beta_question_route(
+                "İyi hissetmiyorum.",
+                {"birth": {"timezone_id": "Europe/Istanbul"}},
+                "gemini-only-failure-test",
+            )
 
     def test_character_router_and_shadbala_ranking_use_ratio(self):
         self.assertEqual(

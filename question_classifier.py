@@ -365,7 +365,14 @@ def build_request(question, now_iso):
     }
 
 
-def classify_question(question, request_id, model_call, now_iso):
+def classify_question(
+    question,
+    request_id,
+    model_call,
+    now_iso,
+    *,
+    apply_server_normalization=True,
+):
     question = str(question or "").strip()
     if not question or len(question) > 2_000:
         raise QuestionClassificationError("question_classifier_question_invalid")
@@ -377,4 +384,6 @@ def classify_question(question, request_id, model_call, now_iso):
         value = json.loads(_response_text(payload))
     except json.JSONDecodeError as exc:
         raise QuestionClassificationError("question_classifier_json_invalid") from exc
-    return validate_classification(normalize_classification(value, question, now_iso))
+    if apply_server_normalization:
+        value = normalize_classification(value, question, now_iso)
+    return validate_classification(value)

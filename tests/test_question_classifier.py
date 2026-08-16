@@ -109,6 +109,32 @@ class QuestionClassifierTest(unittest.TestCase):
         self.assertEqual(result["sensitivity"], "mental_wellbeing")
         self.assertIn("natal_emotional_core", result["required_evidence"])
 
+    def test_classifier_can_bypass_server_topic_and_time_overrides(self):
+        def model_call(request_id, _request):
+            model_decision = _classification(
+                interpreted_question="Kullanıcı arkadaşlıkta barışma olasılığını soruyor.",
+                primary_topic="general",
+                time_scope="none",
+                timing_required=False,
+                target_start=None,
+                target_end=None,
+                target_datetime=None,
+                required_evidence=["natal_core", "active_dasha"],
+                sensitivity="standard",
+            )
+            return request_id, _model_payload(model_decision)
+
+        result = classify_question(
+            "Arkadaşımla küstüm, barışır mıyım?",
+            "route-test-gemini-only",
+            model_call,
+            "2026-08-16T12:00:00+03:00",
+            apply_server_normalization=False,
+        )
+
+        self.assertEqual(result["primary_topic"], "general")
+        self.assertEqual(result["time_scope"], "none")
+
     def test_explicit_daily_career_context_overrides_model_misroute(self):
         def model_call(request_id, _request):
             wrong = _classification(
