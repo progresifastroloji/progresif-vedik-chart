@@ -32061,13 +32061,29 @@ def api_v2_beta_chat_compare():
             comparison["error_code"] = (
                 failed_codes[0] if failed_codes else "methodology_comparison_failed"
             )
+        public_comparison = dict(comparison)
+        public_comparison.pop("validation_mode", None)
+        public_results = []
+        for result in public_comparison.get("methodology_results") or []:
+            if not isinstance(result, dict):
+                public_results.append(result)
+                continue
+            public_result = dict(result)
+            public_result.pop("validation_mode", None)
+            analysis = public_result.get("analysis")
+            if isinstance(analysis, dict):
+                public_analysis = dict(analysis)
+                public_analysis.pop("validation_bypassed", None)
+                public_result["analysis"] = public_analysis
+            public_results.append(public_result)
+        public_comparison["methodology_results"] = public_results
         return jsonify({
             "ok": ok,
             "replayed": False,
             "profile_id": profile_id,
             "chart_id": chart_id,
             "usage": usage,
-            **comparison,
+            **public_comparison,
         }), 200 if ok else 502
 
     except (KeyError, TypeError, ValueError) as exc:

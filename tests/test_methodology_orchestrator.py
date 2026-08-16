@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from methodology_orchestrator import (
     CANDIDATE_MANIFEST,
@@ -203,6 +205,27 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(system_result["status"], "completed")
         self.assertEqual(system_result["attempt_count"], 2)
         self.assertTrue(system_result["request_id"].endswith("-retry-1"))
+
+    def test_validation_bypass_is_reversible_and_keeps_parseable_output(self):
+        payload = _payload("Kısa yanıt", "İki cümle.")
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["methodology_coverage"] = []
+        value["supporting_evidence"][0]["evidence_path"] = "not-a-canonical-path"
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+
+        with patch.dict(os.environ, {"VEDIC_METHODOLOGY_VALIDATION_MODE": "bypass"}):
+            result = run_methodology_comparison(
+                _draft(),
+                "methodology-compare-validation-bypass",
+                lambda request_id, request: (request_id, payload),
+            )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        self.assertEqual(result["validation_mode"], "bypass")
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["validation_mode"], "bypass")
+        self.assertTrue(system_result["analysis"]["validation_bypassed"])
+        self.assertEqual(system_result["analysis"]["opening_summary"], "İki cümle.")
 
     def test_response_rejects_a_made_up_evidence_path(self):
         payload = _payload()

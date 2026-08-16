@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import time
 import uuid
@@ -62,6 +63,18 @@ class MethodologyOrchestrationError(Exception):
         super().__init__(code)
         self.code = code
         self.http_status = http_status
+
+
+def methodology_validation_mode():
+    """Return the explicit semantic-validation mode for this process.
+
+    ``strict`` is the safe default. ``bypass`` is a reversible operations
+    switch for diagnosing provider/output drift: JSON decoding and a non-empty
+    answer are still required, while semantic evidence gates are relaxed.
+    """
+    value = os.environ.get("VEDIC_METHODOLOGY_VALIDATION_MODE", "strict")
+    normalized = str(value or "strict").strip().lower()
+    return "bypass" if normalized in {"bypass", "disabled", "off"} else "strict"
 
 
 def _sha256(value):
@@ -572,13 +585,91 @@ def _validate_opening_summary(value):
     return opening_summary
 
 
-def validate_methodology_response(payload, evidence):
+def _decoded_response_object(payload):
     try:
         value = json.loads(_response_text(payload))
     except json.JSONDecodeError as exc:
         raise MethodologyOrchestrationError("methodology_model_json_invalid", 502) from exc
     if not isinstance(value, dict):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    return value
+
+
+def _relaxed_evidence_rows(value):
+    if not isinstance(value, list):
+        return []
+    rows = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        claim = str(item.get("claim") or item.get("text") or "").strip()
+        evidence_path = str(item.get("evidence_path") or item.get("path") or "").strip()
+        if claim or evidence_path:
+            rows.append({"claim": claim, "evidence_path": evidence_path})
+    return rows
+
+
+def _relaxed_methodology_response(payload, evidence):
+    """Keep a parseable provider answer while skipping semantic model gates."""
+    value = _decoded_response_object(payload)
+    question_intent = value.get("question_intent")
+    question_intent = question_intent if isinstance(question_intent, dict) else {}
+    interpreted_question = str(
+        question_intent.get("interpreted_question")
+        or value.get("interpreted_question")
+        or evidence.get("question")
+        or ""
+    ).strip()
+    summary = str(
+        value.get("summary")
+        or value.get("answer")
+        or value.get("narrative")
+        or value.get("text")
+        or value.get("opening_summary")
+        or ""
+    ).strip()
+    if not summary:
+        raise MethodologyOrchestrationError("methodology_model_summary_invalid", 502)
+    analysis_status = str(value.get("analysis_status") or "COMPLETE").strip().upper()
+    if analysis_status not in {"COMPLETE", "INCOMPLETE"}:
+        analysis_status = "COMPLETE"
+    coverage = value.get("methodology_coverage")
+    normalized_coverage = [
+        {
+            "step": str(row.get("step") or "").strip(),
+            "status": str(row.get("status") or "").strip(),
+            "note": str(row.get("note") or "").strip(),
+        }
+        for row in coverage or []
+        if isinstance(row, dict)
+    ] if isinstance(coverage, list) else []
+    opening_summary = str(value.get("opening_summary") or summary).strip()
+    confidence = str(value.get("confidence") or "low").strip().lower()
+    if confidence not in CONFIDENCE_LEVELS:
+        confidence = "low"
+    return {
+        "question_intent": {
+            "interpreted_question": interpreted_question,
+            "primary_topic": str(evidence.get("subject_topic") or "general").strip(),
+            "timing_required": evidence.get("topic") == "transit",
+        },
+        "analysis_status": analysis_status,
+        "methodology_coverage": normalized_coverage,
+        "opening_summary": opening_summary,
+        "summary": summary,
+        "supporting_evidence": _relaxed_evidence_rows(value.get("supporting_evidence")),
+        "challenging_evidence": _relaxed_evidence_rows(value.get("challenging_evidence")),
+        "missing_layers": [str(item).strip() for item in value.get("missing_layers", []) if str(item).strip()]
+        if isinstance(value.get("missing_layers"), list) else [],
+        "confidence": confidence,
+        "limitations": [str(item).strip() for item in value.get("limitations", []) if str(item).strip()]
+        if isinstance(value.get("limitations"), list) else [],
+        "validation_bypassed": True,
+    }
+
+
+def validate_methodology_response(payload, evidence):
+    value = _decoded_response_object(payload)
     question_intent = value.get("question_intent")
     analysis_status = str(value.get("analysis_status") or "").strip().upper()
     coverage = value.get("methodology_coverage")
@@ -684,6 +775,7 @@ def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_ca
     base_request_id = f"{comparison_id}-{candidate['id']}"
     request, prompt_sha256 = _model_request(candidate, evidence)
     started = clock()
+    validation_mode = methodology_validation_mode()
     for attempt_index in range(2):
         request_id = (
             base_request_id
@@ -694,7 +786,11 @@ def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_ca
             returned_request_id, payload = model_call(request_id, request)
             if returned_request_id != request_id or not isinstance(payload, dict):
                 raise MethodologyOrchestrationError("methodology_model_response_invalid", 502)
-            analysis = validate_methodology_response(payload, evidence)
+            analysis = (
+                _relaxed_methodology_response(payload, evidence)
+                if validation_mode == "bypass"
+                else validate_methodology_response(payload, evidence)
+            )
             return {
                 "status": "completed",
                 "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
@@ -704,6 +800,7 @@ def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_ca
                 "prompt_sha256": prompt_sha256,
                 "latency_ms": max(round((clock() - started) * 1000), 0),
                 "usage": _usage(payload),
+                "validation_mode": validation_mode,
                 "analysis": analysis,
             }
         except Exception as exc:
@@ -724,6 +821,7 @@ def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_ca
                 "evidence_sha256": evidence_sha256,
                 "prompt_sha256": prompt_sha256,
                 "latency_ms": max(round((clock() - started) * 1000), 0),
+                "validation_mode": validation_mode,
                 "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_model_failed",
             }
 
@@ -766,6 +864,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "selection_status": "system_methodology_active",
         "completed_count": completed,
         "candidate_count": len(results),
+        "validation_mode": methodology_validation_mode(),
     }
 
 
