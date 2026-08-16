@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 
 from app import app
-from vertex_bridge_client import VertexBridgeClientError, call_vertex_bridge
+from vertex_bridge_client import MAX_REQUEST_BYTES, VertexBridgeClientError, call_vertex_bridge
 
 
 TEST_SECRET = "a" * 64
@@ -113,6 +113,48 @@ class VertexBridgeClientTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "vertex_request_id_invalid")
         self.assertEqual(raised.exception.http_status, 400)
+
+    @patch.dict(
+        os.environ,
+        {
+            "VEDIC_VERTEX_BRIDGE_URL": TEST_URL,
+            "VEDIC_MACHINE_HMAC_SECRET": TEST_SECRET,
+        },
+        clear=False,
+    )
+    def test_full_context_limit_is_one_megabyte(self):
+        def opener(_request, timeout=None):
+            del timeout
+            return _FakeResponse(b'{"candidates":[]}')
+
+        request = {
+            "contents": [{
+                "role": "user",
+                "parts": [{"text": "x" * (MAX_REQUEST_BYTES - 200)}],
+            }],
+        }
+        request_id, _payload = call_vertex_bridge(
+            "full-context-limit",
+            request,
+            opener=opener,
+            now=lambda: 1_800_000_000,
+            nonce=lambda: "018f47d2-4cf5-7a30-8a0f-8da7167d9102",
+        )
+        self.assertEqual(request_id, "full-context-limit")
+
+        with self.assertRaises(VertexBridgeClientError) as raised:
+            call_vertex_bridge(
+                "full-context-too-large",
+                {
+                    "contents": [{
+                        "role": "user",
+                        "parts": [{"text": "x" * (MAX_REQUEST_BYTES + 1)}],
+                    }],
+                },
+                opener=opener,
+            )
+        self.assertEqual(raised.exception.code, "vertex_request_too_large")
+        self.assertEqual(raised.exception.http_status, 413)
 
     @patch.dict(
         os.environ,

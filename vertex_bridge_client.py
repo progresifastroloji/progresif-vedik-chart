@@ -11,7 +11,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-MAX_REQUEST_BYTES = 262_144
+# The full-context mode sends the owned natal Markdown together with the
+# three-month transit Markdown. Keep the same bounded 1 MiB contract as the
+# methodology prompt builder; the old 256 KiB limit rejected valid full-mode
+# requests before they could reach Vertex/Gemini.
+MAX_REQUEST_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 REQUEST_ID_PATTERN = re.compile(r"^[0-9a-z._:-]{1,200}$", re.IGNORECASE)
 
