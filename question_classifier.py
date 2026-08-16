@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 
 CONTRACT_VERSION = "vedic-question-route-v1"
@@ -92,10 +92,12 @@ def normalize_classification(value, question, now_iso):
     relationship_context = any(
         token in {
             "eş", "eşim", "eşimle", "sevgili", "sevgilim", "sevgilimle",
-            "partner", "partnerim", "ilişki", "evlilik",
+            "partner", "partnerim", "ilişki", "evlilik", "flört", "flörtüm",
+            "çıktığım", "ciktigim", "adamla", "kadınla", "kadinla",
         }
         or token.startswith("ilişki")
         or token.startswith("evlili")
+        or token.startswith("evlen")
         for token in tokens
     )
     emotional_context = any(
@@ -118,10 +120,16 @@ def normalize_classification(value, question, now_iso):
         or "şimdi" in tokens
     )
     explicit_daily = "bugün" in tokens or "bugun" in tokens
+    future_modal = bool(re.search(
+        r"\b(?:evlenebilir|gerçekleşir|gerceklesir|olacak\s+mı|olacak\s+mi|ne\s+zaman)\b",
+        question_text,
+    ))
     if explicit_instant:
         normalized["time_scope"] = "instant"
     elif explicit_daily:
         normalized["time_scope"] = "daily"
+    elif future_modal and normalized.get("time_scope") == "none":
+        normalized["time_scope"] = "range"
     elif emotional_context and normalized.get("time_scope") == "instant":
         # A present-tense feeling is not automatically an hour-specific
         # transit question. Instant mode requires an explicit "now" signal.
@@ -147,6 +155,17 @@ def normalize_classification(value, question, now_iso):
         normalized["target_start"] = None
         normalized["target_end"] = None
         normalized["target_datetime"] = str(now_iso)
+    elif time_scope == "range":
+        current_day = (
+            datetime.fromisoformat(str(now_iso).replace("Z", "+00:00"))
+            .date()
+        )
+        range_start = normalized.get("target_start") or current_day.isoformat()
+        normalized["target_start"] = range_start
+        normalized["target_end"] = normalized.get("target_end") or (
+            date.fromisoformat(str(range_start)) + timedelta(days=91)
+        ).isoformat()
+        normalized["target_datetime"] = None
 
     evidence = normalized.get("required_evidence")
     if isinstance(evidence, list):
@@ -310,7 +329,7 @@ def validate_classification(value):
     }
 
 
-def build_request(question, now_iso):
+def build_request(question, now_iso, conversation_context=None):
     system_text = (
         "Sen Vedik AI soru yonlendiricisisin. Astrolojik analiz veya tavsiye verme; "
         "yalniz kullanicinin gercek niyetini, konu alanini ve zaman kapsamını siniflandir. "
@@ -318,9 +337,15 @@ def build_request(question, now_iso):
         "degildir. Ruh hali, duygu, gerginlik, motivasyon veya iyi hissetmeme sorularini "
         "wellbeing olarak siniflandir; career yalniz is, meslek veya kariyer baglami acikca "
         "varsa secilir. 'Simdi/tam su anda' instant, 'bugun' daily, tarih veya donem isteyen "
-        "sorular range, zaman istemeyen sorular none olur. Tibbi tani istemeyen ruh hali "
+        "sorular range olur. 'Evlenebilir miyim?' gibi gelecekte bir sonucun olup olmayacağını "
+        "soran kipler de range olur; tarih verilmemişse bugünden başlayan 92 günlük ufku seç. "
+        "Zaman istemeyen yalnız natal kapasite soruları none olur. Tibbi tani istemeyen ruh hali "
         "sorularini medical yapma; mental_wellbeing olarak isaretle. Dosya, kullanici, profil, "
         "harita, Supabase veya Railway kimligi secme. Yalniz verilen izinli degerleri kullan. "
+        "active_conversation içindeki bütün önceki soru-cevapları, current_question ile aynı açık "
+        "sohbetin bağlamıdır. 'diğerleri', 'bunu', 'o tarih' gibi devam sorularını bu geçmişe göre "
+        "çöz; current_question yeni bir konu açıyorsa geçmiş konuyu zorla taşıma. Sohbet geçmişini "
+        "astrolojik kanıt sayma ve geçmiş cevaptaki teknik iddiaları doğrulanmış veri gibi kullanma. "
         "required_evidence her zaman natal_core ve active_dasha icersin. Wellbeing icin ayrica "
         "natal_emotional_core ekle. Zaman sorularinda stored_transit_days, "
         "transit_natal_contacts ve ashtakavarga ekle. Daily ve instant icin "
@@ -336,7 +361,8 @@ def build_request(question, now_iso):
     }
     user_text = _canonical_json({
         "current_datetime": now_iso,
-        "question": str(question or "").strip(),
+        "active_conversation": conversation_context or [],
+        "current_question": str(question or "").strip(),
         "allowed_values": schema,
         "required_output": {
             "interpreted_question": "string",
@@ -371,12 +397,13 @@ def classify_question(
     model_call,
     now_iso,
     *,
+    conversation_context=None,
     apply_server_normalization=True,
 ):
     question = str(question or "").strip()
     if not question or len(question) > 2_000:
         raise QuestionClassificationError("question_classifier_question_invalid")
-    request = build_request(question, now_iso)
+    request = build_request(question, now_iso, conversation_context)
     returned_request_id, payload = model_call(request_id, request)
     if returned_request_id != request_id or not isinstance(payload, dict):
         raise QuestionClassificationError("question_classifier_response_invalid")

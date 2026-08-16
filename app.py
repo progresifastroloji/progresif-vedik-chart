@@ -22,6 +22,7 @@ import swisseph as swe
 from flask import Flask, render_template, request, jsonify, send_file
 from methodology_orchestrator import (
     MethodologyOrchestrationError,
+    full_markdown_test_mode,
     new_comparison_id,
     run_methodology_comparison,
 )
@@ -892,8 +893,8 @@ TOPIC_PACKET_CONFIG = {
     "marriage": {
         "label": "Marriage / relationship",
         "houses": [7, 2, 4, 8, 12],
-        "lordships": ["7"],
-        "planets": ["Venus", "Jupiter", "Mars"],
+        "lordships": ["7", "2"],
+        "planets": ["Venus", "Jupiter", "Moon", "Mars", "Sun"],
         "vargas": ["D9"],
     },
     "career": {
@@ -29072,7 +29073,10 @@ BETA_TOPIC_KEYWORDS = {
         "güçlü yan", "guclu yan", "zayıf yan", "zayif yan",
     },
     "career": {"kariyer", "meslek", "iş", "is", "çalışma", "para kazanma", "d10"},
-    "marriage": {"evlilik", "ilişki", "iliski", "partner", "eş", "es", "aşk", "ask", "d7"},
+    "marriage": {
+        "evlilik", "evlen", "ilişki", "iliski", "partner", "eş", "es",
+        "aşk", "ask", "flört", "çıktığım", "ciktigim", "d7",
+    },
     "wealth": {"para", "finans", "gelir", "kazanç", "kazanc", "servet", "yatırım"},
     "health": {"sağlık", "saglik", "hastalık", "hastalik", "beden", "d12"},
     "transit": {"transit", "güncel", "bugün", "bugun", "şimdi", "simdi"},
@@ -29097,6 +29101,7 @@ BETA_TIMING_KEYWORDS = {
     "üç aylık",
     "uc aylik",
     "3 aylık",
+    "evlenebilir",
 }
 
 BETA_RECTIFICATION_KEYWORDS = {
@@ -29223,6 +29228,33 @@ def _beta_init_db(conn):
 
 def _beta_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _beta_public_methodology_response(comparison):
+    """Keep the full audit record server-side and expose only concise UI evidence."""
+
+    public = json.loads(json.dumps(comparison))
+    public.pop("validation_mode", None)
+    for result in public.get("methodology_results") or []:
+        if isinstance(result, dict):
+            result.pop("validation_mode", None)
+        analysis = result.get("analysis") if isinstance(result, dict) else None
+        if not isinstance(analysis, dict):
+            continue
+        supporting = analysis.pop("supporting_evidence", [])
+        analysis["display_evidence"] = [
+            str(item.get("claim") or "").strip()
+            for item in supporting[:3]
+            if isinstance(item, dict) and str(item.get("claim") or "").strip()
+        ]
+        analysis.pop("challenging_evidence", None)
+        analysis.pop("methodology_coverage", None)
+        analysis.pop("technical_summary", None)
+        analysis.pop("validation_bypassed", None)
+        analysis["missing_layers"] = (analysis.get("missing_layers") or [])[:1]
+        analysis["limitations"] = (analysis.get("limitations") or [])[:1]
+        result["internal_technical_record"] = "stored_server_side"
+    return public
 
 
 def _beta_load_json(text):
@@ -30115,6 +30147,62 @@ def _pwa_artifact_file(owner_user_id, chart_id, artifact_code, artifact_profile=
     return path, item, _pwa_artifact_sha256(data)
 
 
+def _pwa_full_markdown_test_document(owner_user_id, chart_id):
+    """Load the owned full natal Markdown only for the explicit test mode."""
+
+    if not full_markdown_test_mode():
+        return None
+    if not owner_user_id or not chart_id:
+        raise ValueError("full_markdown_test_requires_owned_chart")
+    try:
+        path, item, sha256 = _pwa_artifact_file(
+            owner_user_id,
+            chart_id,
+            "natal_interpretation",
+            artifact_profile=PWA_ARTIFACT_PROFILE_COMPACT,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError("full_markdown_test_artifact_not_found") from exc
+    content = path.read_text(encoding="utf-8")
+    if not content:
+        raise ValueError("full_markdown_test_artifact_empty")
+    return {
+        "filename": item.get("filename") or "natal-interpretation.md",
+        "byte_size": len(content.encode("utf-8")),
+        "sha256": sha256,
+        "content": content,
+    }
+
+
+def _pwa_full_markdown_documents(owner_user_id, chart_id, *, include_transit=False):
+    """Load the complete owned Markdown sources for explicit full-context mode."""
+
+    natal = _pwa_full_markdown_test_document(owner_user_id, chart_id)
+    if natal is None:
+        return None
+    documents = [natal]
+    if include_transit:
+        try:
+            path, item, sha256 = _pwa_artifact_file(
+                owner_user_id,
+                chart_id,
+                "transit_three_month",
+                artifact_profile=PWA_ARTIFACT_PROFILE_COMPACT,
+            )
+        except FileNotFoundError as exc:
+            raise ValueError("full_markdown_test_transit_artifact_not_found") from exc
+        content = path.read_text(encoding="utf-8")
+        if not content:
+            raise ValueError("full_markdown_test_transit_artifact_empty")
+        documents.append({
+            "filename": item.get("filename") or "transit-three-month.md",
+            "byte_size": len(content.encode("utf-8")),
+            "sha256": sha256,
+            "content": content,
+        })
+    return {"documents": documents}
+
+
 def _beta_options(options):
     merged = dict(BETA_DEFAULT_OPTIONS)
     merged.update({key: value for key, value in (options or {}).items() if value is not None})
@@ -30364,6 +30452,7 @@ def _beta_question_route(
     request_id,
     owner_user_id=None,
     *,
+    conversation_context=None,
     mode_override=None,
 ):
     legacy = _beta_legacy_question_route(question)
@@ -30383,6 +30472,7 @@ def _beta_question_route(
                 f"{request_id}-question-route",
                 call_vertex_bridge,
                 _beta_question_now(chart),
+                conversation_context=conversation_context,
                 apply_server_normalization=mode != "gemini_only",
             )
         except Exception as exc:
@@ -30394,14 +30484,11 @@ def _beta_question_route(
             if not str(error_code).startswith(("question_classifier_", "vertex_")):
                 error_code = "question_classifier_failed"
     if mode == "gemini_only" and not model:
-        # Explicit reversible experiment: never hide a Gemini routing failure
-        # by silently selecting the legacy keyword router.
+        # This mode is an explicit, reversible experiment: never hide a Gemini
+        # routing failure by silently selecting the legacy keyword router.
         raise QuestionClassificationError(error_code or "question_classifier_failed")
     bypass = None
     if mode == "bypass":
-        # Reversible production experiment: skip the separate classifier and
-        # give the main methodology model the full natal evidence surface.
-        # No keyword-derived topic or timing decision is allowed to leak in.
         bypass = {
             "contract_version": "vedic-question-route-bypass-v1",
             "interpreted_question": str(question or "").strip(),
@@ -30785,7 +30872,7 @@ PWA_NATAL_TOPIC_SECTION_IDS = {
     "marriage": {
         "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
         "jaimini", "yogas", "doshas", "planet_quick_read",
-        "house_drishti", "topic_summaries",
+        "house_drishti", "planet_role_blocks", "topic_summaries",
     },
     "wealth": {
         "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
@@ -30860,7 +30947,7 @@ def _beta_selected_natal_sections(
             "panchanga", "varga_tables", "shadbala", "vimshopaka_bala",
             "bhava_bala", "ashtakavarga", "avasthas", "bhava_chalit",
             "graha_yuddha", "kp", "jaimini", "yogas", "doshas",
-            "planet_quick_read", "house_drishti", "chara_dasha",
+            "planet_quick_read", "house_drishti", "planet_role_blocks", "chara_dasha",
             "yogini_dasha", "career_packet", "topic_summaries",
             "life_events",
         })
@@ -30870,7 +30957,11 @@ def _beta_selected_natal_sections(
             selected_ids.add("career_packet")
         elif subject_topic == "wellbeing":
             selected_ids.update({"shadbala", "bhava_bala", "avasthas"})
-        elif subject_topic in {"marriage", "wealth", "health", "spiritual"}:
+        elif subject_topic == "marriage":
+            selected_ids.update({
+                "varga_tables", "doshas", "house_drishti", "planet_role_blocks",
+            })
+        elif subject_topic in {"wealth", "health", "spiritual"}:
             selected_ids.add("varga_tables")
     else:
         selected_ids.update(PWA_NATAL_TOPIC_SECTION_IDS.get(subject_topic, set()))
@@ -30953,6 +31044,8 @@ def _beta_build_chat_draft(
     owner_user_id=None,
     profile_id=None,
     chart_id=None,
+    conversation_context=None,
+    include_full_markdown_test=False,
 ):
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
     subject_topic = selected_route["primary_topic"]
@@ -31031,15 +31124,25 @@ def _beta_build_chat_draft(
         "transits": transits,
         "data_quality": chart.get("data_quality"),
     }
+    full_markdown_test = (
+        _pwa_full_markdown_documents(
+            owner_user_id,
+            chart_id,
+            include_transit=topic == "transit",
+        )
+        if include_full_markdown_test
+        else None
+    )
     missing = _beta_missing_for_topic(chart, packet)
     confidence = packet.get("confidence") if packet else "low"
     status = "evidence_ready" if packet or topic == "general" else "topic_not_configured"
     if missing:
         status = "evidence_ready_with_missing_layers"
 
-    return {
+    draft = {
         "status": status,
         "question": question,
+        "conversation_context": conversation_context or [],
         "topic": topic,
         "subject_topic": subject_topic,
         "question_route": selected_route,
@@ -31064,7 +31167,32 @@ def _beta_build_chat_draft(
             "primary_topic": subject_topic,
             "time_scope": selected_route.get("time_scope"),
             "required_evidence": selected_route.get("required_evidence") or [],
+            "conversation_turn_count": len(conversation_context or []),
             "transit": transit_trace,
+            "full_markdown_test": (
+                {
+                    "enabled": True,
+                    "documents": [
+                        {
+                            "filename": item.get("filename"),
+                            "byte_size": item.get("byte_size"),
+                            "sha256": item.get("sha256"),
+                        }
+                        for item in full_markdown_test.get("documents", [])
+                    ],
+                    **(
+                        {
+                            "filename": full_markdown_test["documents"][0].get("filename"),
+                            "byte_size": full_markdown_test["documents"][0].get("byte_size"),
+                            "sha256": full_markdown_test["documents"][0].get("sha256"),
+                        }
+                        if len(full_markdown_test.get("documents", [])) == 1
+                        else {}
+                    ),
+                }
+                if full_markdown_test is not None
+                else {"enabled": False}
+            ),
         },
         "safety_notes": _beta_safety_notes(
             subject_topic,
@@ -31072,6 +31200,12 @@ def _beta_build_chat_draft(
         ),
         "next_action": "Bu kanıt paketini yorum katmanına ver; hesap veya eksik katman uydurma.",
     }
+    if full_markdown_test is not None:
+        # Internal-only field: the compare route consumes it immediately and
+        # it is never returned by the draft endpoint or persisted as a chat
+        # message.
+        draft["_full_markdown_test"] = full_markdown_test
+    return draft
 
 
 def _beta_comparison_id(value):
@@ -31079,6 +31213,30 @@ def _beta_comparison_id(value):
     if not re.fullmatch(r"[0-9A-Za-z._:-]{1,200}", comparison_id):
         raise ValueError("Geçerli comparison_id gerekli")
     return comparison_id
+
+
+def _beta_conversation_context(value):
+    if value is None or value == "":
+        return []
+    if not isinstance(value, list):
+        raise ValueError("conversation_context liste olmalı")
+    context = []
+    for raw in value:
+        if not isinstance(raw, dict) or set(raw) - {"question", "answer"}:
+            raise ValueError("conversation_context satırı geçersiz")
+        question = str(raw.get("question") or "").strip()
+        answer = str(raw.get("answer") or "").strip()
+        if not question or len(question) > 4_000 or not answer or len(answer) > 16_000:
+            raise ValueError("conversation_context metni geçersiz")
+        context.append({"question": question, "answer": answer})
+    encoded = json.dumps(
+        context,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(encoded) > 64 * 1024:
+        raise ValueError("conversation_context_too_large")
+    return context
 
 
 def _beta_existing_comparison(conn, comparison_id, profile_id, chart_id, question):
@@ -31891,6 +32049,9 @@ def api_v2_beta_chat_compare():
             raise ValueError("question boş olamaz")
         if len(question) > 2_000:
             raise ValueError("question çok uzun")
+        conversation_context = _beta_conversation_context(
+            data.get("conversation_context")
+        )
         if _beta_is_rectification_question(question):
             return jsonify({
                 "ok": False,
@@ -31946,8 +32107,13 @@ def api_v2_beta_chat_compare():
                     "profile_id": profile_id,
                     "chart_id": chart_id,
                     "usage": usage,
-                    **stored,
+                    **_beta_public_methodology_response(stored),
                 }), status_code
+
+            # Fail before creating an in-progress comparison if the explicit
+            # full-Markdown test artifact is unavailable.
+            if full_markdown_test_mode():
+                _pwa_full_markdown_test_document(owner_user_id, chart_id)
 
             usage_before = _beta_usage_status(conn, profile_id)
             if usage_before["heavy"]["remaining"] <= 0:
@@ -31974,7 +32140,19 @@ def api_v2_beta_chat_compare():
             chart,
             comparison_id,
             owner_user_id,
+            conversation_context=conversation_context,
         )
+        if full_markdown_test_mode():
+            # Timing questions additionally require the complete transit
+            # Markdown; keep this check tied to the server-selected route.
+            try:
+                _pwa_full_markdown_documents(
+                    owner_user_id,
+                    chart_id,
+                    include_transit=bool(routing["selected"].get("timing_required")),
+                )
+            except ValueError as exc:
+                raise MethodologyOrchestrationError(str(exc), 422) from exc
         _beta_record_question_route(
             comparison_id,
             profile_id,
@@ -32020,6 +32198,8 @@ def api_v2_beta_chat_compare():
             owner_user_id=owner_user_id,
             profile_id=profile_id,
             chart_id=chart_id,
+            conversation_context=conversation_context,
+            include_full_markdown_test=full_markdown_test_mode(),
         )
         comparison = run_methodology_comparison(
             draft,
@@ -32061,29 +32241,13 @@ def api_v2_beta_chat_compare():
             comparison["error_code"] = (
                 failed_codes[0] if failed_codes else "methodology_comparison_failed"
             )
-        public_comparison = dict(comparison)
-        public_comparison.pop("validation_mode", None)
-        public_results = []
-        for result in public_comparison.get("methodology_results") or []:
-            if not isinstance(result, dict):
-                public_results.append(result)
-                continue
-            public_result = dict(result)
-            public_result.pop("validation_mode", None)
-            analysis = public_result.get("analysis")
-            if isinstance(analysis, dict):
-                public_analysis = dict(analysis)
-                public_analysis.pop("validation_bypassed", None)
-                public_result["analysis"] = public_analysis
-            public_results.append(public_result)
-        public_comparison["methodology_results"] = public_results
         return jsonify({
             "ok": ok,
             "replayed": False,
             "profile_id": profile_id,
             "chart_id": chart_id,
             "usage": usage,
-            **public_comparison,
+            **_beta_public_methodology_response(comparison),
         }), 200 if ok else 502
 
     except (KeyError, TypeError, ValueError) as exc:

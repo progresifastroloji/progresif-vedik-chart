@@ -185,6 +185,33 @@ class QuestionClassifierTest(unittest.TestCase):
         self.assertIsNone(result["target_start"])
         self.assertIsNone(result["target_end"])
 
+    def test_future_marriage_question_uses_current_transit_horizon(self):
+        def model_call(request_id, _request):
+            incomplete = _classification(
+                primary_topic="general",
+                time_scope="none",
+                timing_required=False,
+                target_start=None,
+                target_end=None,
+                target_datetime=None,
+                required_evidence=["natal_core", "active_dasha"],
+                sensitivity="standard",
+            )
+            return request_id, _model_payload(incomplete)
+
+        result = classify_question(
+            "Çıktığım adamla evlenebilir miyim?",
+            "route-test-future-marriage",
+            model_call,
+            "2026-08-15T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["primary_topic"], "marriage")
+        self.assertEqual(result["time_scope"], "range")
+        self.assertEqual(result["target_start"], "2026-08-15")
+        self.assertEqual(result["target_end"], "2026-11-14")
+        self.assertIn("stored_transit_days", result["required_evidence"])
+
     def test_prompt_explicitly_blocks_hissetmiyorum_career_substring_bug(self):
         request = build_request(
             "İyi hissetmiyorum.",
@@ -194,6 +221,31 @@ class QuestionClassifierTest(unittest.TestCase):
 
         self.assertIn("'hissetmiyorum' kariyer degildir", prompt)
         self.assertIn("wellbeing", prompt)
+
+    def test_classifier_receives_the_full_active_conversation(self):
+        context = [
+            {
+                "question": "Yarınki iş görüşmesinden nasıl bir yanıt alırım?",
+                "answer": "Görüşme 17 Ağustos için değerlendirildi.",
+            },
+            {
+                "question": "Ay etkisini de açıklar mısın?",
+                "answer": "Ay etkisi ayrıca açıklandı.",
+            },
+        ]
+        request = build_request(
+            "Diğer transitlerle beraber yorum yap.",
+            "2026-08-16T12:00:00+03:00",
+            context,
+        )
+        payload = json.loads(request["contents"][0]["parts"][0]["text"])
+
+        self.assertEqual(payload["active_conversation"], context)
+        self.assertEqual(
+            payload["current_question"],
+            "Diğer transitlerle beraber yorum yap.",
+        )
+        self.assertIn("aynı açık sohbetin bağlamıdır", request["systemInstruction"]["parts"][0]["text"])
 
 
 if __name__ == "__main__":

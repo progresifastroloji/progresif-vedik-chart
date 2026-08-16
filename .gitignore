@@ -21,3 +21,8 @@ data/places/*.sqlite3
 Thumbs.db
 instance/
 .webassets-cache
+
+digest_data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

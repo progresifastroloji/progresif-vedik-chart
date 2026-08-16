@@ -1,10 +1,13 @@
 import json
+import os
 import tempfile
 import unittest
 from contextlib import closing
 from unittest.mock import patch
 
 from app import (
+    PWA_NATAL_TOPIC_SECTION_IDS,
+    TOPIC_PACKET_CONFIG,
     app,
     _beta_build_chat_draft,
     _beta_db,
@@ -13,6 +16,7 @@ from app import (
     _beta_question_route,
     _beta_shadbala_strength_summary,
     _beta_json,
+    _beta_load_json,
     _beta_now,
 )
 from methodology_orchestrator import MAX_PROMPT_BYTES, _canonical_json, _model_request, compact_evidence, load_methodology_candidates
@@ -24,11 +28,6 @@ CHART_ID = "chart-methodology-test"
 
 
 def _model_payload():
-    opening_summary = (
-        "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "
-        "En güçlü yanınız, karmaşık sorumlulukları düzenli ve güvenilir bir sonuca dönüştürmenizdir. "
-        "İlerlemenizi hızlandıracak seçim, gereksiz yükleri azaltıp emeğinizi görünür kılmaktır."
-    )
     analysis = {
         "question_intent": {
             "interpreted_question": "Kariyer göstergelerini değerlendirmek",
@@ -46,7 +45,6 @@ def _model_payload():
                 "counter_evidence", "thematic_synthesis",
             )
         ],
-        "opening_summary": opening_summary,
         "summary": "Kariyer konusunda destek ve sınırlar birlikte görülüyor.",
         "supporting_evidence": [
             {"claim": "Destekleyici faktör var", "evidence_path": "evidence.topic_packet"},
@@ -63,6 +61,38 @@ def _model_payload():
         "usageMetadata": {"totalTokenCount": 123},
         "modelVersion": "test-model",
     }
+
+
+def _narrative_payload():
+    opening_summary = (
+        "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "
+        "En güçlü yanınız, karmaşık sorumlulukları düzenli ve güvenilir bir sonuca dönüştürmenizdir. "
+        "İlerlemenizi hızlandıracak seçim, gereksiz yükleri azaltıp emeğinizi görünür kılmaktır."
+    )
+    answer = (
+        "Kariyer alanında ilerleme potansiyeliniz var; bu potansiyel en iyi, dağılmadan belirli bir "
+        "uzmanlık alanına odaklandığınızda çalışıyor. Haritanın ana cevabı hızlı sonuçtan çok güvenilir "
+        "ve kalıcı bir mesleki yapı kurmaya yatkın olduğunuz yönündedir.\n\n"
+        "Teknik değerlendirme destekleyici göstergelerle birlikte zorlayıcı koşulları da hesaba katıyor. "
+        "Bu yüzden güçlü yanınız olan sorumluluk alma becerisi, sınırlarınız net olmadığında fazla yük "
+        "üstlenmeye dönüşebilir. Öncelikleri sadeleştirmeniz, emeğinizin karşılığını daha görünür kılar.\n\n"
+        "Pratik olarak tek bir ana hedef seçin, onu haftalık adımlara bölün ve tamamladığınız işleri düzenli "
+        "olarak görünür hale getirin. Astrolojik göstergeler sonucu garanti etmez; fakat disiplin, doğru "
+        "zamanlama ve seçici sorumluluk aldığınızda ilerleme alanınızın güçlendiğini gösterir. Bu yaklaşım "
+        "hem mesleki güveninizi hem de dışarıdan algılanan yetkinliğinizi besleyebilir."
+    )
+    return {
+        "candidates": [{"content": {"parts": [{"text": json.dumps({
+            "opening_summary": opening_summary,
+            "answer": answer,
+        })}]}}],
+        "usageMetadata": {"totalTokenCount": 321},
+        "modelVersion": "test-model",
+    }
+
+
+def _analysis_or_narrative_payload(request_id):
+    return _narrative_payload() if "-narrative" in request_id else _model_payload()
 
 
 def _route_payload(topic, time_scope, *, sensitivity="standard"):
@@ -99,6 +129,66 @@ def _route_payload(topic, time_scope, *, sensitivity="standard"):
 
 
 class BetaMethodologyCompareEndpointTest(unittest.TestCase):
+    @patch("app._pwa_full_markdown_test_document")
+    def test_full_markdown_test_document_is_internal_to_compare_draft(self, full_document):
+        full_document.return_value = {
+            "filename": "natal-interpretation.md",
+            "byte_size": 28,
+            "sha256": "full-md-test-sha",
+            "content": "# Tam natal test dosyası\n",
+        }
+        chart = {
+            "birth": {"person": {"name": "Test"}},
+            "lagna": {"sign": "Aries"},
+            "dashas": {"vimshottari": {"current_active": {"path": ["Saturn"]}}},
+            "topic_packets": {"career": {"confidence": "medium", "missing_factors": [], "required_but_missing": [], "evidence": {}}},
+            "data_quality": {"status": "complete"},
+        }
+        with patch.dict(os.environ, {"VEDIC_GEMINI_FULL_MARKDOWN_TEST": "1"}, clear=False):
+            draft = _beta_build_chat_draft(
+                "Kariyerimde güçlü yönlerim neler?",
+                chart,
+                routing={
+                    "selected": {
+                        "contract_version": "test-route-v1",
+                        "primary_topic": "career",
+                        "time_scope": "none",
+                        "timing_required": False,
+                        "required_evidence": ["natal_core"],
+                    },
+                },
+                owner_user_id="11111111-1111-4111-8111-111111111111",
+                profile_id=PROFILE_ID,
+                chart_id=CHART_ID,
+                include_full_markdown_test=True,
+            )
+
+        self.assertIn("_full_markdown_test", draft)
+        self.assertEqual(
+            draft["context_trace"]["full_markdown_test"]["filename"],
+            "natal-interpretation.md",
+        )
+        self.assertEqual(
+            draft["context_trace"]["full_markdown_test"]["documents"][0]["filename"],
+            "natal-interpretation.md",
+        )
+        # The route that returns/persists a normal draft does not set the
+        # internal flag, so full content cannot leak into chat history.
+        normal_draft = _beta_build_chat_draft(
+            "Kariyerimde güçlü yönlerim neler?",
+            chart,
+            routing={
+                "selected": {
+                    "contract_version": "test-route-v1",
+                    "primary_topic": "career",
+                    "time_scope": "none",
+                    "timing_required": False,
+                    "required_evidence": ["natal_core"],
+                },
+            },
+        )
+        self.assertNotIn("_full_markdown_test", normal_draft)
+
     def setUp(self):
         self._old_beta_db_path = app.config["BETA_DB_PATH"]
         self._old_heavy_limit = app.config["BETA_DAILY_HEAVY_LIMIT"]
@@ -142,12 +232,25 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_runs_three_candidates_and_replays_idempotently(self, bridge_call):
-        bridge_call.side_effect = lambda request_id, _request: (request_id, _model_payload())
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            _analysis_or_narrative_payload(request_id),
+        )
         payload = {
             "comparison_id": "methodology-compare-endpoint-1",
             "profile_id": PROFILE_ID,
             "chart_id": CHART_ID,
             "question": "Kariyer açısından güçlü ve zorlayıcı teknik kanıtlar nelerdir?",
+            "conversation_context": [
+                {
+                    "question": "Yarınki iş görüşmem nasıl geçer?",
+                    "answer": "Görüşme 17 Ağustos için değerlendirildi.",
+                },
+                {
+                    "question": "Ay etkisini de açıklar mısın?",
+                    "answer": "Ay etkisi ayrıca açıklandı.",
+                },
+            ],
         }
 
         first = self.client.post("/api/v2/beta/chat/compare", json=payload)
@@ -162,27 +265,48 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(data["completed_count"], 1)
         self.assertEqual(len(data["methodology_results"]), 1)
         self.assertEqual(data["selection"], "vedic-system-methodology-v1")
-        expected_analysis = json.loads(
-            _model_payload()["candidates"][0]["content"]["parts"][0]["text"]
-        )
-        self.assertEqual(
-            data["methodology_results"][0]["analysis"]["opening_summary"],
-            expected_analysis["opening_summary"],
-        )
         self.assertEqual(data["context_trace"]["primary_topic"], "career")
         self.assertEqual(data["context_trace"]["time_scope"], "none")
+        self.assertEqual(data["context_trace"]["conversation_turn_count"], 2)
         self.assertIsNone(data["context_trace"]["transit"])
+        public_analysis = data["methodology_results"][0]["analysis"]
+        self.assertEqual(public_analysis["opening_summary"], (
+            "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "
+            "En güçlü yanınız, karmaşık sorumlulukları düzenli ve güvenilir bir sonuca dönüştürmenizdir. "
+            "İlerlemenizi hızlandıracak seçim, gereksiz yükleri azaltıp emeğinizi görünür kılmaktır."
+        ))
+        self.assertEqual(public_analysis["display_evidence"], ["Destekleyici faktör var"])
+        self.assertNotIn("supporting_evidence", public_analysis)
+        self.assertNotIn("challenging_evidence", public_analysis)
+        self.assertNotIn("methodology_coverage", public_analysis)
+        self.assertNotIn("technical_summary", public_analysis)
         self.assertFalse(data["replayed"])
         self.assertTrue(replay["replayed"])
         self.assertEqual(replay["context_trace"], data["context_trace"])
         self.assertEqual(replay["usage"]["heavy"]["used"], 1)
-        self.assertEqual(bridge_call.call_count, 1)
+        self.assertEqual(bridge_call.call_count, 2)
+        technical_prompt = bridge_call.call_args_list[0].args[1]["contents"][0]["parts"][0]["text"]
+        narrative_prompt = bridge_call.call_args_list[1].args[1]["contents"][0]["parts"][0]["text"]
+        self.assertIn("Yarınki iş görüşmem nasıl geçer?", technical_prompt)
+        self.assertIn("Ay etkisini de açıklar mısın?", narrative_prompt)
+        with closing(_beta_db()) as conn:
+            stored = _beta_load_json(conn.execute(
+                "SELECT response_json FROM beta_methodology_comparisons WHERE id = ?",
+                (payload["comparison_id"],),
+            ).fetchone()["response_json"])
+        stored_analysis = stored["methodology_results"][0]["analysis"]
+        self.assertIn("challenging_evidence", stored_analysis)
+        self.assertIn("methodology_coverage", stored_analysis)
+        self.assertIn("technical_summary", stored_analysis)
         usage = self.client.get(f"/api/v2/beta/usage?profile_id={PROFILE_ID}").get_json()
         self.assertEqual(usage["counts"]["methodology_comparisons"], 1)
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_rejects_comparison_id_collision(self, bridge_call):
-        bridge_call.side_effect = lambda request_id, _request: (request_id, _model_payload())
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            _analysis_or_narrative_payload(request_id),
+        )
         base = {
             "comparison_id": "methodology-compare-endpoint-2",
             "profile_id": PROFILE_ID,
@@ -196,7 +320,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
 
         self.assertEqual(collision.status_code, 400)
         self.assertEqual(collision.get_json()["status"], "invalid_request")
-        self.assertEqual(bridge_call.call_count, 1)
+        self.assertEqual(bridge_call.call_count, 2)
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_blocks_before_model_when_heavy_limit_is_full(self, bridge_call):
@@ -241,6 +365,23 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
 
         self.assertEqual(_beta_detect_topic(question), "transit")
         self.assertEqual(_beta_detect_subject_topic(question), "career")
+
+    def test_future_specific_marriage_question_uses_transit_with_marriage_subject(self):
+        question = "Çıktığım adamla evlenebilir miyim?"
+
+        self.assertEqual(_beta_detect_topic(question), "transit")
+        self.assertEqual(_beta_detect_subject_topic(question), "marriage")
+
+    def test_marriage_context_includes_required_planets_lordships_and_networks(self):
+        marriage = TOPIC_PACKET_CONFIG["marriage"]
+
+        self.assertEqual(marriage["lordships"], ["7", "2"])
+        self.assertTrue({"Venus", "Jupiter", "Moon", "Mars", "Sun"}.issubset(
+            marriage["planets"]
+        ))
+        self.assertTrue({"doshas", "house_drishti", "planet_role_blocks"}.issubset(
+            PWA_NATAL_TOPIC_SECTION_IDS["marriage"]
+        ))
 
     @patch("app.call_vertex_bridge")
     def test_controlled_eight_question_shadow_comparison(self, bridge_call):
@@ -334,25 +475,6 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
                 {"birth": {"timezone_id": "Europe/Istanbul"}},
                 "gemini-only-failure-test",
             )
-
-    @patch("app.call_vertex_bridge")
-    def test_bypass_router_skips_classifier_and_uses_full_general_evidence(self, bridge_call):
-        app.config["QUESTION_ROUTER_MODE"] = "bypass"
-
-        routing = _beta_question_route(
-            "Kardeşimle aram düzelir mi?",
-            {"birth": {"timezone_id": "Europe/Istanbul"}},
-            "classifier-bypass-test",
-        )
-
-        bridge_call.assert_not_called()
-        self.assertEqual(routing["mode"], "bypass")
-        self.assertEqual(routing["status"], "classifier_bypassed")
-        self.assertIsNone(routing["model"])
-        self.assertEqual(routing["selected"]["primary_topic"], "general")
-        self.assertEqual(routing["selected"]["time_scope"], "none")
-        self.assertFalse(routing["selected"]["timing_required"])
-        self.assertIn("full_natal_sections", routing["selected"]["required_evidence"])
 
     def test_character_router_and_shadbala_ranking_use_ratio(self):
         self.assertEqual(

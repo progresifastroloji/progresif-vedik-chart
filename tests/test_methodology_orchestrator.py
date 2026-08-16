@@ -9,10 +9,15 @@ from methodology_orchestrator import (
     CANDIDATE_MANIFEST,
     MethodologyOrchestrationError,
     _model_request,
+    _narrative_request,
+    compact_evidence,
+    full_markdown_test_mode,
     load_methodology_candidates,
     run_methodology_comparison,
     validate_methodology_response,
+    validate_narrative_response,
 )
+from question_classifier import ALLOWED_TOPICS
 
 
 def _draft():
@@ -37,12 +42,7 @@ def _draft():
     }
 
 
-def _payload(summary="Teknik özet", opening_summary=None):
-    opening_summary = opening_summary or (
-        "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "
-        "En güçlü yanınız, karmaşık sorumlulukları düzenli ve güvenilir bir sonuca dönüştürmenizdir. "
-        "İlerlemenizi hızlandıracak seçim, gereksiz yükleri azaltıp emeğinizi görünür kılmaktır."
-    )
+def _payload(summary="Teknik özet"):
     analysis = {
         "question_intent": {
             "interpreted_question": "Kariyer alanındaki ana güçler ve sınırlar",
@@ -60,7 +60,6 @@ def _payload(summary="Teknik özet", opening_summary=None):
                 "counter_evidence", "thematic_synthesis",
             )
         ],
-        "opening_summary": opening_summary,
         "summary": summary,
         "supporting_evidence": [
             {"claim": "Destek var", "evidence_path": "evidence.topic_packet"},
@@ -83,7 +82,87 @@ def _payload(summary="Teknik özet", opening_summary=None):
     }
 
 
+def _narrative_payload(answer=None, opening_summary=None):
+    opening_summary = opening_summary or (
+        "Kariyerinizde kalıcı başarı, tek bir alanda derinleştiğinizde daha güçlü biçimde görünür olabilir. "
+        "En belirgin üstünlüğünüz, sorumluluk alırken karmaşayı düzene çevirebilmenizdir. "
+        "Önünüzü açacak temel seçim, enerjinizi dağıtan yükleri azaltıp emeğinizi görünür kılmaktır."
+    )
+    answer = answer or (
+        "Kariyerinizde güçlü bir gelişim potansiyeli var; ancak bu potansiyel, sabırlı biçimde "
+        "uzmanlaşmanız ve sorumluluk alanınızı netleştirmeniz koşuluyla daha görünür hale geliyor. "
+        "Haritanın verdiği ana cevap, hızlı bir sıçramadan çok kalıcı bir yapı kurmaya yatkın olduğunuzdur.\n\n"
+        "Teknik analizde mesleki yönü destekleyen göstergeler ile ilerlemeyi yavaşlatabilecek koşullar "
+        "birlikte görülüyor. Bu nedenle yalnız güçlü yanlarınıza yaslanmak yerine, enerjinizi dağıtan işlere "
+        "sınır koymanız ve belirli bir alanda derinleşmeniz daha verimli olur. Böyle yaptığınızda görünürlük "
+        "ve güvenilirlik aynı anda büyüyebilir.\n\n"
+        "Pratik olarak önümüzdeki dönemde tek bir ana hedef seçmeniz, onu haftalık küçük adımlara bölmeniz "
+        "ve yaptığınız işi düzenli biçimde görünür kılmanız yararlı olur. Sonucu garanti eden tek bir gösterge "
+        "yoktur; harita size en çok, disiplinli hazırlık ile doğru fırsatı buluşturduğunuzda ilerleme alanı açıldığını gösteriyor."
+    )
+    return {
+        "candidates": [{"content": {"parts": [{"text": json.dumps({
+            "opening_summary": opening_summary,
+            "answer": answer,
+        })}]}}],
+        "usageMetadata": {
+            "promptTokenCount": 40,
+            "candidatesTokenCount": 180,
+            "totalTokenCount": 220,
+        },
+        "modelVersion": "test-model",
+    }
+
+
 class MethodologyOrchestratorTest(unittest.TestCase):
+    def test_full_markdown_test_mode_adds_complete_markdown_once_without_changing_default(self):
+        document = "# FULL NATAL TEST\n\nBu metin yalnız test için gönderilir.\n"
+        draft = _draft()
+        draft["_full_markdown_test"] = {
+            "filename": "natal-interpretation.md",
+            "sha256": "test-sha256",
+            "content": document,
+        }
+        candidate = load_methodology_candidates()[0]
+
+        with patch.dict(os.environ, {"VEDIC_GEMINI_FULL_MARKDOWN_TEST": "1"}, clear=False):
+            self.assertTrue(full_markdown_test_mode())
+            evidence = compact_evidence(draft)
+            request, _ = _model_request(candidate, evidence)
+            prompt = request["contents"][0]["parts"][0]["text"]
+            self.assertIn("TAM MARKDOWN KAYNAKLARI", prompt)
+            self.assertEqual(prompt.count(document), 1)
+            self.assertIn("natal-interpretation.md", prompt)
+            self.assertIn("SYSTEM_METHODOLOGY", request["systemInstruction"]["parts"][0]["text"])
+
+        with patch.dict(os.environ, {"VEDIC_GEMINI_FULL_MARKDOWN_TEST": "0"}, clear=False):
+            self.assertFalse(full_markdown_test_mode())
+            evidence = compact_evidence(draft)
+            request, _ = _model_request(candidate, evidence)
+            prompt = request["contents"][0]["parts"][0]["text"]
+            self.assertNotIn("TAM MARKDOWN KAYNAKLARI", prompt)
+            self.assertNotIn(document, prompt)
+
+    def test_full_markdown_context_reaches_narrative_call(self):
+        document = "# FULL NATAL NARRATIVE TEST\n\nAyrıntılı kaynak içeriği.\n"
+        draft = _draft()
+        draft["_full_markdown_test"] = {
+            "documents": [{
+                "filename": "natal-interpretation.md",
+                "sha256": "test-sha256",
+                "content": document,
+            }],
+        }
+        candidate = load_methodology_candidates()[0]
+        analysis = validate_methodology_response(_payload(), compact_evidence(draft))
+        with patch.dict(os.environ, {"VEDIC_GEMINI_MARKDOWN_MODE": "full"}, clear=True):
+            evidence = compact_evidence(draft)
+            request, _ = _narrative_request(candidate, evidence, analysis)
+        prompt = request["contents"][0]["parts"][0]["text"]
+        self.assertIn("TAM MARKDOWN KAYNAKLARI", prompt)
+        self.assertEqual(prompt.count(document), 1)
+        self.assertEqual(request["generationConfig"]["maxOutputTokens"], 8192)
+
     def test_manifest_loads_single_active_system_methodology(self):
         candidates = load_methodology_candidates()
 
@@ -97,13 +176,26 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
     def test_analysis_runs_single_active_methodology_and_selects_it(self):
         calls = []
+        draft = _draft()
+        draft["conversation_context"] = [
+            {
+                "question": "Yarınki iş görüşmem nasıl geçer?",
+                "answer": "İlk değerlendirme bu soruya aittir.",
+            },
+            {
+                "question": "Ay etkisini de açıklar mısın?",
+                "answer": "İkinci cevap Ay etkisini açıklar.",
+            },
+        ]
 
         def model_call(request_id, request):
             calls.append((request_id, request))
+            if "-narrative" in request_id:
+                return request_id, _narrative_payload()
             return request_id, _payload(request_id)
 
         result = run_methodology_comparison(
-            _draft(),
+            draft,
             "methodology-compare-test-1",
             model_call,
         )
@@ -112,39 +204,98 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(result["completed_count"], 1)
         self.assertEqual(result["selection"], "vedic-system-methodology-v1")
         self.assertEqual(result["selection_status"], "system_methodology_active")
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         self.assertEqual(
             {item["evidence_sha256"] for item in result["methodology_results"]},
             {result["evidence_sha256"]},
         )
-        for index, (_, request) in enumerate(calls):
-            selected_id = CANDIDATE_MANIFEST[index]["id"]
-            system_text = request["systemInstruction"]["parts"][0]["text"]
-            self.assertIn(f"METODOLOJİ KİMLİĞİ: {selected_id}@1.1.0", system_text)
-            for other in CANDIDATE_MANIFEST:
-                if other["id"] != selected_id:
-                    self.assertNotIn(f"METODOLOJİ KİMLİĞİ: {other['id']}@", system_text)
-            user_text = request["contents"][0]["parts"][0]["text"]
-            self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
+        technical_request = calls[0][1]
+        system_text = technical_request["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.5.0", system_text)
+        user_text = technical_request["contents"][0]["parts"][0]["text"]
+        self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
+        self.assertIn("Yarınki iş görüşmem nasıl geçer?", user_text)
+        self.assertIn("Ay etkisini de açıklar mısın?", user_text)
+        narrative_request = calls[1][1]
+        narrative_text = narrative_request["contents"][0]["parts"][0]["text"]
+        self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
+        self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertEqual(
-            result["methodology_results"][0]["analysis"]["opening_summary"].count("."),
+            narrative_request["generationConfig"]["maxOutputTokens"],
+            8192,
+        )
+        self.assertEqual(
+            technical_request["generationConfig"]["maxOutputTokens"],
+            8192,
+        )
+        system_result = result["methodology_results"][0]
+        self.assertIn("technical_summary", system_result["analysis"])
+        self.assertEqual(
+            system_result["analysis"]["opening_summary"].count("."),
             3,
         )
+        self.assertGreater(len(system_result["analysis"]["summary"]), 700)
+        self.assertEqual(system_result["usage"]["total_tokens"], 370)
 
-    def test_opening_summary_requires_exactly_three_nontechnical_sentences(self):
-        evidence = {
-            "topic": "career",
-            "subject_topic": "career",
-            "topic_packet": {},
-        }
-        with self.assertRaises(MethodologyOrchestrationError) as count_error:
-            validate_methodology_response(
-                _payload(opening_summary="Bu yalnız iki cümledir. İkincisi burada biter."),
-                evidence,
+    def test_methodology_uses_customer_declaration_data_gate_without_event_file(self):
+        document = load_methodology_candidates()[0]["document"]
+
+        self.assertIn("Eminim** / `exact`", document)
+        self.assertIn("Yaklaşık biliyorum** / `approximate`", document)
+        self.assertIn("Hiç bilmiyorum** / `unknown`", document)
+        self.assertNotIn("`rectified` (olay dosyası ile)", document)
+        self.assertNotIn("Kayıtlı olay yoksa `data: medium`", document)
+        self.assertIn("Ana müşteri analizinin veri güvenini", document)
+
+    def test_methodology_matches_current_artifacts_and_runtime_schema(self):
+        document = load_methodology_candidates()[0]["document"]
+
+        self.assertIn("`natal-interpretation.md`", document)
+        self.assertIn("`transit-three-month.md`", document)
+        self.assertIn("`canonical-snapshot.json`", document)
+        self.assertIn("`manifest.json`", document)
+        self.assertIn("`topic_packet` fiziksel bir dosya değildir", document)
+        self.assertIn("Aşama 2 `opening_summary` ve `answer` alanları", document)
+        self.assertNotIn("Künye:", document)
+        self.assertNotIn("FACT / ATOM", document)
+        self.assertNotIn("RUL-*", document)
+        self.assertNotIn("ACTIVE/PROVISIONAL", document)
+        self.assertNotIn("448 kural ACTIVE", document)
+        self.assertNotIn("## Danışman modu", document)
+        self.assertNotIn("## Genel harita kompozisyonu", document)
+        for topic in ALLOWED_TOPICS:
+            self.assertIn(f"### `{topic}`", document)
+        for stale_topic in ("P01-REL", "P01-MAR", "P02-BIZ", "P11-TIM"):
+            self.assertNotIn(stale_topic, document)
+
+    def test_narrative_rejects_methodology_or_evidence_leak(self):
+        answer = (
+            "VEDİK ANALİZ SİSTEM METODOLOJİSİ\n\n"
+            + "Bu metin yeterince uzun bir danışan yanıtı gibi görünse de iç teknik başlığı sızdırıyor. " * 10
+            + "\n\nBu nedenle kullanıcıya gösterilmemelidir."
+        )
+        with self.assertRaises(MethodologyOrchestrationError) as context:
+            validate_narrative_response(
+                _narrative_payload(answer),
+                validate_methodology_response(
+                    _payload(),
+                    compact_evidence(_draft()),
+                ),
+                compact_evidence(_draft()),
             )
-        self.assertEqual(
-            count_error.exception.code,
-            "methodology_model_opening_summary_invalid",
+        self.assertEqual(context.exception.code, "methodology_narrative_technical_leak")
+
+    def test_narrative_allows_expanded_technical_opening_summary(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        evidence = compact_evidence(_draft())
+
+        validate_narrative_response(
+            _narrative_payload(opening_summary="Bu yalnız iki cümledir. İkincisi de burada biter."),
+            analysis,
+            evidence,
         )
 
         technical = (
@@ -152,15 +303,48 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "Altıncı ev çalışma düzeninizi öne çıkarıyor. "
             "Bu yerleşim hizmet alanında başarı sağlayabilir."
         )
-        with self.assertRaises(MethodologyOrchestrationError) as technical_error:
-            validate_methodology_response(
-                _payload(opening_summary=technical),
-                evidence,
-            )
-        self.assertEqual(
-            technical_error.exception.code,
-            "methodology_model_opening_summary_invalid",
+        validate_narrative_response(
+            _narrative_payload(opening_summary=technical),
+            analysis,
+            evidence,
         )
+
+    def test_short_narrative_is_retried_without_rerunning_technical_analysis(self):
+        calls = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            if request_id.endswith("-analysis"):
+                return request_id, _payload()
+            if request_id.endswith("-narrative"):
+                short = {
+                    "candidates": [{
+                        "content": {"parts": [{"text": json.dumps({
+                            "opening_summary": (
+                                "Kariyerinizde kalıcı gelişim için alanınızı netleştirmeniz gerekir. "
+                                "Sorumluluk alma gücünüz doğru sınırlarla daha görünür olabilir. "
+                                "Önceliğiniz, emeğinizi dağıtmadan tek bir hedefe yöneltmek olmalıdır."
+                            ),
+                            "answer": "Kısa cevap.",
+                        })}]},
+                    }],
+                }
+                return request_id, short
+            return request_id, _narrative_payload()
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-narrative-retry",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        phases = [item.rsplit("vedic-system-methodology-v1", 1)[1] for item in calls]
+        self.assertEqual(sum(item.startswith("-analysis") for item in phases), 1)
+        self.assertEqual(sum(item.startswith("-narrative") for item in phases), 2)
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["technical_attempt_count"], 1)
+        self.assertEqual(system_result["narrative_attempt_count"], 2)
 
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):
@@ -184,12 +368,14 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         def model_call(request_id, _request):
             calls.append(request_id)
-            if request_id.endswith("vedic-system-methodology-v1"):
+            if request_id.endswith("-analysis"):
                 invalid = _payload()
                 value = json.loads(invalid["candidates"][0]["content"]["parts"][0]["text"])
                 value["supporting_evidence"][0]["evidence_path"] = "evidence.nonexistent.layer"
                 invalid["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
                 return request_id, invalid
+            if "-narrative" in request_id:
+                return request_id, _narrative_payload()
             return request_id, _payload()
 
         result = run_methodology_comparison(
@@ -200,32 +386,46 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "comparison_ready")
         self.assertEqual(result["completed_count"], 1)
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 3)
         system_result = result["methodology_results"][0]
         self.assertEqual(system_result["status"], "completed")
-        self.assertEqual(system_result["attempt_count"], 2)
-        self.assertTrue(system_result["request_id"].endswith("-retry-1"))
+        self.assertEqual(system_result["attempt_count"], 3)
+        self.assertTrue(system_result["technical_request_id"].endswith("-analysis-retry-1"))
+        self.assertTrue(system_result["narrative_request_id"].endswith("-narrative"))
 
-    def test_validation_bypass_is_reversible_and_keeps_parseable_output(self):
-        payload = _payload("Kısa yanıt", "İki cümle.")
-        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
-        value["methodology_coverage"] = []
-        value["supporting_evidence"][0]["evidence_path"] = "not-a-canonical-path"
-        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+    def test_validation_bypass_is_reversible_and_keeps_parseable_provider_output(self):
+        calls = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            if request_id.endswith("-analysis"):
+                invalid = _payload()
+                value = json.loads(invalid["candidates"][0]["content"]["parts"][0]["text"])
+                value["methodology_coverage"] = []
+                value["supporting_evidence"][0]["evidence_path"] = "evidence.nonexistent.layer"
+                invalid["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+                return request_id, invalid
+            return request_id, _narrative_payload(
+                opening_summary="Bu özet iki cümlede kalır.",
+                answer="Kısa ama okunabilir cevap.",
+            )
 
         with patch.dict(os.environ, {"VEDIC_METHODOLOGY_VALIDATION_MODE": "bypass"}):
             result = run_methodology_comparison(
                 _draft(),
                 "methodology-compare-validation-bypass",
-                lambda request_id, request: (request_id, payload),
+                model_call,
             )
 
         self.assertEqual(result["status"], "comparison_ready")
         self.assertEqual(result["validation_mode"], "bypass")
-        system_result = result["methodology_results"][0]
-        self.assertEqual(system_result["validation_mode"], "bypass")
-        self.assertTrue(system_result["analysis"]["validation_bypassed"])
-        self.assertEqual(system_result["analysis"]["opening_summary"], "İki cümle.")
+        self.assertEqual(calls, [
+            "methodology-compare-validation-bypass-vedic-system-methodology-v1-analysis",
+            "methodology-compare-validation-bypass-vedic-system-methodology-v1-narrative",
+        ])
+        analysis = result["methodology_results"][0]["analysis"]
+        self.assertTrue(analysis["validation_bypassed"])
+        self.assertEqual(analysis["opening_summary"], "Bu özet iki cümlede kalır.")
 
     def test_response_rejects_a_made_up_evidence_path(self):
         payload = _payload()

@@ -10,9 +10,18 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
-CONTRACT_VERSION = "vedic-system-analysis-v3"
+CONTRACT_VERSION = "vedic-system-analysis-v4"
 MAX_METHODOLOGY_BYTES = 64 * 1024
-MAX_PROMPT_BYTES = 220 * 1024
+# Full Markdown mode intentionally has room for both owned source documents
+# plus the validated evidence package. The provider still receives one bounded
+# request, so an unexpectedly huge artifact fails loudly instead of being cut.
+MAX_PROMPT_BYTES = 1024 * 1024
+FULL_MARKDOWN_MODE_ENV = "VEDIC_GEMINI_MARKDOWN_MODE"
+FULL_MARKDOWN_TEST_ENV = "VEDIC_GEMINI_FULL_MARKDOWN_TEST"
+TECHNICAL_MAX_OUTPUT_TOKENS = 8192
+NARRATIVE_MAX_OUTPUT_TOKENS = 8192
+NARRATIVE_MIN_CHARS = 300
+NARRATIVE_MIN_PARAGRAPHS = 1
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 COVERAGE_STATUSES = {"applied", "not_applicable", "missing"}
 REQUIRED_METHODOLOGY_STEPS = (
@@ -36,11 +45,20 @@ RETRYABLE_RESPONSE_ERRORS = {
     "methodology_model_intent_invalid",
     "methodology_model_coverage_invalid",
     "methodology_model_summary_invalid",
-    "methodology_model_opening_summary_invalid",
     "methodology_model_evidence_invalid",
     "methodology_model_list_invalid",
     "methodology_model_strength_invalid",
     "methodology_model_timing_evidence_invalid",
+}
+RETRYABLE_NARRATIVE_ERRORS = {
+    "methodology_narrative_json_invalid",
+    "methodology_narrative_response_invalid",
+    "methodology_narrative_response_empty",
+    "methodology_narrative_schema_invalid",
+    "methodology_narrative_opening_summary_invalid",
+    "methodology_narrative_too_short",
+    "methodology_narrative_timing_evidence_invalid",
+    "methodology_narrative_technical_leak",
 }
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
@@ -48,10 +66,10 @@ CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.1.0",
+        "version": "1.5.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "5c4f52bb70b3bec1b5e3764d2445a6cc1fdd8992e28d9301468bc250ba182f06",
+        "sha256": "192daafc4fd9de382814c56ed51c99ba5e242c1001e239b74a9d9306d29e5cad",
     },
 )
 
@@ -66,15 +84,32 @@ class MethodologyOrchestrationError(Exception):
 
 
 def methodology_validation_mode():
-    """Return the explicit semantic-validation mode for this process.
+    """Return the semantic model-validation mode for the current process.
 
-    ``strict`` is the safe default. ``bypass`` is a reversible operations
-    switch for diagnosing provider/output drift: JSON decoding and a non-empty
-    answer are still required, while semantic evidence gates are relaxed.
+    ``strict`` is the safe default. ``bypass`` is intentionally an explicit,
+    reversible operations switch for diagnosing provider/output drift. It
+    does not bypass JSON decoding or an entirely empty provider response.
     """
+
     value = os.environ.get("VEDIC_METHODOLOGY_VALIDATION_MODE", "strict")
     normalized = str(value or "strict").strip().lower()
     return "bypass" if normalized in {"bypass", "disabled", "off"} else "strict"
+
+
+def full_markdown_test_mode():
+    """Return whether full Markdown context is explicitly enabled.
+
+    ``full`` is the durable setting; the older boolean test flag remains an
+    alias so an already prepared diagnostic environment can be switched back
+    without a code change. Compact mode remains the safe default until the
+    Railway environment is deliberately changed.
+    """
+
+    mode = str(os.environ.get(FULL_MARKDOWN_MODE_ENV, "compact") or "compact").strip().lower()
+    if mode in {"full", "all", "expanded", "on"}:
+        return True
+    value = os.environ.get(FULL_MARKDOWN_TEST_ENV, "")
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "full"}
 
 
 def _sha256(value):
@@ -157,6 +192,35 @@ def compact_evidence(draft):
     }
     if draft.get("topic") == "transit":
         evidence["transits"] = source.get("transits")
+    if full_markdown_test_mode():
+        test_document = draft.get("_full_markdown_test")
+        if test_document:
+            documents = test_document.get("documents") if isinstance(test_document, dict) else None
+            if documents is None:
+                documents = [test_document]
+            if not isinstance(documents, list) or not documents:
+                raise MethodologyOrchestrationError("full_markdown_test_document_invalid", 500)
+            metadata = []
+            content_parts = []
+            for document in documents:
+                if not isinstance(document, dict):
+                    raise MethodologyOrchestrationError("full_markdown_test_document_invalid", 500)
+                content = document.get("content")
+                if not isinstance(content, str) or not content:
+                    raise MethodologyOrchestrationError("full_markdown_test_document_empty", 500)
+                filename = str(document.get("filename") or "unknown.md")
+                metadata.append({
+                    "filename": filename,
+                    "byte_size": len(content.encode("utf-8")),
+                    "sha256": str(document.get("sha256") or ""),
+                })
+                content_parts.append(f"\n\n===== TAM DOSYA: {filename} =====\n\n{content}")
+            evidence["full_markdown_test"] = {
+                "documents": metadata,
+            }
+            # Kept out of the canonical evidence JSON below; it is appended
+            # once as a dedicated source section in both model prompts.
+            evidence["_full_markdown_test_content"] = "".join(content_parts)
     return evidence
 
 
@@ -183,9 +247,15 @@ def _evidence_path_catalog(evidence):
     return sorted(paths)
 
 
-def _model_request(candidate, evidence):
-    evidence_json = _canonical_json(evidence)
-    evidence_path_catalog_json = _canonical_json(_evidence_path_catalog(evidence))
+def _model_request(candidate, evidence, conversation_context=None):
+    full_markdown_content = evidence.get("_full_markdown_test_content")
+    prompt_evidence = {
+        key: value
+        for key, value in evidence.items()
+        if key != "_full_markdown_test_content"
+    }
+    evidence_json = _canonical_json(prompt_evidence)
+    evidence_path_catalog_json = _canonical_json(_evidence_path_catalog(prompt_evidence))
     system_text = (
         "Yalnız aşağıdaki tek ve aktif Vedik/Jyotisha sistem metodolojisini uygula. "
         "Başka metodoloji, Batı/Tropical astroloji veya hesap uydurma kullanma. "
@@ -194,6 +264,9 @@ def _model_request(candidate, evidence):
         "Sorunun sunucu tarafından doğrulanmış sınıflandırmasını evidence.question_route içinden oku; "
         "onu yeniden adlandırma veya başka konuya taşıma. Sonra doğru konu, veri kapısı ve zorunlu "
         "analiz sırasını uygula. "
+        "SOHBET BAĞLAMI aynı açık sayfadaki önceki soru-cevaplarıdır; devam ifadelerini çözmek için "
+        "kullan fakat astrolojik kanıt sayma. Geçmiş cevaptaki teknik iddiaları yalnız KANIT PAKETİ "
+        "doğruluyorsa kullan. Yalnız güncel soruyu yanıtla. "
         "question_intent.primary_topic değeri kanıt paketindeki subject_topic ile birebir aynı olmalı; "
         "timing_required yalnız topic=transit ise true olmalı. "
         "Shadbala gezegen sıralamasında yalnız evidence.strength_summary içindeki strength_ratio kullanılır; "
@@ -205,21 +278,30 @@ def _model_request(candidate, evidence):
         "Panchanga bileşenini (Tithi, Vara, Nakshatra, Yoga veya Karana) değerlendir. Bunları birlikte "
         "adlandıran en az bir kanıt satırı gerçek daily_records veya instant_snapshot yolunu kullansın. "
         "Teknik analiz tamamlanmadan koçluk veya motivasyon ekleme. "
-        "opening_summary alanında yalnız o anki yorumun sonucunu, yaşamdaki ana karşılığını ve yönünü "
-        "tam üç kısa ve çarpıcı cümlede özetle. Bu alanda teknik kanıt veya dayanak gösterme; gezegen, "
-        "ev, lord, karaka, nakshatra, varga, dasha, transit, yoga, açı, derece, metodoloji, harita ya da "
-        "teknik analiz adı kullanma. "
         "Yanıt yalnız geçerli JSON olsun.\n\n"
         f"METODOLOJİ KİMLİĞİ: {candidate['id']}@{candidate['version']}\n"
         f"METODOLOJİ SHA256: {candidate['sha256']}\n\n"
         f"METODOLOJİ BELGESİ:\n{candidate['document']}"
+        + (
+            "\n\nTAM KAYNAK BAĞLAMI ETKİN: Aşağıdaki tam Markdown dosyalarını ayrıntılı kaynak olarak kullan. "
+            "İlgili teknik ayrıntıları özetine taşıyabilirsin; yalnız dosya ve kanıt paketinde bulunmayan bilgi ekleme."
+            if full_markdown_content is not None
+            else ""
+        )
     )
+    full_markdown_section = ""
+    if full_markdown_content is not None:
+        full_markdown_section = (
+            "\n\nTAM MARKDOWN KAYNAKLARI (ETKİN BAĞLAM MODU):\n"
+            "Aşağıdaki içerikler kaynak Markdown dosyalarının eksiksiz metnidir. "
+            "Soruyla ilgili ayrıntıları kullan; dosyalarda veya kanıt paketinde olmayan teknik veri üretme.\n\n"
+            f"{full_markdown_content}"
+        )
     user_text = (
         "Aşağıdaki kanıt paketini metodolojiye göre eksiksiz incele. JSON alanları tam olarak şunlar olsun: "
         "question_intent (interpreted_question string, primary_topic string, timing_required boolean), "
         "analysis_status (COMPLETE|INCOMPLETE), methodology_coverage (array; her satır step, status ve note içerir), "
-        "opening_summary (teknik kanıt içermeyen, tek paragrafta tam üç cümlelik çarpıcı yorum özeti), "
-        "summary (soruyu doğrudan yanıtlayan, teknik liste olmayan zengin string), "
+        "summary (Aşama 2 için ayrıntılı teknik hüküm; kullanıcıya gösterilecek nihai metin değil), "
         "supporting_evidence (claim ve evidence_path içeren array), "
         "challenging_evidence (claim ve evidence_path içeren array), missing_layers (string array), "
         "confidence (low|medium|high), limitations (string array). "
@@ -235,21 +317,86 @@ def _model_request(candidate, evidence):
         "evidence.topic_packet.evidence.houses.0.occupants. "
         "Alan yolunu aşağıdaki geçerli yol kataloğundan eksiksiz kopyala; katalog dışında yol üretme.\n\n"
         f"GEÇERLİ EVIDENCE_PATH KATALOĞU:\n{evidence_path_catalog_json}\n\n"
+        f"SOHBET BAĞLAMI (KANIT DEĞİLDİR):\n{_canonical_json(conversation_context or [])}\n\n"
         f"KANIT PAKETİ:\n{evidence_json}"
+        f"{full_markdown_section}"
     )
     request = {
         "systemInstruction": {"parts": [{"text": system_text}]},
         "contents": [{"role": "user", "parts": [{"text": user_text}]}],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 8192,
+            "maxOutputTokens": TECHNICAL_MAX_OUTPUT_TOKENS,
             "responseMimeType": "application/json",
             "thinkingConfig": {"thinkingLevel": "MINIMAL"},
         },
     }
     raw = _canonical_json(request).encode("utf-8")
     if len(raw) > MAX_PROMPT_BYTES:
-        raise MethodologyOrchestrationError("methodology_prompt_too_large", 413)
+        raise MethodologyOrchestrationError(
+            "full_markdown_test_prompt_too_large" if full_markdown_content is not None else "methodology_prompt_too_large",
+            413,
+        )
+    return request, _sha256(raw)
+
+
+def _narrative_request(candidate, evidence, analysis, conversation_context=None):
+    """Build the client-facing call from validated analysis and active sources."""
+
+    full_markdown_content = evidence.get("_full_markdown_test_content")
+    narrative_input = {
+        "conversation_context": conversation_context or [],
+        "question": evidence.get("question"),
+        "question_route": evidence.get("question_route"),
+        "analysis": analysis,
+    }
+    system_text = (
+        "Sen Vedik AI'nin danışan anlatımı katmanısın. Astrolojik hesap veya yeni teknik analiz yapma. "
+        "Sunucu tarafından doğrulanmış Aşama 1 JSON'unu ve etkin tam Markdown kaynaklarını doğal Türkiye Türkçesine çevir. "
+        "Tam Markdown kaynakları verilmişse, soruyla ilgili teknik ayrıntıları, bağlantıları ve karşılaştırmaları açıklayabilirsin. "
+        "Ancak kaynaklarda veya Aşama 1 kanıtında bulunmayan yeni teknik veri, olay, derece veya tarih üretme. "
+        "conversation_context aynı açık sayfadaki önceki soru-cevaplarıdır; anlatımın devamlılığını "
+        "korumak için kullan fakat oradan yeni astrolojik teknik iddia çıkarma. Yalnız güncel soruyu yanıtla. "
+        "opening_summary alanında cevabın ana sonucunu kısa ve anlaşılır biçimde özetle; teknik terim kullanman "
+        "gerekiyorsa kullan, fakat terimi danışanın anlayacağı cümleyle açıkla. answer alanında bu özeti aynen tekrarlamadan ayrıntılı "
+        "yoruma geç. İlk paragrafta kullanıcının asıl sorusuna doğrudan ve koşullu cevap ver. Ardından sonucu oluşturan "
+        "ana mekanizmaları, teknik bağlantıları, destekleyen ve zorlayan göstergeleri, güçlü tarafı, dikkat isteyen koşulu "
+        "ve uygulanabilir rehberliği açıkla. "
+        "timing_required true ise doğrulanmış zaman bulgusunu ve önümüzdeki süreci ayrı bir paragrafta açıkla; "
+        "false ise tarih veya gelecek garantisi üretme. Teknik kayıt listesini, evidence_path değerlerini, "
+        "Wellbeing konulu daily veya instant yanıtta doğrulanmış transit Ay ve Panchanga bulgusunu doğal "
+        "anlatı içinde açıkça değerlendir. "
+        "Kanıt listesini veya evidence_path değerlerini ham biçimde dökme; karşıt bulguları sonucu dengeleyen koşullar "
+        "olarak doğal cümlelere yansıt. Gerektiğinde başlıklar ve madde işaretleri kullan; bilgi kaybına yol açacak sabit "
+        "paragraf, cümle veya karakter sınırı uygulama. "
+        "Psikolojik ya da tıbbi teşhis koyma. Yalnız geçerli JSON döndür."
+    )
+    user_text = (
+        "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON yalnız "
+        "opening_summary ve answer alanlarını içersin. opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
+        f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
+        + (
+            f"\n\nTAM MARKDOWN KAYNAKLARI:\n{full_markdown_content}"
+            if full_markdown_content is not None
+            else ""
+        )
+    )
+    request = {
+        "systemInstruction": {"parts": [{"text": system_text}]},
+        "contents": [{"role": "user", "parts": [{"text": user_text}]}],
+        "generationConfig": {
+            "temperature": 0.35,
+            "maxOutputTokens": NARRATIVE_MAX_OUTPUT_TOKENS,
+            "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingLevel": "MINIMAL"},
+        },
+    }
+    raw = _canonical_json(request).encode("utf-8")
+    if len(raw) > MAX_PROMPT_BYTES:
+        raise MethodologyOrchestrationError(
+            "full_markdown_test_prompt_too_large" if full_markdown_content is not None else "methodology_narrative_prompt_too_large",
+            413,
+        )
     return request, _sha256(raw)
 
 
@@ -266,6 +413,79 @@ def _response_text(payload):
     if not text:
         raise MethodologyOrchestrationError("methodology_model_response_empty", 502)
     return text
+
+
+def _decoded_response_object(payload):
+    try:
+        value = json.loads(_response_text(payload))
+    except json.JSONDecodeError as exc:
+        raise MethodologyOrchestrationError("methodology_model_json_invalid", 502) from exc
+    if not isinstance(value, dict):
+        raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
+    return value
+
+
+def _relaxed_evidence_rows(value):
+    """Keep provider evidence shape without asserting paths in bypass mode."""
+
+    if not isinstance(value, list):
+        return []
+    rows = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        rows.append({
+            "claim": str(item.get("claim") or "").strip(),
+            "evidence_path": str(item.get("evidence_path") or "").strip(),
+        })
+    return rows
+
+
+def _relaxed_methodology_response(payload, evidence):
+    """Normalize a parseable technical response while skipping semantic gates."""
+
+    value = _decoded_response_object(payload)
+    raw_intent = value.get("question_intent")
+    intent = raw_intent if isinstance(raw_intent, dict) else {}
+    subject_topic = str(evidence.get("subject_topic") or intent.get("primary_topic") or "unknown").strip()
+    return {
+        "question_intent": {
+            "interpreted_question": str(
+                intent.get("interpreted_question")
+                or evidence.get("question")
+                or ""
+            ).strip(),
+            "primary_topic": subject_topic,
+            "timing_required": evidence.get("topic") == "transit",
+        },
+        "analysis_status": str(value.get("analysis_status") or "INCOMPLETE").strip().upper(),
+        "methodology_coverage": value.get("methodology_coverage") if isinstance(value.get("methodology_coverage"), list) else [],
+        "summary": str(value.get("summary") or "").strip(),
+        "supporting_evidence": _relaxed_evidence_rows(value.get("supporting_evidence")),
+        "challenging_evidence": _relaxed_evidence_rows(value.get("challenging_evidence")),
+        "missing_layers": [str(item).strip() for item in value.get("missing_layers", []) if str(item).strip()]
+        if isinstance(value.get("missing_layers"), list)
+        else [],
+        "confidence": str(value.get("confidence") or "medium").strip().lower(),
+        "limitations": [str(item).strip() for item in value.get("limitations", []) if str(item).strip()]
+        if isinstance(value.get("limitations"), list)
+        else [],
+        "validation_bypassed": True,
+    }
+
+
+def _relaxed_narrative_response(payload):
+    """Keep a parseable narrative response without semantic/length gates."""
+
+    value = _decoded_response_object(payload)
+    answer = str(value.get("answer") or "").strip()
+    if not answer:
+        raise MethodologyOrchestrationError("methodology_narrative_response_empty", 502)
+    return {
+        "opening_summary": str(value.get("opening_summary") or "").strip(),
+        "answer": answer,
+        "validation_bypassed": True,
+    }
 
 
 def _evidence_path_exists(evidence, evidence_path):
@@ -507,169 +727,13 @@ def _ensure_wellbeing_timing_evidence(summary, supporting_evidence, evidence):
     return summary, supporting_evidence
 
 
-def _validate_opening_summary(value):
-    opening_summary = str(value or "").strip()
-    sentences = [
-        item.strip()
-        for item in re.split(r"(?<=[.!?])\s+", opening_summary)
-        if item.strip()
-    ]
-    if (
-        "\n" in opening_summary
-        or len(opening_summary) < 60
-        or len(opening_summary) > 700
-        or len(sentences) != 3
-        or any(not re.search(r"[.!?]$", item) for item in sentences)
-    ):
-        raise MethodologyOrchestrationError(
-            "methodology_model_opening_summary_invalid",
-            502,
-        )
-    normalized = opening_summary.replace("İ", "i").casefold()
-    forbidden_markers = (
-        "vedik analiz sistem metodolojisi",
-        "evidence.",
-        "methodology_coverage",
-        "astrolojik gösterge",
-        "gösterge",
-        "kanıt",
-        "dayanak",
-        "gezegen",
-        "yerleşim",
-        "açı",
-        "derece",
-        "harita",
-        "teknik analiz",
-        "lagna",
-        "lord",
-        "karaka",
-        "nakshatra",
-        "nakṣatra",
-        "shadbala",
-        "varga",
-        "dasha",
-        "daśā",
-        "transit",
-        "drishti",
-        "dṛṣṭi",
-        "dispozitör",
-        "yoga",
-        "dosha",
-        "doṣa",
-        "bhava",
-        "bhāva",
-        "rashi",
-        "rāśi",
-        "güneş",
-        "mars",
-        "merkür",
-        "jüpiter",
-        "venüs",
-        "satürn",
-        "rahu",
-        "ketu",
-    )
-    if (
-        any(marker in normalized for marker in forbidden_markers)
-        or re.search(r"\b\d{1,2}\.?\s*ev(?:de|den|in|i|e)?\b", normalized)
-        or re.search(
-            r"\b(?:birinci|ikinci|üçüncü|dördüncü|beşinci|altıncı|yedinci|"
-            r"sekizinci|dokuzuncu|onuncu|on\s+birinci|on\s+ikinci)\s+ev\b",
-            normalized,
-        )
-    ):
-        raise MethodologyOrchestrationError(
-            "methodology_model_opening_summary_invalid",
-            502,
-        )
-    return opening_summary
-
-
-def _decoded_response_object(payload):
+def validate_methodology_response(payload, evidence):
     try:
         value = json.loads(_response_text(payload))
     except json.JSONDecodeError as exc:
         raise MethodologyOrchestrationError("methodology_model_json_invalid", 502) from exc
     if not isinstance(value, dict):
         raise MethodologyOrchestrationError("methodology_model_schema_invalid", 502)
-    return value
-
-
-def _relaxed_evidence_rows(value):
-    if not isinstance(value, list):
-        return []
-    rows = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        claim = str(item.get("claim") or item.get("text") or "").strip()
-        evidence_path = str(item.get("evidence_path") or item.get("path") or "").strip()
-        if claim or evidence_path:
-            rows.append({"claim": claim, "evidence_path": evidence_path})
-    return rows
-
-
-def _relaxed_methodology_response(payload, evidence):
-    """Keep a parseable provider answer while skipping semantic model gates."""
-    value = _decoded_response_object(payload)
-    question_intent = value.get("question_intent")
-    question_intent = question_intent if isinstance(question_intent, dict) else {}
-    interpreted_question = str(
-        question_intent.get("interpreted_question")
-        or value.get("interpreted_question")
-        or evidence.get("question")
-        or ""
-    ).strip()
-    summary = str(
-        value.get("summary")
-        or value.get("answer")
-        or value.get("narrative")
-        or value.get("text")
-        or value.get("opening_summary")
-        or ""
-    ).strip()
-    if not summary:
-        raise MethodologyOrchestrationError("methodology_model_summary_invalid", 502)
-    analysis_status = str(value.get("analysis_status") or "COMPLETE").strip().upper()
-    if analysis_status not in {"COMPLETE", "INCOMPLETE"}:
-        analysis_status = "COMPLETE"
-    coverage = value.get("methodology_coverage")
-    normalized_coverage = [
-        {
-            "step": str(row.get("step") or "").strip(),
-            "status": str(row.get("status") or "").strip(),
-            "note": str(row.get("note") or "").strip(),
-        }
-        for row in coverage or []
-        if isinstance(row, dict)
-    ] if isinstance(coverage, list) else []
-    opening_summary = str(value.get("opening_summary") or summary).strip()
-    confidence = str(value.get("confidence") or "low").strip().lower()
-    if confidence not in CONFIDENCE_LEVELS:
-        confidence = "low"
-    return {
-        "question_intent": {
-            "interpreted_question": interpreted_question,
-            "primary_topic": str(evidence.get("subject_topic") or "general").strip(),
-            "timing_required": evidence.get("topic") == "transit",
-        },
-        "analysis_status": analysis_status,
-        "methodology_coverage": normalized_coverage,
-        "opening_summary": opening_summary,
-        "summary": summary,
-        "supporting_evidence": _relaxed_evidence_rows(value.get("supporting_evidence")),
-        "challenging_evidence": _relaxed_evidence_rows(value.get("challenging_evidence")),
-        "missing_layers": [str(item).strip() for item in value.get("missing_layers", []) if str(item).strip()]
-        if isinstance(value.get("missing_layers"), list) else [],
-        "confidence": confidence,
-        "limitations": [str(item).strip() for item in value.get("limitations", []) if str(item).strip()]
-        if isinstance(value.get("limitations"), list) else [],
-        "validation_bypassed": True,
-    }
-
-
-def validate_methodology_response(payload, evidence):
-    value = _decoded_response_object(payload)
     question_intent = value.get("question_intent")
     analysis_status = str(value.get("analysis_status") or "").strip().upper()
     coverage = value.get("methodology_coverage")
@@ -705,7 +769,6 @@ def validate_methodology_response(payload, evidence):
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
     if any(row["status"] == "missing" for row in normalized_coverage) and analysis_status != "INCOMPLETE":
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
-    opening_summary = _validate_opening_summary(value.get("opening_summary"))
     summary = str(value.get("summary") or "").strip()
     confidence = str(value.get("confidence") or "").strip().lower()
     if not summary or confidence not in CONFIDENCE_LEVELS:
@@ -734,12 +797,12 @@ def validate_methodology_response(payload, evidence):
         if coverage_by_step.get("transit_trigger") != "applied":
             raise MethodologyOrchestrationError("methodology_model_timing_evidence_invalid", 502)
         _validate_timing_claim_tokens(
-            f"{opening_summary}\n{summary}",
+            summary,
             [*supporting_evidence, *challenging_evidence],
             evidence,
         )
     _validate_wellbeing_language(
-        f"{opening_summary}\n{summary}",
+        summary,
         [*supporting_evidence, *challenging_evidence],
         evidence,
     )
@@ -751,13 +814,88 @@ def validate_methodology_response(payload, evidence):
         },
         "analysis_status": analysis_status,
         "methodology_coverage": normalized_coverage,
-        "opening_summary": opening_summary,
         "summary": summary,
         "supporting_evidence": supporting_evidence,
         "challenging_evidence": challenging_evidence,
         "missing_layers": _string_list(value.get("missing_layers")),
         "confidence": confidence,
         "limitations": _string_list(value.get("limitations")),
+    }
+
+
+def validate_narrative_response(payload, analysis, evidence):
+    try:
+        response_text = _response_text(payload)
+    except MethodologyOrchestrationError as exc:
+        code = (
+            "methodology_narrative_response_empty"
+            if exc.code == "methodology_model_response_empty"
+            else "methodology_narrative_response_invalid"
+        )
+        raise MethodologyOrchestrationError(code, 502) from exc
+    try:
+        value = json.loads(response_text)
+    except json.JSONDecodeError as exc:
+        raise MethodologyOrchestrationError("methodology_narrative_json_invalid", 502) from exc
+    if not isinstance(value, dict) or set(value) != {"opening_summary", "answer"}:
+        raise MethodologyOrchestrationError("methodology_narrative_schema_invalid", 502)
+    opening_summary = str(value.get("opening_summary") or "").strip()
+    answer = str(value.get("answer") or "").strip()
+    if not opening_summary or not answer:
+        raise MethodologyOrchestrationError("methodology_narrative_response_empty", 502)
+    opening_sentences = [
+        item.strip()
+        for item in re.split(r"(?<=[.!?])\s+", opening_summary)
+        if item.strip()
+    ]
+    if (
+        "\n" in opening_summary
+        or len(opening_summary) < 20
+        or len(opening_summary) > 1_500
+        or not (1 <= len(opening_sentences) <= 5)
+        or any(not re.search(r"[.!?]$", item) for item in opening_sentences)
+    ):
+        raise MethodologyOrchestrationError(
+            "methodology_narrative_opening_summary_invalid",
+            502,
+        )
+    paragraphs = [item.strip() for item in re.split(r"\n\s*\n", answer) if item.strip()]
+    if len(answer) < NARRATIVE_MIN_CHARS or len(paragraphs) < NARRATIVE_MIN_PARAGRAPHS:
+        raise MethodologyOrchestrationError("methodology_narrative_too_short", 502)
+
+    combined_text = f"{opening_summary}\n{answer}"
+    normalized_answer = combined_text.replace("İ", "i").casefold()
+    forbidden_markers = (
+        "vedik analiz sistem metodolojisi",
+        "evidence.",
+        "methodology_coverage",
+        "supporting_evidence",
+        "challenging_evidence",
+        "rul-",
+        "künye:",
+    )
+    if any(marker in normalized_answer for marker in forbidden_markers):
+        raise MethodologyOrchestrationError(
+            "methodology_narrative_technical_leak",
+            502,
+        )
+
+    evidence_rows = [
+        *(analysis.get("supporting_evidence") or []),
+        *(analysis.get("challenging_evidence") or []),
+    ]
+    if (analysis.get("question_intent") or {}).get("timing_required"):
+        try:
+            _validate_timing_claim_tokens(combined_text, evidence_rows, evidence)
+        except MethodologyOrchestrationError as exc:
+            raise MethodologyOrchestrationError(
+                "methodology_narrative_timing_evidence_invalid",
+                502,
+            ) from exc
+    _validate_wellbeing_language(combined_text, evidence_rows, evidence)
+    return {
+        "opening_summary": opening_summary,
+        "answer": answer,
     }
 
 
@@ -771,16 +909,51 @@ def _usage(payload):
     }
 
 
-def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_call, clock):
+def _combined_usage(technical_payload, narrative_payload):
+    technical = _usage(technical_payload)
+    narrative = _usage(narrative_payload)
+
+    def add(field):
+        values = [technical.get(field), narrative.get(field)]
+        numeric = [value for value in values if isinstance(value, (int, float))]
+        return sum(numeric) if numeric else None
+
+    return {
+        "prompt_tokens": add("prompt_tokens"),
+        "response_tokens": add("response_tokens"),
+        "total_tokens": add("total_tokens"),
+        "model_version": narrative.get("model_version") or technical.get("model_version"),
+        "technical": technical,
+        "narrative": narrative,
+    }
+
+
+def _run_candidate(
+    candidate,
+    comparison_id,
+    evidence,
+    evidence_sha256,
+    model_call,
+    clock,
+    conversation_context=None,
+):
     base_request_id = f"{comparison_id}-{candidate['id']}"
-    request, prompt_sha256 = _model_request(candidate, evidence)
-    started = clock()
     validation_mode = methodology_validation_mode()
+    request, technical_prompt_sha256 = _model_request(
+        candidate,
+        evidence,
+        conversation_context,
+    )
+    started = clock()
+    technical_payload = None
+    technical_analysis = None
+    technical_request_id = None
+    technical_attempt_count = 0
     for attempt_index in range(2):
         request_id = (
-            base_request_id
+            f"{base_request_id}-analysis"
             if attempt_index == 0
-            else f"{base_request_id}-retry-{attempt_index}"
+            else f"{base_request_id}-analysis-retry-{attempt_index}"
         )
         try:
             returned_request_id, payload = model_call(request_id, request)
@@ -791,18 +964,11 @@ def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_ca
                 if validation_mode == "bypass"
                 else validate_methodology_response(payload, evidence)
             )
-            return {
-                "status": "completed",
-                "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
-                "request_id": request_id,
-                "attempt_count": attempt_index + 1,
-                "evidence_sha256": evidence_sha256,
-                "prompt_sha256": prompt_sha256,
-                "latency_ms": max(round((clock() - started) * 1000), 0),
-                "usage": _usage(payload),
-                "validation_mode": validation_mode,
-                "analysis": analysis,
-            }
+            technical_payload = payload
+            technical_analysis = analysis
+            technical_request_id = request_id
+            technical_attempt_count = attempt_index + 1
+            break
         except Exception as exc:
             if not isinstance(exc, MethodologyOrchestrationError) and not hasattr(exc, "code"):
                 raise
@@ -819,16 +985,97 @@ def _run_candidate(candidate, comparison_id, evidence, evidence_sha256, model_ca
                 "request_id": request_id,
                 "attempt_count": attempt_index + 1,
                 "evidence_sha256": evidence_sha256,
-                "prompt_sha256": prompt_sha256,
+                "prompt_sha256": technical_prompt_sha256,
                 "latency_ms": max(round((clock() - started) * 1000), 0),
                 "validation_mode": validation_mode,
                 "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_model_failed",
+            }
+
+    narrative_request, narrative_prompt_sha256 = _narrative_request(
+        candidate,
+        evidence,
+        technical_analysis,
+        conversation_context,
+    )
+    for attempt_index in range(2):
+        narrative_request_id = (
+            f"{base_request_id}-narrative"
+            if attempt_index == 0
+            else f"{base_request_id}-narrative-retry-{attempt_index}"
+        )
+        try:
+            returned_request_id, narrative_payload = model_call(
+                narrative_request_id,
+                narrative_request,
+            )
+            if returned_request_id != narrative_request_id or not isinstance(narrative_payload, dict):
+                raise MethodologyOrchestrationError("methodology_narrative_response_invalid", 502)
+            narrative = (
+                _relaxed_narrative_response(narrative_payload)
+                if validation_mode == "bypass"
+                else validate_narrative_response(
+                    narrative_payload,
+                    technical_analysis,
+                    evidence,
+                )
+            )
+            analysis = {
+                **technical_analysis,
+                "technical_summary": technical_analysis["summary"],
+                "opening_summary": narrative["opening_summary"],
+                "summary": narrative["answer"],
+            }
+            return {
+                "status": "completed",
+                "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+                "request_id": narrative_request_id,
+                "technical_request_id": technical_request_id,
+                "narrative_request_id": narrative_request_id,
+                "attempt_count": technical_attempt_count + attempt_index + 1,
+                "technical_attempt_count": technical_attempt_count,
+                "narrative_attempt_count": attempt_index + 1,
+                "evidence_sha256": evidence_sha256,
+                "prompt_sha256": narrative_prompt_sha256,
+                "technical_prompt_sha256": technical_prompt_sha256,
+                "narrative_prompt_sha256": narrative_prompt_sha256,
+                "latency_ms": max(round((clock() - started) * 1000), 0),
+                "usage": _combined_usage(technical_payload, narrative_payload),
+                "analysis": analysis,
+                "validation_mode": validation_mode,
+            }
+        except Exception as exc:
+            if not isinstance(exc, MethodologyOrchestrationError) and not hasattr(exc, "code"):
+                raise
+            code = (
+                exc.code
+                if isinstance(exc, MethodologyOrchestrationError)
+                else getattr(exc, "code", "methodology_narrative_failed")
+            )
+            if attempt_index == 0 and code in RETRYABLE_NARRATIVE_ERRORS:
+                continue
+            return {
+                "status": "failed",
+                "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+                "request_id": narrative_request_id,
+                "technical_request_id": technical_request_id,
+                "narrative_request_id": narrative_request_id,
+                "attempt_count": technical_attempt_count + attempt_index + 1,
+                "technical_attempt_count": technical_attempt_count,
+                "narrative_attempt_count": attempt_index + 1,
+                "evidence_sha256": evidence_sha256,
+                "prompt_sha256": narrative_prompt_sha256,
+                "technical_prompt_sha256": technical_prompt_sha256,
+                "narrative_prompt_sha256": narrative_prompt_sha256,
+                "latency_ms": max(round((clock() - started) * 1000), 0),
+                "validation_mode": validation_mode,
+                "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_narrative_failed",
             }
 
 
 def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_root=None, clock=None):
     candidates = load_methodology_candidates(candidates_root)
     evidence = compact_evidence(draft)
+    conversation_context = draft.get("conversation_context") or []
     evidence_json = _canonical_json(evidence)
     evidence_sha256 = _sha256(evidence_json)
     monotonic = clock or time.monotonic
@@ -841,6 +1088,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
                 evidence_sha256,
                 model_call,
                 monotonic,
+                conversation_context,
             ),
             candidates,
         ))
@@ -849,6 +1097,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
     comparison_status = "comparison_ready" if completed == len(results) else "partial" if completed else "failed"
     return {
         "contract_version": CONTRACT_VERSION,
+        "validation_mode": methodology_validation_mode(),
         "comparison_id": comparison_id,
         "status": comparison_status,
         "question": draft.get("question"),
@@ -864,7 +1113,6 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "selection_status": "system_methodology_active",
         "completed_count": completed,
         "candidate_count": len(results),
-        "validation_mode": methodology_validation_mode(),
     }
 
 
