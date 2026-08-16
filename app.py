@@ -30346,8 +30346,10 @@ def _beta_question_now(chart):
 
 def _beta_question_router_mode(owner_user_id=None):
     configured = str(app.config.get("QUESTION_ROUTER_MODE") or "off").strip().lower()
-    if configured not in {"off", "shadow", "active", "gemini_only"}:
+    if configured not in {"off", "shadow", "active", "gemini_only", "bypass"}:
         configured = "off"
+    if configured == "bypass":
+        return "bypass"
     active_users = app.config.get("QUESTION_ROUTER_ACTIVE_USER_IDS") or set()
     if owner_user_id and owner_user_id in active_users:
         return "gemini_only" if configured == "gemini_only" else "active"
@@ -30370,11 +30372,11 @@ def _beta_question_route(
         if mode_override is not None
         else _beta_question_router_mode(owner_user_id)
     )
-    if mode not in {"off", "shadow", "active", "gemini_only"}:
+    if mode not in {"off", "shadow", "active", "gemini_only", "bypass"}:
         raise ValueError("Geçerli soru yönlendirici modu gerekli")
     model = None
     error_code = None
-    if mode != "off":
+    if mode not in {"off", "bypass"}:
         try:
             model = classify_question(
                 question,
@@ -30395,9 +30397,37 @@ def _beta_question_route(
         # Explicit reversible experiment: never hide a Gemini routing failure
         # by silently selecting the legacy keyword router.
         raise QuestionClassificationError(error_code or "question_classifier_failed")
-    selected = model if mode in {"active", "gemini_only"} and model else legacy
+    bypass = None
+    if mode == "bypass":
+        # Reversible production experiment: skip the separate classifier and
+        # give the main methodology model the full natal evidence surface.
+        # No keyword-derived topic or timing decision is allowed to leak in.
+        bypass = {
+            "contract_version": "vedic-question-route-bypass-v1",
+            "interpreted_question": str(question or "").strip(),
+            "primary_topic": "general",
+            "time_scope": "none",
+            "timing_required": False,
+            "target_start": None,
+            "target_end": None,
+            "target_datetime": None,
+            "required_evidence": ["natal_core", "active_dasha", "full_natal_sections"],
+            "sensitivity": "standard",
+            "confidence": "low",
+            "clarification_required": False,
+            "clarification_question": None,
+        }
+    selected = (
+        bypass
+        if bypass is not None
+        else model
+        if mode in {"active", "gemini_only"} and model
+        else legacy
+    )
     status = (
-        "model_selected"
+        "classifier_bypassed"
+        if bypass is not None
+        else "model_selected"
         if selected is model and model
         else "model_shadowed"
         if model

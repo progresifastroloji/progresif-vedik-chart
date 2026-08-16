@@ -335,6 +335,25 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
                 "gemini-only-failure-test",
             )
 
+    @patch("app.call_vertex_bridge")
+    def test_bypass_router_skips_classifier_and_uses_full_general_evidence(self, bridge_call):
+        app.config["QUESTION_ROUTER_MODE"] = "bypass"
+
+        routing = _beta_question_route(
+            "Kardeşimle aram düzelir mi?",
+            {"birth": {"timezone_id": "Europe/Istanbul"}},
+            "classifier-bypass-test",
+        )
+
+        bridge_call.assert_not_called()
+        self.assertEqual(routing["mode"], "bypass")
+        self.assertEqual(routing["status"], "classifier_bypassed")
+        self.assertIsNone(routing["model"])
+        self.assertEqual(routing["selected"]["primary_topic"], "general")
+        self.assertEqual(routing["selected"]["time_scope"], "none")
+        self.assertFalse(routing["selected"]["timing_required"])
+        self.assertIn("full_natal_sections", routing["selected"]["required_evidence"])
+
     def test_character_router_and_shadbala_ranking_use_ratio(self):
         self.assertEqual(
             _beta_detect_topic("Haritamdaki en güçlü karakter özelliğim nedir?"),
