@@ -476,6 +476,20 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
                 "gemini-only-failure-test",
             )
 
+    def test_bypass_router_preserves_three_month_transit_scope(self):
+        routing = _beta_question_route(
+            "Önümüzdeki 3 aylık süreçte beni neler bekliyor?",
+            {"birth": {"timezone_id": "Europe/Istanbul"}},
+            "bypass-three-month-route-test",
+            mode_override="bypass",
+        )
+
+        self.assertEqual(routing["status"], "classifier_bypassed")
+        self.assertEqual(routing["selected"]["primary_topic"], "general")
+        self.assertEqual(routing["selected"]["time_scope"], "range")
+        self.assertTrue(routing["selected"]["timing_required"])
+        self.assertIn("stored_transit_days", routing["selected"]["required_evidence"])
+
     def test_character_router_and_shadbala_ranking_use_ratio(self):
         self.assertEqual(
             _beta_detect_topic("Haritamdaki en güçlü karakter özelliğim nedir?"),

@@ -30489,21 +30489,13 @@ def _beta_question_route(
         raise QuestionClassificationError(error_code or "question_classifier_failed")
     bypass = None
     if mode == "bypass":
-        bypass = {
-            "contract_version": "vedic-question-route-bypass-v1",
-            "interpreted_question": str(question or "").strip(),
-            "primary_topic": "general",
-            "time_scope": "none",
-            "timing_required": False,
-            "target_start": None,
-            "target_end": None,
-            "target_datetime": None,
-            "required_evidence": ["natal_core", "active_dasha", "full_natal_sections"],
-            "sensitivity": "standard",
-            "confidence": "low",
-            "clarification_required": False,
-            "clarification_question": None,
-        }
+        # Bypass only disables the Gemini classifier as a failure source. It
+        # must retain the deterministic route's time window; otherwise a
+        # question such as "önümüzdeki 3 ay" is incorrectly downgraded to a
+        # natal-only general reading and the full transit Markdown is omitted.
+        bypass = dict(legacy)
+        bypass["contract_version"] = "vedic-question-route-bypass-v1"
+        bypass["confidence"] = "low"
     selected = (
         bypass
         if bypass is not None
