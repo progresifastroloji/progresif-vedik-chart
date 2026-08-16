@@ -24,6 +24,11 @@ CHART_ID = "chart-methodology-test"
 
 
 def _model_payload():
+    opening_summary = (
+        "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "
+        "En güçlü yanınız, karmaşık sorumlulukları düzenli ve güvenilir bir sonuca dönüştürmenizdir. "
+        "İlerlemenizi hızlandıracak seçim, gereksiz yükleri azaltıp emeğinizi görünür kılmaktır."
+    )
     analysis = {
         "question_intent": {
             "interpreted_question": "Kariyer göstergelerini değerlendirmek",
@@ -41,6 +46,7 @@ def _model_payload():
                 "counter_evidence", "thematic_synthesis",
             )
         ],
+        "opening_summary": opening_summary,
         "summary": "Kariyer konusunda destek ve sınırlar birlikte görülüyor.",
         "supporting_evidence": [
             {"claim": "Destekleyici faktör var", "evidence_path": "evidence.topic_packet"},
@@ -156,6 +162,13 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(data["completed_count"], 1)
         self.assertEqual(len(data["methodology_results"]), 1)
         self.assertEqual(data["selection"], "vedic-system-methodology-v1")
+        expected_analysis = json.loads(
+            _model_payload()["candidates"][0]["content"]["parts"][0]["text"]
+        )
+        self.assertEqual(
+            data["methodology_results"][0]["analysis"]["opening_summary"],
+            expected_analysis["opening_summary"],
+        )
         self.assertEqual(data["context_trace"]["primary_topic"], "career")
         self.assertEqual(data["context_trace"]["time_scope"], "none")
         self.assertIsNone(data["context_trace"]["transit"])

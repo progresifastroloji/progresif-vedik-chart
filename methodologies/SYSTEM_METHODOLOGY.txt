@@ -1,7 +1,7 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.0.0
-date: 2026-07-28
+version: 1.1.0
+date: 2026-08-16
 language: tr
 transliteration: IAST
 derived_from:
@@ -489,6 +489,8 @@ Tavanlar:
 **Girdi:** kullanıcı sorusu + API konu paketi + bu metodoloji + registries
 **Çıktı:** yalnız `analysis_output_schema_v2.json` biçiminde JSON
 **Kısıt:** registry'de bulunmayan astrolojik kural eklenemez.
+
+`opening_summary`, uygulamadaki sabit metodoloji başlığının yerine gösterilecek o yoruma özel açılış özetidir. Tek paragrafta tam üç kısa ve çarpıcı cümle olmalıdır. Teknik kanıt veya dayanak göstermez; gezegen, ev, lord, kāraka, nakṣatra, varga, daśā, transit, yoga, açı, derece, metodoloji, harita ya da teknik analiz adı kullanmaz. Yalnız yorumun sonucunu, yaşamdaki ana karşılığını ve yönünü doğal dille özetler.
 
 Durdurma koşulları:
 

@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
-CONTRACT_VERSION = "vedic-system-analysis-v2"
+CONTRACT_VERSION = "vedic-system-analysis-v3"
 MAX_METHODOLOGY_BYTES = 64 * 1024
 MAX_PROMPT_BYTES = 220 * 1024
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
@@ -35,6 +35,7 @@ RETRYABLE_RESPONSE_ERRORS = {
     "methodology_model_intent_invalid",
     "methodology_model_coverage_invalid",
     "methodology_model_summary_invalid",
+    "methodology_model_opening_summary_invalid",
     "methodology_model_evidence_invalid",
     "methodology_model_list_invalid",
     "methodology_model_strength_invalid",
@@ -46,10 +47,10 @@ CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "8f86a845acdbdb1fc402439b883eb8432f3277f66f451d22455fcb30bf72a10a",
+        "sha256": "5c4f52bb70b3bec1b5e3764d2445a6cc1fdd8992e28d9301468bc250ba182f06",
     },
 )
 
@@ -191,6 +192,10 @@ def _model_request(candidate, evidence):
         "Panchanga bileşenini (Tithi, Vara, Nakshatra, Yoga veya Karana) değerlendir. Bunları birlikte "
         "adlandıran en az bir kanıt satırı gerçek daily_records veya instant_snapshot yolunu kullansın. "
         "Teknik analiz tamamlanmadan koçluk veya motivasyon ekleme. "
+        "opening_summary alanında yalnız o anki yorumun sonucunu, yaşamdaki ana karşılığını ve yönünü "
+        "tam üç kısa ve çarpıcı cümlede özetle. Bu alanda teknik kanıt veya dayanak gösterme; gezegen, "
+        "ev, lord, karaka, nakshatra, varga, dasha, transit, yoga, açı, derece, metodoloji, harita ya da "
+        "teknik analiz adı kullanma. "
         "Yanıt yalnız geçerli JSON olsun.\n\n"
         f"METODOLOJİ KİMLİĞİ: {candidate['id']}@{candidate['version']}\n"
         f"METODOLOJİ SHA256: {candidate['sha256']}\n\n"
@@ -200,6 +205,7 @@ def _model_request(candidate, evidence):
         "Aşağıdaki kanıt paketini metodolojiye göre eksiksiz incele. JSON alanları tam olarak şunlar olsun: "
         "question_intent (interpreted_question string, primary_topic string, timing_required boolean), "
         "analysis_status (COMPLETE|INCOMPLETE), methodology_coverage (array; her satır step, status ve note içerir), "
+        "opening_summary (teknik kanıt içermeyen, tek paragrafta tam üç cümlelik çarpıcı yorum özeti), "
         "summary (soruyu doğrudan yanıtlayan, teknik liste olmayan zengin string), "
         "supporting_evidence (claim ve evidence_path içeren array), "
         "challenging_evidence (claim ve evidence_path içeren array), missing_layers (string array), "
@@ -488,6 +494,84 @@ def _ensure_wellbeing_timing_evidence(summary, supporting_evidence, evidence):
     return summary, supporting_evidence
 
 
+def _validate_opening_summary(value):
+    opening_summary = str(value or "").strip()
+    sentences = [
+        item.strip()
+        for item in re.split(r"(?<=[.!?])\s+", opening_summary)
+        if item.strip()
+    ]
+    if (
+        "\n" in opening_summary
+        or len(opening_summary) < 60
+        or len(opening_summary) > 700
+        or len(sentences) != 3
+        or any(not re.search(r"[.!?]$", item) for item in sentences)
+    ):
+        raise MethodologyOrchestrationError(
+            "methodology_model_opening_summary_invalid",
+            502,
+        )
+    normalized = opening_summary.replace("İ", "i").casefold()
+    forbidden_markers = (
+        "vedik analiz sistem metodolojisi",
+        "evidence.",
+        "methodology_coverage",
+        "astrolojik gösterge",
+        "gösterge",
+        "kanıt",
+        "dayanak",
+        "gezegen",
+        "yerleşim",
+        "açı",
+        "derece",
+        "harita",
+        "teknik analiz",
+        "lagna",
+        "lord",
+        "karaka",
+        "nakshatra",
+        "nakṣatra",
+        "shadbala",
+        "varga",
+        "dasha",
+        "daśā",
+        "transit",
+        "drishti",
+        "dṛṣṭi",
+        "dispozitör",
+        "yoga",
+        "dosha",
+        "doṣa",
+        "bhava",
+        "bhāva",
+        "rashi",
+        "rāśi",
+        "güneş",
+        "mars",
+        "merkür",
+        "jüpiter",
+        "venüs",
+        "satürn",
+        "rahu",
+        "ketu",
+    )
+    if (
+        any(marker in normalized for marker in forbidden_markers)
+        or re.search(r"\b\d{1,2}\.?\s*ev(?:de|den|in|i|e)?\b", normalized)
+        or re.search(
+            r"\b(?:birinci|ikinci|üçüncü|dördüncü|beşinci|altıncı|yedinci|"
+            r"sekizinci|dokuzuncu|onuncu|on\s+birinci|on\s+ikinci)\s+ev\b",
+            normalized,
+        )
+    ):
+        raise MethodologyOrchestrationError(
+            "methodology_model_opening_summary_invalid",
+            502,
+        )
+    return opening_summary
+
+
 def validate_methodology_response(payload, evidence):
     try:
         value = json.loads(_response_text(payload))
@@ -530,6 +614,7 @@ def validate_methodology_response(payload, evidence):
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
     if any(row["status"] == "missing" for row in normalized_coverage) and analysis_status != "INCOMPLETE":
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
+    opening_summary = _validate_opening_summary(value.get("opening_summary"))
     summary = str(value.get("summary") or "").strip()
     confidence = str(value.get("confidence") or "").strip().lower()
     if not summary or confidence not in CONFIDENCE_LEVELS:
@@ -558,12 +643,12 @@ def validate_methodology_response(payload, evidence):
         if coverage_by_step.get("transit_trigger") != "applied":
             raise MethodologyOrchestrationError("methodology_model_timing_evidence_invalid", 502)
         _validate_timing_claim_tokens(
-            summary,
+            f"{opening_summary}\n{summary}",
             [*supporting_evidence, *challenging_evidence],
             evidence,
         )
     _validate_wellbeing_language(
-        summary,
+        f"{opening_summary}\n{summary}",
         [*supporting_evidence, *challenging_evidence],
         evidence,
     )
@@ -575,6 +660,7 @@ def validate_methodology_response(payload, evidence):
         },
         "analysis_status": analysis_status,
         "methodology_coverage": normalized_coverage,
+        "opening_summary": opening_summary,
         "summary": summary,
         "supporting_evidence": supporting_evidence,
         "challenging_evidence": challenging_evidence,

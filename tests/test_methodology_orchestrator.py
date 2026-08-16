@@ -35,7 +35,12 @@ def _draft():
     }
 
 
-def _payload(summary="Teknik özet"):
+def _payload(summary="Teknik özet", opening_summary=None):
+    opening_summary = opening_summary or (
+        "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "
+        "En güçlü yanınız, karmaşık sorumlulukları düzenli ve güvenilir bir sonuca dönüştürmenizdir. "
+        "İlerlemenizi hızlandıracak seçim, gereksiz yükleri azaltıp emeğinizi görünür kılmaktır."
+    )
     analysis = {
         "question_intent": {
             "interpreted_question": "Kariyer alanındaki ana güçler ve sınırlar",
@@ -53,6 +58,7 @@ def _payload(summary="Teknik özet"):
                 "counter_evidence", "thematic_synthesis",
             )
         ],
+        "opening_summary": opening_summary,
         "summary": summary,
         "supporting_evidence": [
             {"claim": "Destek var", "evidence_path": "evidence.topic_packet"},
@@ -112,12 +118,47 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         for index, (_, request) in enumerate(calls):
             selected_id = CANDIDATE_MANIFEST[index]["id"]
             system_text = request["systemInstruction"]["parts"][0]["text"]
-            self.assertIn(f"METODOLOJİ KİMLİĞİ: {selected_id}@1.0.0", system_text)
+            self.assertIn(f"METODOLOJİ KİMLİĞİ: {selected_id}@1.1.0", system_text)
             for other in CANDIDATE_MANIFEST:
                 if other["id"] != selected_id:
                     self.assertNotIn(f"METODOLOJİ KİMLİĞİ: {other['id']}@", system_text)
             user_text = request["contents"][0]["parts"][0]["text"]
             self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
+        self.assertEqual(
+            result["methodology_results"][0]["analysis"]["opening_summary"].count("."),
+            3,
+        )
+
+    def test_opening_summary_requires_exactly_three_nontechnical_sentences(self):
+        evidence = {
+            "topic": "career",
+            "subject_topic": "career",
+            "topic_packet": {},
+        }
+        with self.assertRaises(MethodologyOrchestrationError) as count_error:
+            validate_methodology_response(
+                _payload(opening_summary="Bu yalnız iki cümledir. İkincisi burada biter."),
+                evidence,
+            )
+        self.assertEqual(
+            count_error.exception.code,
+            "methodology_model_opening_summary_invalid",
+        )
+
+        technical = (
+            "Kariyerinizde belirleyici bir rol üstleniyorsunuz. "
+            "Altıncı ev çalışma düzeninizi öne çıkarıyor. "
+            "Bu yerleşim hizmet alanında başarı sağlayabilir."
+        )
+        with self.assertRaises(MethodologyOrchestrationError) as technical_error:
+            validate_methodology_response(
+                _payload(opening_summary=technical),
+                evidence,
+            )
+        self.assertEqual(
+            technical_error.exception.code,
+            "methodology_model_opening_summary_invalid",
+        )
 
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):
