@@ -8,6 +8,7 @@ from app import (
     PWA_ARTIFACT_DEFAULT_PROFILE,
     app,
     _beta_build_chat_draft,
+    _beta_compact_transit_evidence,
     _pwa_artifact_set_root,
     _pwa_get_or_create_transit_runtime_cache,
     _pwa_write_transit_runtime_cache,
@@ -215,6 +216,25 @@ class TransitQuestionRoutingTest(unittest.TestCase):
         )
         get_cache.assert_called_once()
         instant_pack.assert_called_once()
+
+    def test_weekly_window_keeps_complete_daily_panchanga_records(self):
+        pack = _pack()
+        pack["days"] = [
+            _day(f"2026-08-{day:02d}")
+            for day in range(24, 31)
+        ]
+        pack["period"]["range_start"] = "2026-08-24"
+        pack["period"]["range_end"] = "2026-08-30"
+        pack["period"]["day_count"] = 7
+
+        evidence = _beta_compact_transit_evidence(
+            pack,
+            time_scope="range",
+        )
+
+        self.assertEqual(len(evidence["daily_timing"]), 7)
+        self.assertEqual(len(evidence["daily_records"]), 7)
+        self.assertTrue(all(record["panchanga"] for record in evidence["daily_records"]))
 
 
 if __name__ == "__main__":

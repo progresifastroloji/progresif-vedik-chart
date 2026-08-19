@@ -5,6 +5,7 @@ from question_classifier import (
     QuestionClassificationError,
     build_request,
     classify_question,
+    enforce_explicit_time_scope,
     validate_classification,
 )
 
@@ -135,6 +136,34 @@ class QuestionClassifierTest(unittest.TestCase):
         self.assertEqual(result["primary_topic"], "general")
         self.assertEqual(result["time_scope"], "none")
 
+    def test_gemini_only_repairs_explicit_weekly_scope_before_validation(self):
+        def model_call(request_id, _request):
+            incomplete = _classification(
+                primary_topic="career",
+                time_scope="none",
+                timing_required=False,
+                target_start=None,
+                target_end=None,
+                target_datetime=None,
+                required_evidence=["natal_core", "active_dasha"],
+                sensitivity="standard",
+            )
+            return request_id, _model_payload(incomplete)
+
+        result = classify_question(
+            "Önümüzdeki haftanın olay konuları gün gün yorum istiyorum",
+            "route-test-gemini-only-weekly",
+            model_call,
+            "2026-08-19T12:00:00+03:00",
+            apply_server_normalization=False,
+        )
+
+        self.assertEqual(result["primary_topic"], "career")
+        self.assertEqual(result["time_scope"], "range")
+        self.assertEqual(result["target_start"], "2026-08-24")
+        self.assertEqual(result["target_end"], "2026-08-30")
+        self.assertIn("stored_transit_days", result["required_evidence"])
+
     def test_explicit_daily_career_context_overrides_model_misroute(self):
         def model_call(request_id, _request):
             wrong = _classification(
@@ -184,6 +213,29 @@ class QuestionClassifierTest(unittest.TestCase):
         self.assertEqual(result["time_scope"], "none")
         self.assertIsNone(result["target_start"])
         self.assertIsNone(result["target_end"])
+
+    def test_explicit_next_week_preserves_topic_but_forces_weekly_range(self):
+        model_value = _classification(
+            primary_topic="career",
+            time_scope="none",
+            timing_required=False,
+            target_datetime=None,
+            required_evidence=["natal_core", "active_dasha"],
+            sensitivity="standard",
+        )
+
+        result = enforce_explicit_time_scope(
+            model_value,
+            "Önümüzdeki haftanın olay konuları gün gün yorum istiyorum",
+            "2026-08-19T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["primary_topic"], "career")
+        self.assertEqual(result["time_scope"], "range")
+        self.assertTrue(result["timing_required"])
+        self.assertEqual(result["target_start"], "2026-08-24")
+        self.assertEqual(result["target_end"], "2026-08-30")
+        self.assertIn("stored_transit_days", result["required_evidence"])
 
     def test_future_marriage_question_uses_current_transit_horizon(self):
         def model_call(request_id, _request):

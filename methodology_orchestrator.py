@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from pathlib import Path
 
 
@@ -261,6 +262,9 @@ def _model_request(candidate, evidence, conversation_context=None):
         "Başka metodoloji, Batı/Tropical astroloji veya hesap uydurma kullanma. "
         "Sadece verilen kanıt paketindeki teknik gerçekleri yorumla. Eksik veri varsa açıkça sınırla. "
         "Metodolojide anılan fakat kanıt paketinde bulunmayan registry içeriğini uydurma. "
+        "Kanıt paketinde veya etkin tam Markdown kaynaklarında transit günleri/Panchanga varsa, "
+        "sistemin tamamında bu verinin bulunmadığını söyleme; yalnız istenen tarih aralığı veya "
+        "gönderilen kanıt kapsamı gerçekten dışındaysa sınır belirt. "
         "Sorunun sunucu tarafından doğrulanmış sınıflandırmasını evidence.question_route içinden oku; "
         "onu yeniden adlandırma veya başka konuya taşıma. Sonra doğru konu, veri kapısı ve zorunlu "
         "analiz sırasını uygula. "
@@ -364,6 +368,8 @@ def _narrative_request(candidate, evidence, analysis, conversation_context=None)
         "ve uygulanabilir rehberliği açıkla. "
         "timing_required true ise doğrulanmış zaman bulgusunu ve önümüzdeki süreci ayrı bir paragrafta açıkla; "
         "false ise tarih veya gelecek garantisi üretme. Teknik kayıt listesini, evidence_path değerlerini, "
+        "kaynakta transit günleri veya Panchanga varsa sistemde haftalık/günlük verinin hiç bulunmadığını "
+        "iddia etme; yalnız gerçek tarih kapsamını ve varsa kapsanmayan günleri belirt. "
         "Wellbeing konulu daily veya instant yanıtta doğrulanmış transit Ay ve Panchanga bulgusunu doğal "
         "anlatı içinde açıkça değerlendir. "
         "Kanıt listesini veya evidence_path değerlerini ham biçimde dökme; karşıt bulguları sonucu dengeleyen koşullar "
@@ -606,6 +612,27 @@ def _validate_timing_claim_tokens(summary, evidence_rows, evidence):
         )
 
 
+def _validate_weekly_transit_evidence(evidence):
+    """Require complete daily/Panchanga evidence for a short weekly window."""
+
+    route = evidence.get("question_route") or {}
+    if route.get("time_scope") != "range":
+        return
+    try:
+        start = date.fromisoformat(str(route.get("target_start")))
+        end = date.fromisoformat(str(route.get("target_end")))
+    except (TypeError, ValueError):
+        return
+    day_count = (end - start).days + 1
+    if not 1 <= day_count <= 7:
+        return
+    records = (evidence.get("transits") or {}).get("daily_records") or []
+    if len(records) != day_count or any(not record.get("panchanga") for record in records):
+        raise MethodologyOrchestrationError(
+            "methodology_model_timing_evidence_invalid",
+            502,
+        )
+
 def _validate_wellbeing_language(summary, evidence_rows, evidence):
     if evidence.get("subject_topic") != "wellbeing":
         return
@@ -654,6 +681,24 @@ def _validate_wellbeing_language(summary, evidence_rows, evidence):
     if not has_moon_citation or not has_panchanga_citation:
         raise MethodologyOrchestrationError(
             "methodology_model_timing_evidence_invalid",
+            502,
+        )
+
+
+def _validate_global_transit_absence_claim(text, evidence):
+    """Reject a system-wide absence claim when transit evidence is present."""
+
+    transits = evidence.get("transits") or {}
+    if not (transits.get("daily_records") or transits.get("daily_timing")):
+        return
+    normalized = str(text or "").replace("İ", "i").casefold()
+    patterns = (
+        r"sistem(?:imizde)?[^.\n]{0,100}(?:haftalık|günlük|transit|panchanga)[^.\n]{0,50}(?:yok|bulunmuyor|mevcut değil|bulunmamaktadır)",
+        r"(?:haftalık|günlük|transit|panchanga)[^.\n]{0,80}(?:sistem(?:imizde)?)[^.\n]{0,50}(?:yok|bulunmuyor|mevcut değil|bulunmamaktadır)",
+    )
+    if any(re.search(pattern, normalized) for pattern in patterns):
+        raise MethodologyOrchestrationError(
+            "methodology_narrative_timing_evidence_invalid",
             502,
         )
 
@@ -787,6 +832,7 @@ def validate_methodology_response(payload, evidence):
         evidence,
     )
     if expected_timing:
+        _validate_weekly_transit_evidence(evidence)
         cited_paths = {
             row["evidence_path"]
             for row in [*supporting_evidence, *challenging_evidence]
@@ -892,6 +938,7 @@ def validate_narrative_response(payload, analysis, evidence):
                 "methodology_narrative_timing_evidence_invalid",
                 502,
             ) from exc
+    _validate_global_transit_absence_claim(combined_text, evidence)
     _validate_wellbeing_language(combined_text, evidence_rows, evidence)
     return {
         "opening_summary": opening_summary,

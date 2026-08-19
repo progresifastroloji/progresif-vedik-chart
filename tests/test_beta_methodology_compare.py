@@ -464,6 +464,29 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(routing["selected"]["primary_topic"], "general")
         self.assertEqual(routing["status"], "model_selected")
 
+    @patch("app._beta_question_now", return_value="2026-08-19T12:00:00+03:00")
+    @patch("app.call_vertex_bridge")
+    def test_gemini_only_router_keeps_topic_but_enforces_explicit_week(self, bridge_call, _now):
+        app.config["QUESTION_ROUTER_MODE"] = "gemini_only"
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            _route_payload("career", "none"),
+        )
+
+        routing = _beta_question_route(
+            "Önümüzdeki haftanın olay konuları gün gün yorum istiyorum",
+            {"birth": {"timezone_id": "Europe/Istanbul"}},
+            "gemini-only-weekly-route-test",
+        )
+
+        selected = routing["selected"]
+        self.assertEqual(selected["primary_topic"], "career")
+        self.assertEqual(selected["time_scope"], "range")
+        self.assertTrue(selected["timing_required"])
+        self.assertEqual(selected["target_start"], "2026-08-24")
+        self.assertEqual(selected["target_end"], "2026-08-30")
+        self.assertIn("stored_transit_days", selected["required_evidence"])
+
     @patch("app.call_vertex_bridge")
     def test_gemini_only_router_never_silently_falls_back(self, bridge_call):
         app.config["QUESTION_ROUTER_MODE"] = "gemini_only"

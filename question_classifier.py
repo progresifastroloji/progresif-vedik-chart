@@ -48,6 +48,75 @@ ALLOWED_SENSITIVITY = {
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
 
 
+def _question_text(question):
+    return str(question or "").replace("İ", "i").casefold()
+
+
+def _explicit_weekly_range(question, now_iso):
+    """Return the calendar week explicitly requested by the user, if any.
+
+    Gemini remains the semantic topic classifier. This helper is only a
+    server-side safety invariant for unambiguous calendar phrases, so a model
+    omission cannot silently remove the transit evidence required by the
+    question.
+    """
+
+    text = _question_text(question)
+    weekly_next = any(
+        phrase in text
+        for phrase in (
+            "önümüzdeki hafta",
+            "gelecek hafta",
+            "önümüzdeki haftanın",
+            "gelecek haftanın",
+        )
+    )
+    weekly_current = any(
+        phrase in text
+        for phrase in ("bu hafta", "bu haftanın")
+    )
+    seven_days = any(
+        phrase in text
+        for phrase in ("önümüzdeki 7 gün", "önümüzdeki yedi gün", "gün gün")
+    )
+    if not (weekly_next or weekly_current or seven_days):
+        return None
+
+    current_day = datetime.fromisoformat(str(now_iso).replace("Z", "+00:00")).date()
+    if seven_days and not weekly_next and not weekly_current:
+        start = current_day
+        end = current_day + timedelta(days=6)
+    else:
+        monday = current_day - timedelta(days=current_day.weekday())
+        start = monday + timedelta(days=7 if weekly_next else 0)
+        end = start + timedelta(days=6)
+    return start.isoformat(), end.isoformat()
+
+
+def enforce_explicit_time_scope(value, question, now_iso):
+    """Enforce only explicit calendar timing; never change the topic choice."""
+
+    if not isinstance(value, dict):
+        return value
+    weekly_range = _explicit_weekly_range(question, now_iso)
+    if not weekly_range:
+        return value
+    normalized = dict(value)
+    start, end = weekly_range
+    normalized["time_scope"] = "range"
+    normalized["timing_required"] = True
+    normalized["target_start"] = start
+    normalized["target_end"] = end
+    normalized["target_datetime"] = None
+    primary_topic = str(normalized.get("primary_topic") or "").strip()
+    evidence = normalized.get("required_evidence")
+    if isinstance(evidence, list) and primary_topic in ALLOWED_TOPICS:
+        normalized["required_evidence"] = sorted(
+            set(evidence) | _required_evidence_for(primary_topic, "range")
+        )
+    return normalized
+
+
 def _required_evidence_for(primary_topic, time_scope):
     required = {"natal_core", "active_dasha"}
     if primary_topic == "wellbeing":
@@ -78,7 +147,7 @@ def normalize_classification(value, question, now_iso):
     normalized = dict(value)
     # Turkish capital dotted-I casefolds to ``i`` plus a combining dot, which
     # would split words such as "İşimde" during tokenization.
-    question_text = str(question or "").replace("İ", "i").casefold()
+    question_text = _question_text(question)
     tokens = set(re.findall(r"\w+", question_text, flags=re.UNICODE))
 
     career_context = any(
@@ -178,7 +247,7 @@ def normalize_classification(value, question, now_iso):
         and normalized.get("sensitivity") in {None, "", "standard", "medical"}
     ):
         normalized["sensitivity"] = "mental_wellbeing"
-    return normalized
+    return enforce_explicit_time_scope(normalized, question, now_iso)
 
 
 class QuestionClassificationError(Exception):
@@ -413,4 +482,9 @@ def classify_question(
         raise QuestionClassificationError("question_classifier_json_invalid") from exc
     if apply_server_normalization:
         value = normalize_classification(value, question, now_iso)
+    else:
+        # Gemini-only still keeps semantic topic authority, but an explicit
+        # calendar phrase must repair timing/evidence minima before schema
+        # validation so it cannot fail closed into a natal-only route.
+        value = enforce_explicit_time_scope(value, question, now_iso)
     return validate_classification(value)

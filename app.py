@@ -30,6 +30,7 @@ from place_catalog import PlaceCatalogUnavailable, get_place, search_places
 from question_classifier import (
     QuestionClassificationError,
     classify_question,
+    enforce_explicit_time_scope,
 )
 from topic_pack_contract import (
     package_contract_markdown,
@@ -30455,7 +30456,12 @@ def _beta_question_route(
     conversation_context=None,
     mode_override=None,
 ):
-    legacy = _beta_legacy_question_route(question)
+    now_iso = _beta_question_now(chart)
+    legacy = enforce_explicit_time_scope(
+        _beta_legacy_question_route(question),
+        question,
+        now_iso,
+    )
     mode = (
         str(mode_override).strip().lower()
         if mode_override is not None
@@ -30471,10 +30477,13 @@ def _beta_question_route(
                 question,
                 f"{request_id}-question-route",
                 call_vertex_bridge,
-                _beta_question_now(chart),
+                now_iso,
                 conversation_context=conversation_context,
                 apply_server_normalization=mode != "gemini_only",
             )
+            # Keep Gemini's topic decision, but never let an explicit calendar
+            # phrase remove the transit evidence required by the question.
+            model = enforce_explicit_time_scope(model, question, now_iso)
         except Exception as exc:
             error_code = (
                 exc.code
@@ -30503,6 +30512,7 @@ def _beta_question_route(
         if mode in {"active", "gemini_only"} and model
         else legacy
     )
+    selected = enforce_explicit_time_scope(selected, question, now_iso)
     status = (
         "classifier_bypassed"
         if bypass is not None
@@ -30674,6 +30684,10 @@ def _beta_compact_transit_evidence(
     slow_planet_snapshots = []
     previous_states = None
     closest_contacts = {}
+    # A short range is the weekly/selected-window contract. Keep the compact
+    # three-month payload bounded, but retain complete daily records (including
+    # Panchanga) whenever the requested window is at most one calendar week.
+    include_full_daily_records = time_scope in {"instant", "daily"} or len(days) <= 7
     full_daily_records = []
 
     for index, day in enumerate(days):
@@ -30704,7 +30718,7 @@ def _beta_compact_transit_evidence(
                 for contact in selected_contacts
             ],
         })
-        if time_scope in {"instant", "daily"}:
+        if include_full_daily_records:
             full_daily_records.append(_beta_full_transit_day(day))
 
         current_states = {
@@ -30770,6 +30784,7 @@ def _beta_compact_transit_evidence(
         "closest_approaches": closest_approaches,
         "interpretation_limits": [
             "daily_timing contains every covered calendar day",
+            "daily_records contains complete Panchanga records for daily/instant and weekly windows",
             "slow_planet_snapshots are weekly plus sign or retrograde state changes",
             "closest_approaches are the minimum exact-degree orbs per transit-natal pair",
             "dates are technical evidence, not guaranteed event dates",
