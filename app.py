@@ -32,6 +32,7 @@ from question_classifier import (
     QuestionClassificationError,
     classify_question,
     enforce_explicit_time_scope,
+    event_evidence_for_question,
 )
 from topic_pack_contract import (
     package_contract_markdown,
@@ -23276,6 +23277,8 @@ def _save_transit_range_for_chart(
             transit_payload["transit_timezone_id"] = birth.get("timezone_id")
         elif birth.get("tz_offset") not in {None, ""}:
             transit_payload["transit_tz_offset"] = birth.get("tz_offset")
+        if chart.get("important_sky_events") is not None:
+            transit_payload["important_sky_events"] = chart.get("important_sky_events")
 
         pack = _build_transit_pack(transit_payload)
         markdown = _build_transit_pack_markdown(pack)
@@ -23328,6 +23331,8 @@ def _save_current_transit_for_chart(chart, person_name, group_name, period):
             transit_payload["transit_timezone_id"] = birth.get("timezone_id")
         elif birth.get("tz_offset") not in {None, ""}:
             transit_payload["transit_tz_offset"] = birth.get("tz_offset")
+        if chart.get("important_sky_events") is not None:
+            transit_payload["important_sky_events"] = chart.get("important_sky_events")
 
         pack = _build_transit_pack(transit_payload)
         markdown = _build_transit_pack_markdown(pack)
@@ -23597,6 +23602,95 @@ def _transit_pack_reference_options(input_data, target_date, default_tz_offset):
     else:
         options["transit_tz_offset"] = input_data.get("transit_tz_offset", default_tz_offset)
     return options
+
+
+IMPORTANT_SKY_EVENT_TYPE_ALIASES = {
+    "ay tutulması": "lunar_eclipse",
+    "ay tutulmasi": "lunar_eclipse",
+    "lunar eclipse": "lunar_eclipse",
+    "güneş tutulması": "solar_eclipse",
+    "gunes tutulmasi": "solar_eclipse",
+    "solar eclipse": "solar_eclipse",
+    "tutulma": "eclipse",
+}
+
+
+def _normalize_important_sky_events(value):
+    """Normalize pre-recorded sky events without deriving any astrology."""
+
+    if value is None or value == "":
+        return []
+    if not isinstance(value, list):
+        raise ValueError("important_sky_events liste olmalı")
+
+    events = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise ValueError("important_sky_event kaydı geçersiz")
+        raw_date = raw.get("date") or raw.get("event_date")
+        if not raw_date:
+            local_datetime = raw.get("local_datetime") or raw.get("event_datetime_local")
+            raw_date = str(local_datetime or "").split("T", 1)[0]
+        try:
+            event_date = date.fromisoformat(str(raw_date)).isoformat()
+        except ValueError as exc:
+            raise ValueError("important_sky_event tarihi geçersiz") from exc
+
+        raw_type = str(
+            raw.get("event_type") or raw.get("type") or "important_sky_event"
+        ).strip()
+        event_type = IMPORTANT_SKY_EVENT_TYPE_ALIASES.get(
+            raw_type.casefold(),
+            raw_type,
+        )
+        nakshatra = raw.get("nakshatra") or raw.get("event_nakshatra")
+        pada = raw.get("pada")
+        if pada in {None, ""}:
+            pada = raw.get("nakshatra_pada") or raw.get("event_nakshatra_pada")
+        try:
+            pada = int(pada) if pada not in {None, ""} else None
+        except (TypeError, ValueError):
+            pada = None
+        if pada not in {None, 1, 2, 3, 4}:
+            pada = None
+
+        contacts = []
+        for contact in raw.get("natal_contacts") or raw.get("event_natal_contacts") or []:
+            if not isinstance(contact, dict):
+                continue
+            contacts.append({
+                "transit_planet": contact.get("transit_planet") or contact.get("planet"),
+                "natal_planet": contact.get("natal_planet") or contact.get("target"),
+                "contact_type": contact.get("contact_type") or contact.get("type"),
+                "orb": contact.get("orb") if isinstance(contact.get("orb"), (int, float)) else None,
+                "sign": contact.get("sign"),
+                "house_from_lagna": contact.get("house_from_lagna"),
+                "house_from_moon": contact.get("house_from_moon"),
+            })
+
+        events.append({
+            "event_id": str(raw.get("event_id") or f"{event_type}:{event_date}"),
+            "event_type": event_type,
+            "label": str(raw.get("label") or raw.get("name") or event_type),
+            "date": event_date,
+            "local_datetime": raw.get("local_datetime") or raw.get("event_datetime_local"),
+            "local_time": raw.get("local_time") or raw.get("event_time_local"),
+            "utc_datetime": raw.get("utc_datetime") or raw.get("event_datetime_utc"),
+            "timezone_id": raw.get("timezone_id") or raw.get("timezone"),
+            "sign": raw.get("sign"),
+            "sign_tr": raw.get("sign_tr"),
+            "degree": raw.get("degree") or raw.get("degree_str"),
+            "longitude": raw.get("longitude") if isinstance(raw.get("longitude"), (int, float)) else None,
+            "nakshatra": nakshatra,
+            "nakshatra_lord": raw.get("nakshatra_lord") or raw.get("event_nakshatra_lord"),
+            "pada": pada,
+            "luminary": raw.get("luminary"),
+            "node_axis": raw.get("node_axis"),
+            "source": raw.get("source") or "stored_sky_event_source",
+            "status": raw.get("status") or "verified_source_record",
+            "natal_contacts": contacts,
+        })
+    return events
 
 
 def _transit_pack_active_rows(dashas):
@@ -24008,6 +24102,33 @@ def _transit_pack_special_rows(day):
     ]
 
 
+def _transit_pack_event_rows(events):
+    rows = []
+    for event in events or []:
+        contacts = event.get("natal_contacts") or []
+        contact_text = "; ".join(
+            f"{item.get('transit_planet')}→{item.get('natal_planet')} {item.get('contact_type')}"
+            for item in contacts
+        ) or "Kayıt yok"
+        rows.append([
+            event.get("event_type") or "sky_event",
+            event.get("label") or event.get("event_type") or "Önemli gökyüzü olayı",
+            event.get("date") or "Kayıt yok",
+            event.get("local_datetime") or event.get("local_time") or "Kayıt yok",
+            event.get("utc_datetime") or "Kayıt yok",
+            event.get("timezone_id") or "Kayıt yok",
+            event.get("sign_tr") or event.get("sign") or "Kayıt yok",
+            event.get("degree") if event.get("degree") is not None else "Kayıt yok",
+            event.get("nakshatra") or "Kayıt yok",
+            event.get("pada") if event.get("pada") is not None else "Kayıt yok",
+            contact_text,
+        ])
+    return rows or [[
+        "status", "Önemli gökyüzü olayı kaydı yok", "", "", "", "", "", "",
+        "Kayıt yok", "Kayıt yok", "Hesaplanmadı",
+    ]]
+
+
 def _build_transit_pack_markdown(pack):
     person = pack.get("person", {})
     period = pack.get("period", {})
@@ -24039,6 +24160,7 @@ def _build_transit_pack_markdown(pack):
         "- AstroGPT bu dosyadan okur ve yorumlar; bu dosya yorum veya kehanet metni değildir.",
         "- Kullanıcı belirli gün sayısı isterse sadece ilgili tarih satırları ve gün detayları kullanılmalıdır.",
         "- Veri yoksa veya güven düşükse açıkça belirtilmelidir.",
+        "- Önemli gökyüzü olayları ve tutulma nakshatra/pada bilgisi yalnız kaynakta kayıtlıysa kullanılır; sohbet katmanı bunları hesaplamaz.",
         "",
         "## Dönem Özeti",
         "",
@@ -24053,6 +24175,17 @@ def _build_transit_pack_markdown(pack):
         f"- Panchanga saat dilimi: {panchanga_reference.get('timezone_id') or panchanga_reference.get('tz_offset')}",
         f"- Natal Lagna: {pack.get('natal', {}).get('lagna_sign')}",
         f"- Natal Ay: {pack.get('natal', {}).get('moon_sign')}",
+        "",
+        "## Önemli Gökyüzü Olayları",
+        "",
+        f"- Durum: {period.get('important_sky_event_status') or 'not_available'}",
+        f"- Kayıt sayısı: {period.get('important_sky_event_count', 0)}",
+        "- Tutulma nakshatra/pada bilgisi kaynakta yoksa yorumlanmaz; hesaplanmaz.",
+        "",
+        _markdown_table(
+            ["Tür", "Olay", "Tarih", "Yerel Saat", "UTC", "Saat Dilimi", "Burç", "Derece", "Nakshatra", "Pada", "Natal Temas"],
+            _transit_pack_event_rows(pack.get("important_sky_events")),
+        ),
         "",
         "## Transit Veri Paketi Kılavuzu",
         "",
@@ -24078,6 +24211,7 @@ def _build_transit_pack_markdown(pack):
         "9. Dasha Transit Kesişimi tablosunda aktif dasha lordlarının transit konumu ve natal temas sayıları ana kanıt olarak kullanılır.",
         "10. Natal Temasları tablosunda derece orb temasları aynı burç temaslarından daha güçlü kabul edilir.",
         "11. Özel Kontroller tablosu Sade Sati, Ashtama Shani, Kantaka Shani, Jüpiter desteği ve Rahu/Ketu ekseni için kontrol katmanıdır.",
+        "12. Önemli Gökyüzü Olayları tablosunda kayıtlı tutulma, nakshatra, pada ve natal temasları kullan; kayıt yoksa tarih/saat/derece/nakshatra/pada veya temas hesaplama.",
         "",
         "### Hüküm Kuralları",
         "",
@@ -24150,6 +24284,13 @@ def _build_transit_pack_markdown(pack):
             "",
             _markdown_table(["Kontrol", "Aktif/Destek", "Faz/Burç", "Ay Referans Ev"], _transit_pack_special_rows(day)),
             "",
+            "#### O Günün Önemli Gökyüzü Olayları",
+            "",
+            _markdown_table(
+                ["Tür", "Olay", "Tarih", "Yerel Saat", "UTC", "Saat Dilimi", "Burç", "Derece", "Nakshatra", "Pada", "Natal Temas"],
+                _transit_pack_event_rows(day.get("important_sky_events")),
+            ),
+            "",
         ])
 
     lines.extend([
@@ -24201,10 +24342,21 @@ def _build_transit_pack(data):
     moon = next(planet for planet in chart["planets"] if planet["abbr"] == "Mo")
     transit_maha_periods = _build_vimshottari_maha_tree(moon["longitude"], birth_jd)
     transit_ashtakavarga = _build_ashtakavarga(chart)
+    important_sky_events = _normalize_important_sky_events(
+        data.get("important_sky_events")
+        if "important_sky_events" in data
+        else data.get("sky_events")
+    )
     days = [
         _transit_pack_day(chart, birth_jd, target_date, data, tz_offset, transit_maha_periods, transit_ashtakavarga)
         for target_date in dates
     ]
+    for transit_day in days:
+        transit_day["important_sky_events"] = [
+            event
+            for event in important_sky_events
+            if event.get("date") == transit_day.get("date")
+        ]
 
     transit_time = str(data.get("transit_time") or "12:00")
     transit_timezone_id = str(data.get("transit_timezone_id") or "").strip()
@@ -24218,6 +24370,7 @@ def _build_transit_pack(data):
             "engine": "progresif-vedic-chart",
             "engine_version": "0.3.0",
             "calculation_policy": "api_only_no_chat_calculation",
+            "important_sky_event_policy": "source_only_no_chat_calculation",
         },
         "person": {
             "id": person_input.get("id") or person_name,
@@ -24251,7 +24404,12 @@ def _build_transit_pack(data):
             "transit_timezone_id": transit_timezone_id or None,
             "transit_tz_offset": data.get("transit_tz_offset", tz_offset),
             "panchanga_reference": first_panchanga_reference,
+            "important_sky_event_count": len(important_sky_events),
+            "important_sky_event_status": (
+                "available" if important_sky_events else "not_available"
+            ),
         },
+        "important_sky_events": important_sky_events,
         "days": days,
     }
     return pack
@@ -29108,6 +29266,18 @@ BETA_TIMING_KEYWORDS = {
     "uc aylik",
     "3 aylık",
     "evlenebilir",
+    "tutulma",
+    "ay tutulması",
+    "ay tutulmasi",
+    "güneş tutulması",
+    "gunes tutulmasi",
+    "eclipse",
+    "kavuşum",
+    "kavusum",
+    "gökyüzü",
+    "gokyuzu",
+    "gökyüzündeki önemli",
+    "onemli gokyuzu",
 }
 
 BETA_RECTIFICATION_KEYWORDS = {
@@ -29818,6 +29988,14 @@ def _pwa_transit_pack(
         "start_date": str(start_date or current_date.isoformat()),
         "transit_time": str(transit_time or "12:00"),
     }
+    # Important sky events are an upstream, pre-recorded source. The PWA
+    # runtime may carry them forward, but never derives eclipse times or
+    # natal contacts here.
+    source_events = chart.get("important_sky_events")
+    if source_events is None:
+        source_events = chart.get("sky_events")
+    if source_events is not None:
+        payload["important_sky_events"] = source_events
     if birth.get("timezone_id"):
         payload["transit_timezone_id"] = birth.get("timezone_id")
     elif birth.get("tz_offset") not in {None, ""}:
@@ -30481,6 +30659,7 @@ def _beta_legacy_question_route(question):
         required.append("moon_and_panchanga")
     if time_scope == "instant":
         required.append("current_transit_snapshot")
+    required.extend(sorted(event_evidence_for_question(question)))
     return {
         "contract_version": "vedic-question-route-legacy-v1",
         "interpreted_question": str(question or "").strip(),
@@ -30725,6 +30904,7 @@ def _beta_full_transit_day(day):
         ],
         "dasha_cross_reference": day.get("dasha_cross_reference") or {},
         "special_checks": day.get("special_checks") or {},
+        "important_sky_events": day.get("important_sky_events") or [],
     }
 
 
@@ -30847,6 +31027,21 @@ def _beta_compact_transit_evidence(
             key=lambda item: (item[1] or "", item[0]),
         )
     ]
+    all_events = (transit_pack or {}).get("important_sky_events") or []
+    selected_dates = {
+        str(day.get("date") or "")
+        for day in days
+        if day.get("date")
+    }
+    selected_events = [
+        event for event in all_events
+        if str(event.get("date") or "") in selected_dates
+    ]
+    event_data_status = (
+        "available"
+        if selected_events
+        else ("not_available_in_requested_range" if all_events else "not_available")
+    )
     result = {
         "contract_version": "vedic-compact-transit-evidence-v2",
         "calculation_policy": "api_only_no_model_calculation",
@@ -30860,12 +31055,17 @@ def _beta_compact_transit_evidence(
         "daily_records": full_daily_records,
         "slow_planet_snapshots": slow_planet_snapshots,
         "closest_approaches": closest_approaches,
+        "important_sky_events": selected_events,
+        "event_count": len(selected_events),
+        "event_data_status": event_data_status,
+        "event_data_policy": "source_only_no_chat_calculation",
         "interpretation_limits": [
             "daily_timing contains every covered calendar day",
             "daily_records contains complete Panchanga records for daily/instant and weekly windows",
             "slow_planet_snapshots are weekly plus sign or retrograde state changes",
             "closest_approaches are the minimum exact-degree orbs per transit-natal pair",
             "dates are technical evidence, not guaranteed event dates",
+            "important_sky_events are source records only; missing eclipse date, time, degree, nakshatra, pada or natal contact is not calculated by chat",
         ],
     }
     if instant_pack:
@@ -31195,6 +31395,8 @@ def _beta_build_chat_draft(
             "instant_requested_time": (
                 (transits.get("instant_snapshot") or {}).get("requested_time")
             ),
+            "important_sky_event_status": transits.get("event_data_status"),
+            "important_sky_event_count": transits.get("event_count", 0),
         }
     evidence = {
         "chart_summary": _beta_chart_summary(chart),
@@ -31227,6 +31429,24 @@ def _beta_build_chat_draft(
         else None
     )
     missing = _beta_missing_for_topic(chart, packet)
+    event_required_keys = {
+        "important_sky_events",
+        "eclipse_events",
+        "eclipse_nakshatra",
+        "eclipse_pada",
+        "sky_event_natal_contacts",
+    }
+    if (
+        topic == "transit"
+        and event_required_keys.intersection(selected_route.get("required_evidence") or [])
+        and (transits or {}).get("event_data_status") != "available"
+    ):
+        missing.append({
+            "key": "important_sky_events",
+            "status": (transits or {}).get("event_data_status") or "not_available",
+            "reason": "İstenen gökyüzü olayı/tutulma için kaynak kaydı seçilen transit aralığında bulunmuyor",
+            "impact": "Tarih, saat, derece, nakshatra, pada veya natal temas sohbet katmanında hesaplanamaz",
+        })
     confidence = packet.get("confidence") if packet else "low"
     status = "evidence_ready" if packet or topic == "general" else "topic_not_configured"
     if missing:

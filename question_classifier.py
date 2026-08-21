@@ -36,6 +36,11 @@ ALLOWED_EVIDENCE = {
     "transit_natal_contacts",
     "ashtakavarga",
     "relevant_vargas",
+    "important_sky_events",
+    "eclipse_events",
+    "eclipse_nakshatra",
+    "eclipse_pada",
+    "sky_event_natal_contacts",
 }
 ALLOWED_SENSITIVITY = {
     "standard",
@@ -47,9 +52,40 @@ ALLOWED_SENSITIVITY = {
 }
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
 
+IMPORTANT_SKY_EVENT_PHRASES = (
+    "ay tutulması", "ay tutulmasi", "güneş tutulması", "gunes tutulmasi",
+    "tutulma", "eclipse", "gökyüzündeki önemli",
+    "gokyuzundeki onemli", "önemli gökyüzü", "onemli gokyuzu",
+)
+ECLIPSE_PHRASES = (
+    "ay tutulması", "ay tutulmasi", "güneş tutulması", "gunes tutulmasi",
+    "tutulma", "eclipse",
+)
+NODE_EVENT_MARKERS = (
+    "transit", "kavuşum", "kavusum", "temas", "geçiş", "gecis",
+    "retro", "gökyüzü", "gokyuzu", "etkile", "yaklaş", "yaklas",
+)
+
 
 def _question_text(question):
     return str(question or "").replace("İ", "i").casefold()
+
+
+def event_evidence_for_question(question):
+    """Return evidence labels for a named sky event; never calculate it."""
+
+    text = _question_text(question)
+    named_event = any(phrase in text for phrase in IMPORTANT_SKY_EVENT_PHRASES)
+    node_event = (
+        ("rahu" in text or "ketu" in text)
+        and any(marker in text for marker in NODE_EVENT_MARKERS)
+    )
+    if not named_event and not node_event:
+        return set()
+    evidence = {"important_sky_events", "sky_event_natal_contacts"}
+    if any(phrase in text for phrase in ECLIPSE_PHRASES):
+        evidence.update({"eclipse_events", "eclipse_nakshatra", "eclipse_pada"})
+    return evidence
 
 
 def _explicit_weekly_range(question, now_iso):
@@ -149,6 +185,7 @@ def normalize_classification(value, question, now_iso):
     # would split words such as "İşimde" during tokenization.
     question_text = _question_text(question)
     tokens = set(re.findall(r"\w+", question_text, flags=re.UNICODE))
+    event_evidence = event_evidence_for_question(question)
 
     career_context = any(
         token in {
@@ -190,7 +227,7 @@ def normalize_classification(value, question, now_iso):
     )
     explicit_daily = "bugün" in tokens or "bugun" in tokens
     future_modal = bool(re.search(
-        r"\b(?:evlenebilir|gerçekleşir|gerceklesir|olacak\s+mı|olacak\s+mi|ne\s+zaman)\b",
+        r"\b(?:evlenebilir|gerçekleşir|gerceklesir|etkileyecek|etkiler|olacak\s+mı|olacak\s+mi|ne\s+zaman)\b",
         question_text,
     ))
     if explicit_instant:
@@ -198,6 +235,10 @@ def normalize_classification(value, question, now_iso):
     elif explicit_daily:
         normalized["time_scope"] = "daily"
     elif future_modal and normalized.get("time_scope") == "none":
+        normalized["time_scope"] = "range"
+    elif event_evidence and normalized.get("time_scope") == "none":
+        # A named sky event is a timing request even without an exact date.
+        # The stored transit horizon is used; absent event records fail closed.
         normalized["time_scope"] = "range"
     elif emotional_context and normalized.get("time_scope") == "instant":
         # A present-tense feeling is not automatically an hour-specific
@@ -240,6 +281,7 @@ def normalize_classification(value, question, now_iso):
     if isinstance(evidence, list):
         evidence_set = set(evidence)
         evidence_set.update(_required_evidence_for(primary_topic, time_scope))
+        evidence_set.update(event_evidence)
         normalized["required_evidence"] = sorted(evidence_set)
 
     if (
@@ -419,6 +461,12 @@ def build_request(question, now_iso, conversation_context=None):
         "natal_emotional_core ekle. Zaman sorularinda stored_transit_days, "
         "transit_natal_contacts ve ashtakavarga ekle. Daily ve instant icin "
         "moon_and_panchanga, instant icin current_transit_snapshot ekle. "
+        "Ay tutulması, Güneş tutulması veya önemli gökyüzü olayı sorularında "
+        "time_scope range olmalı ve required_evidence içine important_sky_events ile "
+        "sky_event_natal_contacts eklenmeli; tutulma sorularında ayrıca eclipse_events, "
+        "eclipse_nakshatra ve eclipse_pada eklenmeli. Tarih, saat, derece, nakşatra "
+        "ve pada hesaplama; yalnız saklanmış transit kaydını iste. Kayıt yoksa "
+        "eksik kanıt durumu üret. "
         "Cikti yalniz gecerli JSON olsun."
     )
     schema = {

@@ -6,6 +6,7 @@ from question_classifier import (
     build_request,
     classify_question,
     enforce_explicit_time_scope,
+    event_evidence_for_question,
     validate_classification,
 )
 
@@ -47,6 +48,44 @@ def _model_payload(value):
 
 
 class QuestionClassifierTest(unittest.TestCase):
+    def test_eclipse_question_forces_stored_event_layers_without_calculation(self):
+        def model_call(request_id, _request):
+            return request_id, _model_payload(_classification(
+                primary_topic="general",
+                time_scope="none",
+                timing_required=False,
+                target_start=None,
+                target_end=None,
+                target_datetime=None,
+                required_evidence=["natal_core", "active_dasha"],
+                sensitivity="standard",
+            ))
+
+        result = classify_question(
+            "Ay tutulması beni nasıl etkileyebilir?",
+            "route-test-eclipse",
+            model_call,
+            "2026-08-21T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["time_scope"], "range")
+        self.assertEqual(result["target_start"], "2026-08-21")
+        self.assertEqual(result["target_end"], "2026-11-20")
+        self.assertTrue({"eclipse_events", "eclipse_nakshatra", "eclipse_pada"}.issubset(
+            set(result["required_evidence"])
+        ))
+
+    def test_rahu_ketu_event_requests_stored_natal_contact_layer(self):
+        evidence = event_evidence_for_question(
+            "Transit Rahu doğum haritamdaki Ketu ile kavuşuyor mu?"
+        )
+        self.assertIn("important_sky_events", evidence)
+        self.assertIn("sky_event_natal_contacts", evidence)
+        self.assertNotIn("eclipse_nakshatra", evidence)
+
+    def test_natal_rahu_question_is_not_misclassified_as_sky_event(self):
+        self.assertFalse(event_evidence_for_question("Rahu doğum haritamda ne anlatır?"))
+
     def test_instant_wellbeing_contract_is_accepted(self):
         result = validate_classification(_classification())
 

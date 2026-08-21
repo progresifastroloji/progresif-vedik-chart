@@ -18,6 +18,9 @@ from app import (
     _beta_json,
     _beta_load_json,
     _beta_now,
+    _build_transit_pack_markdown,
+    _beta_compact_transit_evidence,
+    _normalize_important_sky_events,
 )
 from methodology_orchestrator import MAX_PROMPT_BYTES, _canonical_json, _model_request, compact_evidence, load_methodology_candidates
 from question_classifier import QuestionClassificationError
@@ -129,6 +132,55 @@ def _route_payload(topic, time_scope, *, sensitivity="standard"):
 
 
 class BetaMethodologyCompareEndpointTest(unittest.TestCase):
+    def test_source_only_eclipse_is_preserved_in_runtime_and_markdown(self):
+        event = {
+            "event_type": "lunar_eclipse",
+            "label": "Ay tutulması",
+            "date": "2026-08-28",
+            "local_datetime": "2026-08-28T04:12:00+03:00",
+            "utc_datetime": "2026-08-28T01:12:00Z",
+            "timezone_id": "Europe/Istanbul",
+            "sign_tr": "Kova",
+            "degree": "4°12'",
+            "nakshatra": "Dhanishta",
+            "pada": 3,
+            "natal_contacts": [{
+                "transit_planet": "Moon",
+                "natal_planet": "Ketu",
+                "contact_type": "degree_orb",
+                "orb": 1.2,
+            }],
+        }
+        pack = {
+            "period": {"type": "range", "range_start": "2026-08-28", "range_end": "2026-08-28", "day_count": 1, "important_sky_event_status": "available", "important_sky_event_count": 1},
+            "meta": {"api_version": "v2", "engine_version": "test"},
+            "person": {"name": "Test", "group": "PWA"},
+            "natal": {"lagna_sign": "Oğlak", "moon_sign": "Oğlak"},
+            "important_sky_events": [event],
+            "days": [{"date": "2026-08-28", "important_sky_events": [event]}],
+        }
+        compact = _beta_compact_transit_evidence(pack)
+        markdown = _build_transit_pack_markdown(pack)
+        self.assertEqual(compact["event_data_status"], "available")
+        self.assertEqual(compact["important_sky_events"][0]["nakshatra"], "Dhanishta")
+        self.assertEqual(compact["important_sky_events"][0]["pada"], 3)
+        self.assertIn("Önemli Gökyüzü Olayları", markdown)
+        self.assertIn("Dhanishta", markdown)
+        self.assertIn("Hesaplanmadı", _build_transit_pack_markdown({"period": {}, "person": {}, "meta": {}, "natal": {}, "days": []}))
+
+    def test_event_normalizer_rejects_missing_source_date_and_keeps_pada(self):
+        with self.assertRaises(ValueError):
+            _normalize_important_sky_events([{"event_type": "lunar_eclipse"}])
+        normalized = _normalize_important_sky_events([{
+            "type": "Ay tutulması",
+            "date": "2026-08-28",
+            "event_nakshatra": "Dhanishta",
+            "event_nakshatra_pada": 3,
+        }])
+        self.assertEqual(normalized[0]["event_type"], "lunar_eclipse")
+        self.assertEqual(normalized[0]["nakshatra"], "Dhanishta")
+        self.assertEqual(normalized[0]["pada"], 3)
+
     @patch("app._pwa_full_markdown_documents")
     def test_ordered_full_mode_loads_transit_for_non_timing_question(self, full_documents):
         full_documents.return_value = {
