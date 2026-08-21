@@ -204,6 +204,38 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             self.assertLess(narrative_user.index(methodology_marker), narrative_user.index("natal-interpretation.md"))
             self.assertLess(narrative_user.index("natal-interpretation.md"), narrative_user.index("transit-three-month.md"))
 
+    def test_normal_source_context_ignores_diagnostic_gate(self):
+        draft = _draft()
+        draft["_full_markdown_sources"] = {
+            "documents": [
+                {
+                    "filename": "natal-interpretation.md",
+                    "sha256": "natal-sha",
+                    "content": "# TAM NATAL KAYNAĞI\n",
+                },
+                {
+                    "filename": "transit-three-month.md",
+                    "sha256": "transit-sha",
+                    "content": "# TAM ÜÇ AYLIK TRANSİT KAYNAĞI\n",
+                },
+            ],
+        }
+        candidate = load_methodology_candidates()[0]
+
+        with patch.dict(
+            os.environ,
+            {"VEDIC_GEMINI_MARKDOWN_MODE": "compact", "VEDIC_GEMINI_FULL_MARKDOWN_TEST": "0"},
+            clear=False,
+        ):
+            evidence = compact_evidence(draft)
+            request, _ = _model_request(candidate, evidence)
+            prompt = request["contents"][0]["parts"][0]["text"]
+
+        self.assertIn("# TAM NATAL KAYNAĞI", prompt)
+        self.assertIn("# TAM ÜÇ AYLIK TRANSİT KAYNAĞI", prompt)
+        self.assertIn("natal-interpretation.md", prompt)
+        self.assertIn("transit-three-month.md", prompt)
+
     def test_manifest_loads_single_active_system_methodology(self):
         candidates = load_methodology_candidates()
 

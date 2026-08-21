@@ -177,7 +177,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
                 owner_user_id="11111111-1111-4111-8111-111111111111",
                 profile_id=PROFILE_ID,
                 chart_id=CHART_ID,
-                include_full_markdown_test=True,
+                include_full_markdown_sources=True,
             )
 
         full_documents.assert_called_once_with(

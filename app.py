@@ -22,7 +22,7 @@ import swisseph as swe
 from flask import Flask, render_template, request, jsonify, send_file
 from methodology_orchestrator import (
     MethodologyOrchestrationError,
-    full_markdown_test_mode,
+    full_source_context_mode,
     ordered_full_markdown_mode,
     new_comparison_id,
     run_methodology_comparison,
@@ -106,6 +106,10 @@ PWA_ARTIFACT_MANIFEST_VERSION = "vedic-pwa-artifact-manifest-v2"
 PWA_ARTIFACT_GENERATOR_REVISION = "compact-natal-20260815-2"
 PWA_ARTIFACT_PROFILE_COMPACT = "compact_natal_v1"
 PWA_ARTIFACT_PROFILE_LEGACY = "legacy_full_v2"
+PWA_ARTIFACT_LEGACY_SCHEMA_VERSIONS = (
+    "vedic-pwa-artifacts-v1",
+    "vedic-pwa-artifacts-v2",
+)
 PWA_ARTIFACT_DEFAULT_PROFILE = os.environ.get(
     "PWA_ARTIFACT_PROFILE",
     PWA_ARTIFACT_PROFILE_COMPACT,
@@ -30149,27 +30153,103 @@ def _pwa_artifact_file(owner_user_id, chart_id, artifact_code, artifact_profile=
     return path, item, _pwa_artifact_sha256(data)
 
 
-def _pwa_full_markdown_test_document(owner_user_id, chart_id):
-    """Load the owned full natal Markdown only for the explicit test mode."""
+def _pwa_legacy_source_file(owner_user_id, chart_id, source_code):
+    """Read a verified source from the pre-v3 artifact layout.
 
-    if not full_markdown_test_mode():
-        return None
-    if not owner_user_id or not chart_id:
-        raise ValueError("full_markdown_test_requires_owned_chart")
+    The live Railway volume can contain v1 files created before the compact
+    profile existed.  Reading them is intentionally one-way and immutable:
+    the tenant/chart path is checked, optional legacy owner metadata must
+    match, and a manifest hash is enforced whenever the old manifest has one.
+    New writes continue to use v3.
+    """
+
+    filename_candidates = {
+        "natal_interpretation": ("natal-interpretation.md", "main-chart.md"),
+        "transit_three_month": ("transit-three-month.md",),
+    }.get(source_code, ())
+    if not filename_candidates:
+        raise FileNotFoundError("Legacy kaynak kodu bulunamadı")
+    owner_user_id = _account_deletion_user_id(owner_user_id)
+    chart_id = _pwa_artifact_chart_id(chart_id)
+    user_root = Path(app.config["USER_DATA_ROOT"]).resolve()
+    expected_chart_root = (user_root / owner_user_id / chart_id).resolve()
+    if expected_chart_root.parent.parent != user_root:
+        raise ValueError("Legacy artefakt veri yolu güvenli değil")
+
+    for schema_version in PWA_ARTIFACT_LEGACY_SCHEMA_VERSIONS:
+        root = (expected_chart_root / schema_version).resolve()
+        if root.parent != expected_chart_root or not root.is_dir():
+            continue
+        manifest = {}
+        manifest_path = root / "manifest.json"
+        if manifest_path.is_file():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for key in ("owner_user_id", "chart_id"):
+                value = manifest.get(key)
+                if value not in (None, "") and str(value) != (owner_user_id if key == "owner_user_id" else chart_id):
+                    raise ValueError("Legacy artefakt sahipliği doğrulanamadı")
+
+        items = manifest.get("artifacts") or []
+        for filename in filename_candidates:
+            item = next(
+                (
+                    candidate for candidate in items
+                    if candidate.get("filename") == filename
+                    and candidate.get("code") in {
+                        source_code,
+                        "main_chart" if source_code == "natal_interpretation" else "transit_three_month",
+                    }
+                ),
+                None,
+            )
+            path = (root / filename).resolve()
+            if path.parent != root or not path.is_file():
+                continue
+            data = path.read_bytes()
+            expected_sha256 = item.get("sha256") if isinstance(item, dict) else None
+            if expected_sha256 and _pwa_artifact_sha256(data) != expected_sha256:
+                raise ValueError("Legacy artefakt bütünlüğü doğrulanamadı")
+            return path, {
+                "filename": filename,
+                "source_schema_version": schema_version,
+                "source_code": (item or {}).get("code") or source_code,
+            }, _pwa_artifact_sha256(data)
+    raise FileNotFoundError("Legacy kaynak artefaktı bulunamadı")
+
+
+def _pwa_source_file(owner_user_id, chart_id, source_code):
+    """Prefer v3 compact artifacts, then safely read legacy v1/v2 sources."""
+
     try:
-        path, item, sha256 = _pwa_artifact_file(
+        return _pwa_artifact_file(
             owner_user_id,
             chart_id,
-            "natal_interpretation",
+            source_code,
             artifact_profile=PWA_ARTIFACT_PROFILE_COMPACT,
         )
+    except FileNotFoundError:
+        return _pwa_legacy_source_file(owner_user_id, chart_id, source_code)
+
+
+def _pwa_full_markdown_test_document(owner_user_id, chart_id):
+    """Load the complete owned natal source for the normal chat context."""
+
+    if not owner_user_id or not chart_id:
+        raise ValueError("full_markdown_source_requires_owned_chart")
+    try:
+        path, item, sha256 = _pwa_source_file(owner_user_id, chart_id, "natal_interpretation")
     except FileNotFoundError as exc:
-        raise ValueError("full_markdown_test_artifact_not_found") from exc
+        raise ValueError("full_markdown_source_artifact_not_found") from exc
     content = path.read_text(encoding="utf-8")
     if not content:
-        raise ValueError("full_markdown_test_artifact_empty")
+        raise ValueError("full_markdown_source_artifact_empty")
     return {
         "filename": item.get("filename") or "natal-interpretation.md",
+        "source_schema_version": item.get("source_schema_version"),
+        "source_code": item.get("source_code"),
         "byte_size": len(content.encode("utf-8")),
         "sha256": sha256,
         "content": content,
@@ -30177,7 +30257,7 @@ def _pwa_full_markdown_test_document(owner_user_id, chart_id):
 
 
 def _pwa_full_markdown_documents(owner_user_id, chart_id, *, include_transit=False):
-    """Load the complete owned Markdown sources for explicit full-context mode."""
+    """Load the complete owned Markdown sources in deterministic source order."""
 
     natal = _pwa_full_markdown_test_document(owner_user_id, chart_id)
     if natal is None:
@@ -30185,19 +30265,16 @@ def _pwa_full_markdown_documents(owner_user_id, chart_id, *, include_transit=Fal
     documents = [natal]
     if include_transit:
         try:
-            path, item, sha256 = _pwa_artifact_file(
-                owner_user_id,
-                chart_id,
-                "transit_three_month",
-                artifact_profile=PWA_ARTIFACT_PROFILE_COMPACT,
-            )
+            path, item, sha256 = _pwa_source_file(owner_user_id, chart_id, "transit_three_month")
         except FileNotFoundError as exc:
-            raise ValueError("full_markdown_test_transit_artifact_not_found") from exc
+            raise ValueError("full_markdown_source_transit_artifact_not_found") from exc
         content = path.read_text(encoding="utf-8")
         if not content:
-            raise ValueError("full_markdown_test_transit_artifact_empty")
+            raise ValueError("full_markdown_source_transit_artifact_empty")
         documents.append({
             "filename": item.get("filename") or "transit-three-month.md",
+            "source_schema_version": item.get("source_schema_version"),
+            "source_code": item.get("source_code"),
             "byte_size": len(content.encode("utf-8")),
             "sha256": sha256,
             "content": content,
@@ -31054,6 +31131,7 @@ def _beta_build_chat_draft(
     chart_id=None,
     conversation_context=None,
     include_full_markdown_test=False,
+    include_full_markdown_sources=False,
 ):
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
     subject_topic = selected_route["primary_topic"]
@@ -31136,12 +31214,16 @@ def _beta_build_chat_draft(
         _pwa_full_markdown_documents(
             owner_user_id,
             chart_id,
-            # Ordered diagnostic mode deliberately bypasses the route-based
-            # transit gate so Gemini receives the complete natal + three-month
-            # source set for every question.
-            include_transit=(topic == "transit" or ordered_full_markdown_mode()),
+            # Source inclusion is an application contract, not a classifier
+            # decision: every normal chat question receives natal + three-month
+            # transit in the same deterministic order.
+            include_transit=(
+                bool(include_full_markdown_sources)
+                or topic == "transit"
+                or ordered_full_markdown_mode()
+            ),
         )
-        if include_full_markdown_test
+        if include_full_markdown_test or include_full_markdown_sources
         else None
     )
     missing = _beta_missing_for_topic(chart, packet)
@@ -31183,7 +31265,7 @@ def _beta_build_chat_draft(
             "full_markdown_test": (
                 {
                     "enabled": True,
-                    "mode": "ordered_full" if ordered_full_markdown_mode() else "route_selected",
+                    "mode": "all_full",
                     "document_order": [
                         item.get("filename")
                         for item in full_markdown_test.get("documents", [])
@@ -31221,6 +31303,10 @@ def _beta_build_chat_draft(
         # it is never returned by the draft endpoint or persisted as a chat
         # message.
         draft["_full_markdown_test"] = full_markdown_test
+        # New neutral name: the orchestrator uses this field for normal chat;
+        # the legacy alias above remains for existing diagnostics/tests.
+        if include_full_markdown_sources:
+            draft["_full_markdown_sources"] = full_markdown_test
     return draft
 
 
@@ -32126,9 +32212,9 @@ def api_v2_beta_chat_compare():
                     **_beta_public_methodology_response(stored),
                 }), status_code
 
-            # Fail before creating an in-progress comparison if the explicit
-            # full-Markdown test artifact is unavailable.
-            if full_markdown_test_mode():
+            # Fail before creating an in-progress comparison if the mandatory
+            # three-source chat context is unavailable.
+            if full_source_context_mode() and not app.config.get("TESTING"):
                 _pwa_full_markdown_test_document(owner_user_id, chart_id)
 
             usage_before = _beta_usage_status(conn, profile_id)
@@ -32158,17 +32244,14 @@ def api_v2_beta_chat_compare():
             owner_user_id,
             conversation_context=conversation_context,
         )
-        if full_markdown_test_mode():
-            # Timing questions additionally require the complete transit
-            # Markdown; keep this check tied to the server-selected route.
+        if full_source_context_mode() and not app.config.get("TESTING"):
+            # The classifier may label timing, but it never controls source
+            # inclusion. Both owned Markdown sources are always required.
             try:
                 _pwa_full_markdown_documents(
                     owner_user_id,
                     chart_id,
-                    include_transit=(
-                        bool(routing["selected"].get("timing_required"))
-                        or ordered_full_markdown_mode()
-                    ),
+                    include_transit=True,
                 )
             except ValueError as exc:
                 raise MethodologyOrchestrationError(str(exc), 422) from exc
@@ -32218,7 +32301,9 @@ def api_v2_beta_chat_compare():
             profile_id=profile_id,
             chart_id=chart_id,
             conversation_context=conversation_context,
-            include_full_markdown_test=full_markdown_test_mode(),
+            include_full_markdown_sources=(
+                full_source_context_mode() and not app.config.get("TESTING")
+            ),
         )
         comparison = run_methodology_comparison(
             draft,

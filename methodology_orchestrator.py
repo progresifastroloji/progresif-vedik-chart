@@ -28,6 +28,14 @@ ORDERED_FULL_MARKDOWN_MODES = {
     "ordered",
     "all_files",
 }
+FULL_SOURCE_CONTEXT_MODES = {
+    "all_full",
+    "full",
+    "ordered_full",
+    "full_ordered",
+    "ordered",
+    "all_files",
+}
 TECHNICAL_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MIN_CHARS = 300
@@ -134,6 +142,24 @@ def ordered_full_markdown_mode():
     return mode in ORDERED_FULL_MARKDOWN_MODES
 
 
+def full_source_context_mode():
+    """Return whether normal chat must send the complete three-source context.
+
+    The classifier is deliberately not part of this decision. ``all_full``
+    is the production default; ``compact``/``selected`` are reversible
+    rollback switches for operations, not question-routing behavior.
+    """
+
+    configured_mode = os.environ.get("VEDIC_GEMINI_SOURCE_CONTEXT_MODE")
+    if configured_mode is None:
+        # Keep the already-deployed ordered_full switch as the production
+        # compatibility path. A local process with no provider setting stays
+        # compact until its operator explicitly enables all_full.
+        configured_mode = os.environ.get(FULL_MARKDOWN_MODE_ENV, "compact")
+    mode = str(configured_mode or "compact").strip().lower()
+    return mode in FULL_SOURCE_CONTEXT_MODES
+
+
 def _sha256(value):
     if isinstance(value, str):
         value = value.encode("utf-8")
@@ -214,35 +240,44 @@ def compact_evidence(draft):
     }
     if draft.get("topic") == "transit":
         evidence["transits"] = source.get("transits")
-    if full_markdown_test_mode():
+    # Normal PWA chat uses ``_full_markdown_sources``. The older
+    # ``_full_markdown_test`` field remains supported only behind the explicit
+    # diagnostic switch so existing callers do not silently change behavior.
+    test_document = draft.get("_full_markdown_sources")
+    if test_document is None and full_markdown_test_mode():
         test_document = draft.get("_full_markdown_test")
-        if test_document:
-            documents = test_document.get("documents") if isinstance(test_document, dict) else None
-            if documents is None:
-                documents = [test_document]
-            if not isinstance(documents, list) or not documents:
+    if test_document:
+        documents = test_document.get("documents") if isinstance(test_document, dict) else None
+        if documents is None:
+            documents = [test_document]
+        if not isinstance(documents, list) or not documents:
+            raise MethodologyOrchestrationError("full_markdown_test_document_invalid", 500)
+        metadata = []
+        content_parts = []
+        for document in documents:
+            if not isinstance(document, dict):
                 raise MethodologyOrchestrationError("full_markdown_test_document_invalid", 500)
-            metadata = []
-            content_parts = []
-            for document in documents:
-                if not isinstance(document, dict):
-                    raise MethodologyOrchestrationError("full_markdown_test_document_invalid", 500)
-                content = document.get("content")
-                if not isinstance(content, str) or not content:
-                    raise MethodologyOrchestrationError("full_markdown_test_document_empty", 500)
-                filename = str(document.get("filename") or "unknown.md")
-                metadata.append({
-                    "filename": filename,
-                    "byte_size": len(content.encode("utf-8")),
-                    "sha256": str(document.get("sha256") or ""),
-                })
-                content_parts.append(f"\n\n===== TAM DOSYA: {filename} =====\n\n{content}")
-            evidence["full_markdown_test"] = {
-                "documents": metadata,
-            }
-            # Kept out of the canonical evidence JSON below; it is appended
-            # once as a dedicated source section in both model prompts.
-            evidence["_full_markdown_test_content"] = "".join(content_parts)
+            content = document.get("content")
+            if not isinstance(content, str) or not content:
+                raise MethodologyOrchestrationError("full_markdown_test_document_empty", 500)
+            filename = str(document.get("filename") or "unknown.md")
+            metadata.append({
+                "filename": filename,
+                "byte_size": len(content.encode("utf-8")),
+                "sha256": str(document.get("sha256") or ""),
+                **({"source_path": str(document.get("source_path"))} if document.get("source_path") else {}),
+            })
+            content_parts.append(f"\n\n===== TAM DOSYA: {filename} =====\n\n{content}")
+        evidence["full_markdown_sources"] = {
+            "documents": metadata,
+            "ordered": bool(draft.get("_full_markdown_sources")),
+        }
+        # Kept out of the canonical evidence JSON below; it is appended once
+        # as a dedicated source section in both model prompts.
+        evidence["_full_markdown_source_content"] = "".join(content_parts)
+        # Compatibility aliases for existing instrumentation and fixtures.
+        evidence["full_markdown_test"] = evidence["full_markdown_sources"]
+        evidence["_full_markdown_test_content"] = evidence["_full_markdown_source_content"]
     return evidence
 
 
@@ -270,11 +305,16 @@ def _evidence_path_catalog(evidence):
 
 
 def _model_request(candidate, evidence, conversation_context=None):
-    full_markdown_content = evidence.get("_full_markdown_test_content")
+    full_markdown_content = evidence.get("_full_markdown_source_content")
+    if full_markdown_content is None:
+        full_markdown_content = evidence.get("_full_markdown_test_content")
+    ordered_sources = bool(
+        (evidence.get("full_markdown_sources") or {}).get("ordered")
+    )
     prompt_evidence = {
         key: value
         for key, value in evidence.items()
-        if key != "_full_markdown_test_content"
+        if key not in {"_full_markdown_source_content", "_full_markdown_test_content"}
     }
     evidence_json = _canonical_json(prompt_evidence)
     evidence_path_catalog_json = _canonical_json(_evidence_path_catalog(prompt_evidence))
@@ -313,7 +353,7 @@ def _model_request(candidate, evidence, conversation_context=None):
             + (
                 " Kaynak sırası sabittir: 1) bu metodoloji belgesi, 2) tam natal dosyası, "
                 "3) tam üç aylık transit dosyası. Sıralamayı ve kapsamı daraltma."
-                if ordered_full_markdown_mode()
+                if ordered_full_markdown_mode() or ordered_sources
                 else ""
             )
             if full_markdown_content is not None
@@ -329,7 +369,7 @@ def _model_request(candidate, evidence, conversation_context=None):
             + (
                 "Bu testte tam kaynak sırası: 1/3 metodoloji (systemInstruction içinde), "
                 "2/3 natal, 3/3 üç aylık transit. Ara seçim/özetleme yapma.\n\n"
-                if ordered_full_markdown_mode()
+                if ordered_full_markdown_mode() or ordered_sources
                 else "\n"
             )
             + f"{full_markdown_content}"
@@ -380,9 +420,14 @@ def _model_request(candidate, evidence, conversation_context=None):
 def _narrative_request(candidate, evidence, analysis, conversation_context=None):
     """Build the client-facing call from validated analysis and active sources."""
 
-    full_markdown_content = evidence.get("_full_markdown_test_content")
+    full_markdown_content = evidence.get("_full_markdown_source_content")
+    if full_markdown_content is None:
+        full_markdown_content = evidence.get("_full_markdown_test_content")
     narrative_full_context = full_markdown_content
-    if ordered_full_markdown_mode() and full_markdown_content is not None:
+    ordered_sources = bool(
+        (evidence.get("full_markdown_sources") or {}).get("ordered")
+    )
+    if (ordered_full_markdown_mode() or ordered_sources) and full_markdown_content is not None:
         # The technical call receives methodology in systemInstruction. The
         # client-facing call must also see all three verified source files.
         narrative_full_context = (
@@ -427,7 +472,7 @@ def _narrative_request(candidate, evidence, analysis, conversation_context=None)
             "\n\nTAM KAYNAK SIRASI (3 DOSYANIN TAMAMI):\n"
             "1/3 metodoloji, 2/3 tam natal, 3/3 tam üç aylık transit. Ara seçim yapma.\n"
             f"{narrative_full_context}"
-            if narrative_full_context is not None and ordered_full_markdown_mode()
+            if narrative_full_context is not None and (ordered_full_markdown_mode() or ordered_sources)
             else f"\n\nTAM MARKDOWN KAYNAKLARI:\n{narrative_full_context}"
             if narrative_full_context is not None
             else ""

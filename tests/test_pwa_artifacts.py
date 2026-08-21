@@ -13,6 +13,7 @@ from app import (
     _beta_build_chat_draft,
     _beta_db,
     _beta_load_json,
+    _pwa_full_markdown_documents,
     app,
 )
 from methodology_orchestrator import (
@@ -189,6 +190,52 @@ class PwaArtifactEndpointTest(unittest.TestCase):
         response = self._generate(OTHER_USER_ID)
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error_code"], "pwa_artifact_ownership_mismatch")
+
+    def test_full_source_reader_accepts_verified_legacy_v1_layout(self):
+        legacy_root = (
+            Path(app.config["USER_DATA_ROOT"])
+            / OWNER_USER_ID
+            / CHART_ID
+            / "vedic-pwa-artifacts-v1"
+        )
+        legacy_root.mkdir(parents=True)
+        natal = b"# Legacy natal\n"
+        transit = b"# Legacy transit\n"
+        (legacy_root / "main-chart.md").write_bytes(natal)
+        (legacy_root / "transit-three-month.md").write_bytes(transit)
+        manifest = {
+            "owner_user_id": OWNER_USER_ID,
+            "chart_id": CHART_ID,
+            "artifacts": [
+                {
+                    "code": "main_chart",
+                    "filename": "main-chart.md",
+                    "sha256": hashlib.sha256(natal).hexdigest(),
+                },
+                {
+                    "code": "transit_three_month",
+                    "filename": "transit-three-month.md",
+                    "sha256": hashlib.sha256(transit).hexdigest(),
+                },
+            ],
+        }
+        (legacy_root / "manifest.json").write_text(
+            json.dumps(manifest),
+            encoding="utf-8",
+        )
+
+        loaded = _pwa_full_markdown_documents(
+            OWNER_USER_ID,
+            CHART_ID,
+            include_transit=True,
+        )
+
+        self.assertEqual(
+            [item["filename"] for item in loaded["documents"]],
+            ["main-chart.md", "transit-three-month.md"],
+        )
+        self.assertEqual(loaded["documents"][0]["content"], natal.decode())
+        self.assertEqual(loaded["documents"][1]["content"], transit.decode())
 
 
 if __name__ == "__main__":
