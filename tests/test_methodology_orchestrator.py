@@ -13,6 +13,7 @@ from methodology_orchestrator import (
     compact_evidence,
     full_markdown_test_mode,
     load_methodology_candidates,
+    ordered_full_markdown_mode,
     run_methodology_comparison,
     validate_methodology_response,
     validate_narrative_response,
@@ -162,6 +163,46 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("TAM MARKDOWN KAYNAKLARI", prompt)
         self.assertEqual(prompt.count(document), 1)
         self.assertEqual(request["generationConfig"]["maxOutputTokens"], 8192)
+
+    def test_ordered_full_mode_sends_all_three_sources_in_fixed_order(self):
+        natal = "# TAM NATAL\nNatal ayrıntısı.\n"
+        transit = "# TAM ÜÇ AYLIK TRANSİT\nTransit ayrıntısı.\n"
+        draft = _draft()
+        draft["_full_markdown_test"] = {
+            "documents": [
+                {
+                    "filename": "natal-interpretation.md",
+                    "sha256": "natal-sha",
+                    "content": natal,
+                },
+                {
+                    "filename": "transit-three-month.md",
+                    "sha256": "transit-sha",
+                    "content": transit,
+                },
+            ],
+        }
+        candidate = load_methodology_candidates()[0]
+
+        with patch.dict(os.environ, {"VEDIC_GEMINI_MARKDOWN_MODE": "ordered_full"}, clear=True):
+            self.assertTrue(full_markdown_test_mode())
+            self.assertTrue(ordered_full_markdown_mode())
+            evidence = compact_evidence(draft)
+            technical_request, _ = _model_request(candidate, evidence)
+            technical_system = technical_request["systemInstruction"]["parts"][0]["text"]
+            technical_user = technical_request["contents"][0]["parts"][0]["text"]
+            self.assertIn("Kaynak sırası sabittir", technical_system)
+            self.assertLess(technical_user.index("natal-interpretation.md"), technical_user.index("transit-three-month.md"))
+
+            analysis = validate_methodology_response(_payload(), evidence)
+            narrative_request, _ = _narrative_request(candidate, evidence, analysis)
+            narrative_user = narrative_request["contents"][0]["parts"][0]["text"]
+            methodology_marker = "===== TAM DOSYA 1/3: SYSTEM_METHODOLOGY.txt ====="
+            self.assertIn(methodology_marker, narrative_user)
+            self.assertIn(natal, narrative_user)
+            self.assertIn(transit, narrative_user)
+            self.assertLess(narrative_user.index(methodology_marker), narrative_user.index("natal-interpretation.md"))
+            self.assertLess(narrative_user.index("natal-interpretation.md"), narrative_user.index("transit-three-month.md"))
 
     def test_manifest_loads_single_active_system_methodology(self):
         candidates = load_methodology_candidates()

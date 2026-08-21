@@ -19,6 +19,15 @@ MAX_METHODOLOGY_BYTES = 64 * 1024
 MAX_PROMPT_BYTES = 1024 * 1024
 FULL_MARKDOWN_MODE_ENV = "VEDIC_GEMINI_MARKDOWN_MODE"
 FULL_MARKDOWN_TEST_ENV = "VEDIC_GEMINI_FULL_MARKDOWN_TEST"
+# Explicit diagnostic mode: send the complete, owned source set in a fixed
+# order. Keep this separate from the existing route-aware ``full`` mode so
+# the production default and older test switch remain backward compatible.
+ORDERED_FULL_MARKDOWN_MODES = {
+    "ordered_full",
+    "full_ordered",
+    "ordered",
+    "all_files",
+}
 TECHNICAL_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MIN_CHARS = 300
@@ -107,10 +116,22 @@ def full_markdown_test_mode():
     """
 
     mode = str(os.environ.get(FULL_MARKDOWN_MODE_ENV, "compact") or "compact").strip().lower()
-    if mode in {"full", "all", "expanded", "on"}:
+    if mode in {"full", "all", "expanded", "on"} or mode in ORDERED_FULL_MARKDOWN_MODES:
         return True
     value = os.environ.get(FULL_MARKDOWN_TEST_ENV, "")
     return str(value or "").strip().lower() in {"1", "true", "yes", "on", "full"}
+
+
+def ordered_full_markdown_mode():
+    """Return whether all owned source files must be sent in fixed order.
+
+    This is an explicit, reversible diagnostic switch. It bypasses compact
+    document selection and the question's timing gate for source inclusion,
+    but it does not bypass ownership, hash, size, JSON, or output validation.
+    """
+
+    mode = str(os.environ.get(FULL_MARKDOWN_MODE_ENV, "compact") or "compact").strip().lower()
+    return mode in ORDERED_FULL_MARKDOWN_MODES
 
 
 def _sha256(value):
@@ -289,6 +310,12 @@ def _model_request(candidate, evidence, conversation_context=None):
         + (
             "\n\nTAM KAYNAK BAĞLAMI ETKİN: Aşağıdaki tam Markdown dosyalarını ayrıntılı kaynak olarak kullan. "
             "İlgili teknik ayrıntıları özetine taşıyabilirsin; yalnız dosya ve kanıt paketinde bulunmayan bilgi ekleme."
+            + (
+                " Kaynak sırası sabittir: 1) bu metodoloji belgesi, 2) tam natal dosyası, "
+                "3) tam üç aylık transit dosyası. Sıralamayı ve kapsamı daraltma."
+                if ordered_full_markdown_mode()
+                else ""
+            )
             if full_markdown_content is not None
             else ""
         )
@@ -298,8 +325,14 @@ def _model_request(candidate, evidence, conversation_context=None):
         full_markdown_section = (
             "\n\nTAM MARKDOWN KAYNAKLARI (ETKİN BAĞLAM MODU):\n"
             "Aşağıdaki içerikler kaynak Markdown dosyalarının eksiksiz metnidir. "
-            "Soruyla ilgili ayrıntıları kullan; dosyalarda veya kanıt paketinde olmayan teknik veri üretme.\n\n"
-            f"{full_markdown_content}"
+            "Soruyla ilgili ayrıntıları kullan; dosyalarda veya kanıt paketinde olmayan teknik veri üretme.\n"
+            + (
+                "Bu testte tam kaynak sırası: 1/3 metodoloji (systemInstruction içinde), "
+                "2/3 natal, 3/3 üç aylık transit. Ara seçim/özetleme yapma.\n\n"
+                if ordered_full_markdown_mode()
+                else "\n"
+            )
+            + f"{full_markdown_content}"
         )
     user_text = (
         "Aşağıdaki kanıt paketini metodolojiye göre eksiksiz incele. JSON alanları tam olarak şunlar olsun: "
@@ -348,6 +381,15 @@ def _narrative_request(candidate, evidence, analysis, conversation_context=None)
     """Build the client-facing call from validated analysis and active sources."""
 
     full_markdown_content = evidence.get("_full_markdown_test_content")
+    narrative_full_context = full_markdown_content
+    if ordered_full_markdown_mode() and full_markdown_content is not None:
+        # The technical call receives methodology in systemInstruction. The
+        # client-facing call must also see all three verified source files.
+        narrative_full_context = (
+            "\n\n===== TAM DOSYA 1/3: SYSTEM_METHODOLOGY.txt =====\n\n"
+            f"{candidate['document']}"
+            f"{full_markdown_content}"
+        )
     narrative_input = {
         "conversation_context": conversation_context or [],
         "question": evidence.get("question"),
@@ -382,8 +424,12 @@ def _narrative_request(candidate, evidence, analysis, conversation_context=None)
         "opening_summary ve answer alanlarını içersin. opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
         f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
         + (
-            f"\n\nTAM MARKDOWN KAYNAKLARI:\n{full_markdown_content}"
-            if full_markdown_content is not None
+            "\n\nTAM KAYNAK SIRASI (3 DOSYANIN TAMAMI):\n"
+            "1/3 metodoloji, 2/3 tam natal, 3/3 tam üç aylık transit. Ara seçim yapma.\n"
+            f"{narrative_full_context}"
+            if narrative_full_context is not None and ordered_full_markdown_mode()
+            else f"\n\nTAM MARKDOWN KAYNAKLARI:\n{narrative_full_context}"
+            if narrative_full_context is not None
             else ""
         )
     )

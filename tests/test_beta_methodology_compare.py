@@ -129,6 +129,67 @@ def _route_payload(topic, time_scope, *, sensitivity="standard"):
 
 
 class BetaMethodologyCompareEndpointTest(unittest.TestCase):
+    @patch("app._pwa_full_markdown_documents")
+    def test_ordered_full_mode_loads_transit_for_non_timing_question(self, full_documents):
+        full_documents.return_value = {
+            "documents": [
+                {
+                    "filename": "natal-interpretation.md",
+                    "byte_size": 12,
+                    "sha256": "natal-sha",
+                    "content": "# Natal\n",
+                },
+                {
+                    "filename": "transit-three-month.md",
+                    "byte_size": 15,
+                    "sha256": "transit-sha",
+                    "content": "# Transit\n",
+                },
+            ],
+        }
+        chart = {
+            "birth": {"person": {"name": "Test"}},
+            "lagna": {"sign": "Aries"},
+            "dashas": {"vimshottari": {"current_active": {"path": ["Saturn"]}}},
+            "topic_packets": {
+                "career": {
+                    "confidence": "medium",
+                    "missing_factors": [],
+                    "required_but_missing": [],
+                    "evidence": {},
+                },
+            },
+            "data_quality": {"status": "complete"},
+        }
+        with patch.dict(os.environ, {"VEDIC_GEMINI_MARKDOWN_MODE": "ordered_full"}, clear=True):
+            draft = _beta_build_chat_draft(
+                "Kariyerimde güçlü yönlerim neler?",
+                chart,
+                routing={
+                    "selected": {
+                        "contract_version": "test-route-v1",
+                        "primary_topic": "career",
+                        "time_scope": "none",
+                        "timing_required": False,
+                        "required_evidence": ["natal_core"],
+                    },
+                },
+                owner_user_id="11111111-1111-4111-8111-111111111111",
+                profile_id=PROFILE_ID,
+                chart_id=CHART_ID,
+                include_full_markdown_test=True,
+            )
+
+        full_documents.assert_called_once_with(
+            "11111111-1111-4111-8111-111111111111",
+            CHART_ID,
+            include_transit=True,
+        )
+        self.assertEqual(
+            draft["context_trace"]["full_markdown_test"]["document_order"],
+            ["natal-interpretation.md", "transit-three-month.md"],
+        )
+
     @patch("app._pwa_full_markdown_test_document")
     def test_full_markdown_test_document_is_internal_to_compare_draft(self, full_document):
         full_document.return_value = {

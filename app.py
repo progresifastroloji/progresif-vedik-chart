@@ -23,6 +23,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 from methodology_orchestrator import (
     MethodologyOrchestrationError,
     full_markdown_test_mode,
+    ordered_full_markdown_mode,
     new_comparison_id,
     run_methodology_comparison,
 )
@@ -31135,7 +31136,10 @@ def _beta_build_chat_draft(
         _pwa_full_markdown_documents(
             owner_user_id,
             chart_id,
-            include_transit=topic == "transit",
+            # Ordered diagnostic mode deliberately bypasses the route-based
+            # transit gate so Gemini receives the complete natal + three-month
+            # source set for every question.
+            include_transit=(topic == "transit" or ordered_full_markdown_mode()),
         )
         if include_full_markdown_test
         else None
@@ -31179,6 +31183,11 @@ def _beta_build_chat_draft(
             "full_markdown_test": (
                 {
                     "enabled": True,
+                    "mode": "ordered_full" if ordered_full_markdown_mode() else "route_selected",
+                    "document_order": [
+                        item.get("filename")
+                        for item in full_markdown_test.get("documents", [])
+                    ],
                     "documents": [
                         {
                             "filename": item.get("filename"),
@@ -32156,7 +32165,10 @@ def api_v2_beta_chat_compare():
                 _pwa_full_markdown_documents(
                     owner_user_id,
                     chart_id,
-                    include_transit=bool(routing["selected"].get("timing_required")),
+                    include_transit=(
+                        bool(routing["selected"].get("timing_required"))
+                        or ordered_full_markdown_mode()
+                    ),
                 )
             except ValueError as exc:
                 raise MethodologyOrchestrationError(str(exc), 422) from exc
