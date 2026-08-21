@@ -32,13 +32,16 @@ Cikti: METODOLOJI_DIGEST.md'nin bekledigi alanlar. Alan yoksa sozluge
 hic konulmaz; "veri eksik" gibi bir deger asla yazilmaz.
 """
 
-from .keys import LAYER_DASHA_LEVEL
+from .keys import GENERATOR_VERSION, LAYER_DASHA_LEVEL, SNAPSHOT_HOUR
 from .rules import house_of
 from .writer import HOUSE_THEME
 from .situation import build_situation
 
 _STRONG_DIGNITY = ("uccha", "moolatrikona", "swakshetra")
 _WEAK_DIGNITY_ESSENTIAL = ("enemy",)
+
+HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v1"
+HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v2"
 
 
 def _find_planet(chart, planet_name):
@@ -173,3 +176,41 @@ def build_paid_situation(chart, katman, snaps):
             paket["guc"] = _guc(lord_planet)
 
     return paket
+
+
+def build_homepage_context(chart, d, paketler):
+    """Model icin gonderilecek kimliksiz ve surumlu durum paketi.
+
+    Tam chart, dogum bilgisi, koordinat, hesap sahibi veya provider cevabi
+    bu sozlugun icine girmez. ``paketler`` yalniz build_paid_situation()
+    ciktisidir; chart hash'i ve sahiplik bilgisi route/store katmaninda
+    tutulur.
+    """
+    meta = chart.get("meta", {}) or {}
+    missing = []
+    if _natal_moon_sign_index(chart) is None:
+        missing.append("natal_moon")
+    if not (chart.get("dashas") or {}).get("vimshottari", {}).get("current_active"):
+        missing.append("current_period")
+    for layer in ("daily", "weekly", "monthly"):
+        if not paketler.get(layer):
+            missing.append(layer)
+
+    return {
+        "schema_version": HOMEPAGE_CONTEXT_VERSION,
+        "methodology_version": HOMEPAGE_METHODOLOGY_VERSION,
+        "local_date": d.isoformat(),
+        "calculation": {
+            "generator_version": meta.get("engine_version") or GENERATOR_VERSION,
+            "snapshot_hour_istanbul": SNAPSHOT_HOUR,
+            "source": "verified_chart_and_cached_transit_snapshots",
+        },
+        "data_quality": {
+            "missing": missing,
+            "current_period_context_available": "current_period" not in missing,
+        },
+        "layers": {
+            layer: paketler.get(layer) or {}
+            for layer in ("daily", "weekly", "monthly")
+        },
+    }

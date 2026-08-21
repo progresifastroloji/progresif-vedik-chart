@@ -15,15 +15,23 @@ Basarisizlikta ok:false + neden doner; 500 degil — caller (Next.js) bunu
 "mevcut statik digest'i goster" sinyali olarak okur.
 """
 
+import hashlib
+import json
 import re
+import time
 from contextlib import closing
-from datetime import date
 
 from flask import Blueprint, jsonify, request
 
-from . import paid_store, paid_writer
-from .situation import planet_signs, required_days
-from .paid_situation import build_paid_situation
+from . import batch, paid_store, paid_writer, store
+from .keys import today_ist
+from .situation import required_days
+from .paid_situation import (
+    HOMEPAGE_CONTEXT_VERSION,
+    HOMEPAGE_METHODOLOGY_VERSION,
+    build_homepage_context,
+    build_paid_situation,
+)
 
 paid_digest_bp = Blueprint("paid_digest", __name__)
 
@@ -58,12 +66,49 @@ def _load_owned_chart(data):
     if row["owner_user_id"] != owner_user_id or row["profile_owner_user_id"] != owner_user_id:
         return None, ("ownership_mismatch", 403)
 
-    return (_beta_load_json(row["chart_json"]), chart_id, profile_id), None
+    return (_beta_load_json(row["chart_json"]), chart_id, profile_id,
+            owner_user_id), None
 
 
-def _snaps_for(katman, d):
-    gunler = required_days(katman, d)
-    return [planet_signs(g) for g in gunler]
+def _required_snapshot_days(d):
+    gunler = []
+    for katman in ("daily", "weekly", "monthly"):
+        for gun in required_days(katman, d):
+            if gun not in gunler:
+                gunler.append(gun)
+    return sorted(gunler)
+
+
+def _load_homepage_snapshots(d):
+    """Ortak snapshot onbelleğini kullan; ayni gun icin tek hesap yap."""
+    store.init()
+    gunler = _required_snapshot_days(d)
+    snaps = store.get_snapshots(gunler)
+    if snaps is not None:
+        return snaps, 0
+
+    lock_key = "homepage:snapshots:%s" % d.isoformat()
+    sahibi = store.acquire_lock(lock_key)
+    if sahibi is None:
+        return None, 0
+    t0 = time.time()
+    try:
+        # Baska istek kilidi beklerken tamamlamis olabilir; tekrar oku.
+        snaps = store.get_snapshots(gunler)
+        if snaps is None:
+            batch.ensure_snapshots(gunler)
+            snaps = store.get_snapshots(gunler)
+        if snaps is None:
+            return None, int((time.time() - t0) * 1000)
+        return snaps, int((time.time() - t0) * 1000)
+    finally:
+        store.release_lock(lock_key, sahibi)
+
+
+def _sha256(value):
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                     separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 @paid_digest_bp.route("/api/v2/pwa/digest/personal", methods=["POST"])
@@ -77,11 +122,38 @@ def api_v2_pwa_digest_personal():
         if hata:
             kod, http_status = hata
             return jsonify({"ok": False, "status": kod, "error_code": "beta_chart_%s" % kod}), http_status
-        chart, chart_id, profile_id = sonuc
+        chart, chart_id, profile_id, owner_user_id = sonuc
 
-        d = date.today()
+        d = today_ist()
+        snapshots, snapshot_ms = _load_homepage_snapshots(d)
+        if snapshots is None:
+            return jsonify({
+                "ok": False,
+                "status": "generation_pending",
+                "fallback_nedeni": "durum_paketi_hazir_degil",
+                "chart_id": chart_id,
+                "profile_id": profile_id,
+            }), 200
 
-        onbellek = paid_store.get(chart_id, d)
+        required = _required_snapshot_days(d)
+        snap_by_day = {g.isoformat(): snap for g, snap in zip(required, snapshots)}
+        paketler = {}
+        for katman in ("daily", "weekly", "monthly"):
+            snaps = [snap_by_day[g.isoformat()] for g in required_days(katman, d)]
+            paketler[katman] = build_paid_situation(chart, katman, snaps)
+
+        context = build_homepage_context(chart, d, paketler)
+        chart_hash = _sha256(chart)
+        context_hash = _sha256({
+            "chart_hash": chart_hash,
+            "context": context,
+            "snapshot_hash": _sha256(snapshots),
+        })
+        onbellek = paid_store.get_homepage(
+            owner_user_id, chart_id, d, context_hash,
+            generator_version=paid_store.GENERATOR_VERSION,
+            methodology_version=HOMEPAGE_METHODOLOGY_VERSION,
+        )
         if onbellek:
             return jsonify({
                 "ok": True,
@@ -90,27 +162,59 @@ def api_v2_pwa_digest_personal():
                 "chart_id": chart_id,
                 "profile_id": profile_id,
                 "digest": onbellek,
+                "context_version": HOMEPAGE_CONTEXT_VERSION,
             })
 
-        paketler = {}
-        for katman in ("daily", "weekly", "monthly"):
-            snaps = _snaps_for(katman, d)
-            paketler[katman] = build_paid_situation(chart, katman, snaps)
-
-        sonuc_llm, hata_llm = paid_writer.generate(
-            paketler["daily"], paketler["weekly"], paketler["monthly"]
-        )
-
-        if sonuc_llm is None:
+        lock_key = "homepage:gemini:%s:%s:%s" % (owner_user_id, chart_id, d.isoformat())
+        sahibi = paid_store.acquire_lock(lock_key)
+        if sahibi is None:
             return jsonify({
                 "ok": False,
-                "status": "generation_unavailable",
-                "fallback_nedeni": (hata_llm or {}).get("fallback_nedeni"),
+                "status": "generation_pending",
+                "fallback_nedeni": "ayni_istek_uretiliyor",
                 "chart_id": chart_id,
                 "profile_id": profile_id,
             }), 200
 
-        paid_store.set(chart_id, sonuc_llm, d)
+        try:
+            # Kilit sonrasi ikinci okuma, paralel istegin bitmis olmasi durumunu kapatir.
+            onbellek = paid_store.get_homepage(
+                owner_user_id, chart_id, d, context_hash,
+                generator_version=paid_store.GENERATOR_VERSION,
+                methodology_version=HOMEPAGE_METHODOLOGY_VERSION,
+            )
+            if onbellek:
+                return jsonify({
+                    "ok": True,
+                    "status": "ready",
+                    "kaynak": "onbellek",
+                    "chart_id": chart_id,
+                    "profile_id": profile_id,
+                    "digest": onbellek,
+                    "context_version": HOMEPAGE_CONTEXT_VERSION,
+                })
+
+            sonuc_llm, hata_llm = paid_writer.generate(
+                paketler["daily"], paketler["weekly"], paketler["monthly"],
+                context=context,
+            )
+
+            if sonuc_llm is None:
+                return jsonify({
+                    "ok": False,
+                    "status": "generation_unavailable",
+                    "fallback_nedeni": (hata_llm or {}).get("fallback_nedeni"),
+                    "chart_id": chart_id,
+                    "profile_id": profile_id,
+                }), 200
+
+            paid_store.set_homepage(
+                owner_user_id, chart_id, sonuc_llm, d, context_hash,
+                generator_version=paid_store.GENERATOR_VERSION,
+                methodology_version=HOMEPAGE_METHODOLOGY_VERSION,
+            )
+        finally:
+            paid_store.release_lock(lock_key, sahibi)
 
         return jsonify({
             "ok": True,
@@ -119,9 +223,15 @@ def api_v2_pwa_digest_personal():
             "chart_id": chart_id,
             "profile_id": profile_id,
             "digest": sonuc_llm,
+            "context_version": HOMEPAGE_CONTEXT_VERSION,
+            "snapshot_ms": snapshot_ms,
         })
 
     except (TypeError, ValueError) as e:
         return jsonify({"ok": False, "error": "Geçersiz kişisel digest isteği: %s" % e}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "error": "Kişisel digest hatası: %s" % e}), 500
+    except Exception:
+        return jsonify({
+            "ok": False,
+            "status": "generation_unavailable",
+            "fallback_nedeni": "beklenmeyen_sunucu_hatasi",
+        }), 200

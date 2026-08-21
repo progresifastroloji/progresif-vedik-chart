@@ -28,6 +28,10 @@ import time
 import uuid
 
 MAX_WORDS = {"motto": 20, "gunluk": 50, "haftalik": 50, "aylik": 50}
+ALLOWED_FOCUS = {
+    "kendin", "kaynak", "girişim", "huzur", "yaratıcılık", "düzen",
+    "ilişki", "derinlik", "anlam", "iş", "çevre", "dinlenme",
+}
 _ID_SAFE = re.compile(r"[^0-9a-zA-Z._:-]")
 
 _METODOLOJI_PATH = os.path.join(os.path.dirname(__file__), "METODOLOJI_DIGEST.md")
@@ -53,7 +57,7 @@ _BANNED_WORDS = [
 # Teknik terim sizintisi taramasi. Gezegen/burc adlari hem Turkce hem
 # Ingilizce olarak, "N. ev" / "N ev" kalibi, ve genel Vedik terimler.
 _PLANETS = [
-    "güneş", "gunes", "ay ", "mars", "merkür", "merkur", "jüpiter",
+    "güneş", "gunes", "ay burcu", "mars", "merkür", "merkur", "jüpiter",
     "jupiter", "venüs", "venus", "satürn", "saturn", "rahu", "ketu",
     "sun", "moon", "mercury", "mars ",
 ]
@@ -74,6 +78,10 @@ _HOUSE_PATTERN = re.compile(
     r"dördüncü ev|dorduncu ev|beşinci ev|besinci ev|altıncı ev|altinci ev|"
     r"yedinci ev|sekizinci ev|dokuzuncu ev|onuncu ev|on birinci ev|"
     r"on ikinci ev)\b",
+    re.IGNORECASE,
+)
+_IMPERATIVE_RE = re.compile(
+    r"\b(?:yap|başla|basla|unutma|bekle|kaçın|kacin|koru|seç|sec|sürdür|surdur|bırak|birak|odaklan|açıl|acil)\b",
     re.IGNORECASE,
 )
 
@@ -97,6 +105,10 @@ def _has_banned(text):
     )
 
 
+def _has_imperative(text):
+    return bool(_IMPERATIVE_RE.search(text or ""))
+
+
 def llm_enabled():
     return os.getenv("DIGEST_LLM_ENABLED", "0") == "1"
 
@@ -106,14 +118,17 @@ def _safe_request_id():
     return _ID_SAFE.sub("-", raw)[:200]
 
 
-def _user_text(daily_paket, weekly_paket, monthly_paket):
+def _user_text(daily_paket, weekly_paket, monthly_paket, context=None):
     """Uc katmani model icin okunur JSON'a cevirir. Alan yoksa hic
     yazilmaz (paketlerde zaten yok)."""
     gövde = {
+        "context_schema": "homepage_digest_context_v1",
         "gunluk": daily_paket or {},
         "haftalik": weekly_paket or {},
         "aylik": monthly_paket or {},
     }
+    if context:
+        gövde["context"] = context
     return json.dumps(gövde, ensure_ascii=False, indent=2)
 
 
@@ -180,6 +195,8 @@ def validate(payload):
             return None, "%s_kelime_siniri_asildi" % katman
         if len(odak.split()) > 1:
             return None, "%s_odak_tek_kelime_degil" % katman
+        if odak.casefold() not in {v.casefold() for v in ALLOWED_FOCUS}:
+            return None, "%s_odak_allowlist_disi" % katman
         temiz[katman] = {"metin": metin, "odak": odak}
 
     tum_metin = " ".join([temiz["motto"]] + [temiz[k]["metin"] for k in ("gunluk", "haftalik", "aylik")])
@@ -187,11 +204,16 @@ def validate(payload):
         return None, "yasakli_ifade"
     if _leaks_technical_terms(tum_metin):
         return None, "teknik_terim_sizintisi"
+    if _has_imperative(tum_metin):
+        return None, "emir_kipi"
+    metinler = [temiz[k]["metin"].casefold() for k in ("gunluk", "haftalik", "aylik")]
+    if len(set(metinler)) != len(metinler):
+        return None, "tekrarli_katman_metni"
 
     return temiz, None
 
 
-def generate(daily_paket, weekly_paket, monthly_paket):
+def generate(daily_paket, weekly_paket, monthly_paket, context=None):
     """Doner: (sonuc, hata_bilgisi). sonuc None ise caller mevcut
     statik digest'i gostermeye devam etmeli — kural motoruna otomatik
     dusme burada YOK, cunku ucretli akis ayri bir bileşen."""
@@ -200,7 +222,7 @@ def generate(daily_paket, weekly_paket, monthly_paket):
                       "fallback_nedeni": "DIGEST_LLM_ENABLED=0", "sure_ms": 0}
 
     t0 = time.time()
-    user_text = _user_text(daily_paket, weekly_paket, monthly_paket)
+    user_text = _user_text(daily_paket, weekly_paket, monthly_paket, context)
 
     try:
         payload = _call_bridge(user_text)

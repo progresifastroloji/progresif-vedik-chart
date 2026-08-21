@@ -32520,8 +32520,9 @@ def api_v2_beta_usage():
 
 # --- daily_digest modulu (DIGEST_ENABLED=0 ise hic yuklenmez) ---
 if os.getenv("DIGEST_ENABLED") == "1":
-    from digest import digest_bp
+    from digest import digest_bp, paid_digest_bp
     app.register_blueprint(digest_bp)
+    app.register_blueprint(paid_digest_bp)
 
 
 if __name__ == "__main__":
