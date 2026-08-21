@@ -63,7 +63,7 @@ ECLIPSE_PHRASES = (
 )
 NODE_EVENT_MARKERS = (
     "transit", "kavuşum", "kavusum", "temas", "geçiş", "gecis",
-    "retro", "gökyüzü", "gokyuzu", "etkile", "yaklaş", "yaklas",
+    "retro", "gökyüzü", "gokyuzu", "yaklaş", "yaklas",
 )
 
 

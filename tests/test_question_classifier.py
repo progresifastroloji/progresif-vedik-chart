@@ -85,6 +85,7 @@ class QuestionClassifierTest(unittest.TestCase):
 
     def test_natal_rahu_question_is_not_misclassified_as_sky_event(self):
         self.assertFalse(event_evidence_for_question("Rahu doğum haritamda ne anlatır?"))
+        self.assertFalse(event_evidence_for_question("Rahu beni nasıl etkiliyor?"))
 
     def test_instant_wellbeing_contract_is_accepted(self):
         result = validate_classification(_classification())
