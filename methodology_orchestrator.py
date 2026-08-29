@@ -735,6 +735,44 @@ def _fallback_narrative_response(evidence):
     }
 
 
+def _fallback_methodology_analysis(evidence, error_code):
+    """Create an explicitly incomplete technical shell without new claims."""
+
+    expected_steps = REQUIRED_METHODOLOGY_STEPS
+    missing_spine = not evidence.get("vedic_spine")
+    if missing_spine:
+        expected_steps = tuple(step for step in expected_steps if step != "vedic_spine")
+    coverage = [
+        {
+            "step": step,
+            "status": "missing" if step == "thematic_synthesis" else "applied",
+            "note": "Model doğrulaması tamamlanamadı; bu adım kullanıcı metninde kullanılmadı."
+            if step == "thematic_synthesis"
+            else "Sunucu kanıt paketi mevcut; teknik hüküm üretimi atlandı.",
+        }
+        for step in expected_steps
+    ]
+    return {
+        "question_intent": {
+            "interpreted_question": str(evidence.get("question") or "").strip(),
+            "primary_topic": str(evidence.get("subject_topic") or evidence.get("topic") or "unknown").strip(),
+            "timing_required": evidence.get("topic") == "transit",
+        },
+        "analysis_status": "INCOMPLETE",
+        "methodology_coverage": coverage,
+        "summary": "Teknik model doğrulaması tamamlanamadı; doğrulanmamış bir astrolojik hüküm kullanıcı metnine taşınmadı.",
+        "supporting_evidence": [],
+        "challenging_evidence": [],
+        "missing_layers": [str(error_code)],
+        "confidence": "low",
+        "limitations": [
+            "Teknik model yanıtı iki denemede doğrulanamadı.",
+            "Ana metin yalnızca genel ve geri alınabilir karar desteği sunar.",
+        ],
+        "validation_fallback": True,
+    }
+
+
 def _evidence_path_exists(evidence, evidence_path):
     current = evidence
     for key in evidence_path.split(".")[1:]:
@@ -1305,6 +1343,7 @@ def _run_candidate(
             if attempt_index == 0
             else f"{base_request_id}-analysis-retry-{attempt_index}"
         )
+        payload = None
         try:
             returned_request_id, payload = model_call(request_id, request)
             if returned_request_id != request_id or not isinstance(payload, dict):
@@ -1329,6 +1368,12 @@ def _run_candidate(
             )
             if attempt_index == 0 and code in RETRYABLE_RESPONSE_ERRORS:
                 continue
+            if validation_mode == "strict" and code in RETRYABLE_RESPONSE_ERRORS:
+                technical_analysis = _fallback_methodology_analysis(evidence, code)
+                technical_payload = payload if isinstance(payload, dict) else {}
+                technical_request_id = request_id
+                technical_attempt_count = attempt_index + 1
+                break
             return {
                 "status": "failed",
                 "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
