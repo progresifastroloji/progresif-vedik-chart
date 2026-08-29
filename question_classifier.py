@@ -207,7 +207,12 @@ def normalize_classification(value, question, now_iso):
         for token in tokens
     )
     emotional_context = any(
-        token.startswith(("hisset", "gergin", "mutsuz", "kayg", "endiş", "motivasyon"))
+        token.startswith((
+            "hisset", "gergin", "mutsuz", "kayg", "endiş", "motivasyon",
+            "sinir", "öfke", "ofke", "üzgün", "uzgun", "üzünt", "uzuntu",
+            "stres", "bunal", "huzursuz", "kızgın", "kizgin", "sıkınt",
+            "sikinti", "keyifsiz", "yorgun", "dalgın", "dalgin",
+        ))
         for token in tokens
     )
 
@@ -230,6 +235,7 @@ def normalize_classification(value, question, now_iso):
         r"\b(?:evlenebilir|gerçekleşir|gerceklesir|etkileyecek|etkiler|olacak\s+mı|olacak\s+mi|ne\s+zaman)\b",
         question_text,
     ))
+    primary_topic = str(normalized.get("primary_topic") or "").strip()
     if explicit_instant:
         normalized["time_scope"] = "instant"
     elif explicit_daily:
@@ -240,13 +246,16 @@ def normalize_classification(value, question, now_iso):
         # A named sky event is a timing request even without an exact date.
         # The stored transit horizon is used; absent event records fail closed.
         normalized["time_scope"] = "range"
-    elif emotional_context and normalized.get("time_scope") == "instant":
-        # A present-tense feeling is not automatically an hour-specific
-        # transit question. Instant mode requires an explicit "now" signal.
+    elif emotional_context and primary_topic == "wellbeing" and normalized.get("time_scope") == "none":
+        # A present-state wellbeing question such as "neden sinirliyim?"
+        # asks about the current sky even when the user does not type "şimdi".
+        normalized["time_scope"] = "instant"
+    elif emotional_context and primary_topic != "wellbeing" and normalized.get("time_scope") == "instant":
+        # Work/relationship context must not become an instant wellbeing
+        # route merely because it contains an emotional word.
         normalized["time_scope"] = "none"
 
     time_scope = str(normalized.get("time_scope") or "").strip()
-    primary_topic = str(normalized.get("primary_topic") or "").strip()
     normalized["timing_required"] = time_scope != "none"
     if time_scope == "none":
         normalized["target_start"] = None
@@ -447,7 +456,8 @@ def build_request(question, now_iso, conversation_context=None):
         "Kelime icindeki kisa harf eslesmelerine gore karar verme: 'hissetmiyorum' kariyer "
         "degildir. Ruh hali, duygu, gerginlik, motivasyon veya iyi hissetmeme sorularini "
         "wellbeing olarak siniflandir; career yalniz is, meslek veya kariyer baglami acikca "
-        "varsa secilir. 'Simdi/tam su anda' instant, 'bugun' daily, tarih veya donem isteyen "
+        "varsa secilir. 'Simdi/tam su anda' instant; present-state wellbeing questions such as "
+        "'neden sinirliyim?' also use instant; 'bugun' daily, tarih veya donem isteyen "
         "sorular range olur. 'Evlenebilir miyim?' gibi gelecekte bir sonucun olup olmayacağını "
         "soran kipler de range olur; tarih verilmemişse bugünden başlayan 92 günlük ufku seç. "
         "Zaman istemeyen yalnız natal kapasite soruları none olur. Tibbi tani istemeyen ruh hali "

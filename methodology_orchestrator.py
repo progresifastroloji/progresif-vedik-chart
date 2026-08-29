@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 
 
-CONTRACT_VERSION = "vedic-system-analysis-v4"
+CONTRACT_VERSION = "vedic-system-analysis-v5"
 MAX_METHODOLOGY_BYTES = 64 * 1024
 # Full Markdown mode intentionally has room for both owned source documents
 # plus the validated evidence package. The provider still receives one bounded
@@ -46,6 +46,7 @@ REQUIRED_METHODOLOGY_STEPS = (
     "question_and_scope",
     "topic_package",
     "data_gate",
+    "vedic_spine",
     "d1_natal_promise",
     "bhava_lord_karaka",
     "dispositor_and_nakshatra",
@@ -77,6 +78,7 @@ RETRYABLE_NARRATIVE_ERRORS = {
     "methodology_narrative_too_short",
     "methodology_narrative_timing_evidence_invalid",
     "methodology_narrative_technical_leak",
+    "methodology_narrative_evidence_density_invalid",
 }
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
@@ -87,9 +89,18 @@ CANDIDATE_MANIFEST = (
         "version": "1.5.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "192daafc4fd9de382814c56ed51c99ba5e242c1001e239b74a9d9306d29e5cad",
+        "sha256": "620cbfdea8921133847a654fdf935873a537d260e4d50b6729b3414609fbfd92",
     },
 )
+
+GUIDANCE_MANIFEST = {
+    "id": "vedic-guidance-skill-v1",
+    "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
+    "version": "1.2.0",
+    "status": "active",
+    "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
+    "sha256": "25e89a7c916f1a6e184b73c5c621b10ee272811a365091469f0ad57a35b7ed6f",
+}
 
 
 class MethodologyOrchestrationError(Exception):
@@ -218,6 +229,42 @@ def load_methodology_candidates(root=None):
     return candidates
 
 
+def load_guidance_methodology(root=None):
+    """Load the narrative-only guidance skill with an exact integrity check."""
+
+    root_path = Path(root or Path(__file__).resolve().parent / "methodologies")
+    expected = GUIDANCE_MANIFEST
+    path = root_path / expected["filename"]
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise MethodologyOrchestrationError("guidance_methodology_file_unavailable") from exc
+    if not raw or len(raw) > MAX_METHODOLOGY_BYTES:
+        raise MethodologyOrchestrationError("guidance_methodology_file_size_invalid")
+    digest = _sha256(raw)
+    if digest != expected["sha256"]:
+        raise MethodologyOrchestrationError("guidance_methodology_checksum_mismatch")
+    try:
+        document = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MethodologyOrchestrationError("guidance_methodology_encoding_invalid") from exc
+    metadata = _frontmatter(document)
+    if (
+        metadata.get("document") != "VEDIC_GUIDANCE_METHODOLOGY"
+        or metadata.get("version") != expected["version"]
+        or metadata.get("runtime_stage") != "narrative_only"
+    ):
+        raise MethodologyOrchestrationError("guidance_methodology_metadata_mismatch")
+    return {
+        "id": expected["id"],
+        "title": expected["title"],
+        "version": expected["version"],
+        "status": expected["status"],
+        "sha256": digest,
+        "document": document,
+    }
+
+
 def compact_evidence(draft):
     source = draft.get("evidence") or {}
     evidence = {
@@ -229,6 +276,7 @@ def compact_evidence(draft):
         "status": draft.get("status"),
         "confidence": draft.get("confidence"),
         "chart_summary": source.get("chart_summary"),
+        "vedic_spine": source.get("vedic_spine"),
         "active_dasha": source.get("active_dasha"),
         "strength_summary": source.get("strength_summary"),
         "topic_packet": source.get("topic_packet"),
@@ -419,8 +467,16 @@ def _model_request(candidate, evidence, conversation_context=None):
     return request, _sha256(raw)
 
 
-def _narrative_request(candidate, evidence, analysis, conversation_context=None):
+def _narrative_request(
+    candidate,
+    evidence,
+    analysis,
+    conversation_context=None,
+    guidance=None,
+):
     """Build the client-facing call from validated analysis and active sources."""
+
+    guidance = guidance or load_guidance_methodology()
 
     full_markdown_content = evidence.get("_full_markdown_source_content")
     if full_markdown_content is None:
@@ -444,29 +500,44 @@ def _narrative_request(candidate, evidence, analysis, conversation_context=None)
         "analysis": analysis,
     }
     system_text = (
-        "Sen Vedik AI'nin danışan anlatımı katmanısın. Astrolojik hesap veya yeni teknik analiz yapma. "
+        "Sen Vedik AI'nin danışan anlatımı ve rehberlik katmanısın. Astrolojik hesap veya yeni teknik analiz yapma. "
         "Sunucu tarafından doğrulanmış Aşama 1 JSON'unu ve etkin tam Markdown kaynaklarını doğal Türkiye Türkçesine çevir. "
-        "Tam Markdown kaynakları verilmişse, soruyla ilgili teknik ayrıntıları, bağlantıları ve karşılaştırmaları açıklayabilirsin. "
-        "Ancak kaynaklarda veya Aşama 1 kanıtında bulunmayan yeni teknik veri, olay, derece veya tarih üretme. "
+        "Tam Markdown kaynakları verilmişse onları Aşama 1 hükmünü doğru anlamlandırmak için kullan; ana yanıttaki "
+        "teknik görünürlüğü rehberlik metodolojisinin sınırında tut. Kaynaklarda veya Aşama 1 kanıtında bulunmayan "
+        "yeni teknik veri, olay, derece veya tarih üretme. "
         "conversation_context aynı açık sayfadaki önceki soru-cevaplarıdır; anlatımın devamlılığını "
         "korumak için kullan fakat oradan yeni astrolojik teknik iddia çıkarma. Yalnız güncel soruyu yanıtla. "
-        "opening_summary alanında cevabın ana sonucunu kısa ve anlaşılır biçimde özetle; teknik terim kullanman "
-        "gerekiyorsa kullan, fakat terimi danışanın anlayacağı cümleyle açıkla. answer alanında bu özeti aynen tekrarlamadan ayrıntılı "
-        "yoruma geç. İlk paragrafta kullanıcının asıl sorusuna doğrudan ve koşullu cevap ver. Ardından sonucu oluşturan "
-        "ana mekanizmaları, teknik bağlantıları, destekleyen ve zorlayan göstergeleri, güçlü tarafı, dikkat isteyen koşulu "
-        "ve uygulanabilir rehberliği açıkla. "
+        "opening_summary alanında cevabın ana sonucunu teknik kanıt listesine girmeden kısa ve anlaşılır biçimde özetle. "
+        "answer alanında bu özeti aynen tekrarlamadan ayrıntılı yoruma geç. İlk paragrafta kullanıcının asıl sorusuna "
+        "doğrudan ve koşullu cevap ver. Kanıtla başlama. Ana metinde astrolojik dayanak gerekiyorsa rehberlik "
+        "metodolojisinin izin verdiği en fazla tek kısa ve sade dayanak cümlesini sonuçtan sonra kullan; "
+        "astrolojik terim gerekmiyorsa hiç kullanma. Gezegenin ev numarası, burcu, nakshatrası/padası, dasha adı "
+        "veya transit mekanizmasını varsayılan ana yoruma taşıma. SAV/BAV, "
+        "Ashtakavarga, Shadbala, Graha Yuddha, gezegen savaşı, drishti, dispozitör, düşüş/yücelim ve benzeri "
+        "teknik mekanizma adlarını ana metinde kullanma. Diğer destekleyici ve karşıt "
+        "teknik kanıtları listeleme; uygulama bunları ayrı Kanıtlar bölümünde sunar. Karşıt bulguların etkisini sonucu "
+        "dengeleyen doğal koşullar olarak koru; güçlü tarafı, dikkat isteyen kullanımı ve uygun rehberliği açıkla. "
         "timing_required true ise doğrulanmış zaman bulgusunu ve önümüzdeki süreci ayrı bir paragrafta açıkla; "
         "Önemli gökyüzü olayı veya tutulma istenmişse yalnız doğrulanmış transit kayıtlarındaki tarih, saat, derece, nakshatra, pada ve natal temasları anlat; "
         "bunlardan herhangi biri kaynakta yoksa hesaplama yapma ve eksik olduğunu açıkça söyle. "
         "false ise tarih veya gelecek garantisi üretme. Teknik kayıt listesini, evidence_path değerlerini, "
         "kaynakta transit günleri veya Panchanga varsa sistemde haftalık/günlük verinin hiç bulunmadığını "
         "iddia etme; yalnız gerçek tarih kapsamını ve varsa kapsanmayan günleri belirt. "
-        "Wellbeing konulu daily veya instant yanıtta doğrulanmış transit Ay ve Panchanga bulgusunu doğal "
-        "anlatı içinde açıkça değerlendir. "
+        "Wellbeing konulu daily veya instant yanıtta doğrulanmış güncel Ay bağlamını ve günün gökyüzü ritmini "
+        "en fazla tek dayanak cümlesinde değerlendir; Panchanga bileşen adlarını kullanıcı özellikle sormadıkça yazma. "
         "Kanıt listesini veya evidence_path değerlerini ham biçimde dökme; karşıt bulguları sonucu dengeleyen koşullar "
-        "olarak doğal cümlelere yansıt. Gerektiğinde başlıklar ve madde işaretleri kullan; bilgi kaybına yol açacak sabit "
-        "paragraf, cümle veya karakter sınırı uygulama. "
+        "olarak doğal cümlelere yansıt. answer yalnız doğal paragraflardan oluşsun; başlık, alt başlık, numaralı liste "
+        "ve madde işareti kullanma. 'Uygulanabilir Rehberlik' diye bir bölüm açma; öneriyi ayrı etiket koymadan doğal "
+        "son paragrafta ver. Bilgi kaybına yol açacak sabit paragraf, cümle veya karakter sınırı uygulama. "
         "Psikolojik ya da tıbbi teşhis koyma. Yalnız geçerli JSON döndür."
+        "\n\nTEKNİK METODOLOJİ KİMLİĞİ: "
+        f"{candidate['id']}@{candidate['version']}\n"
+        f"TEKNİK METODOLOJİ SHA256: {candidate['sha256']}\n\n"
+        f"TEKNİK METODOLOJİ BELGESİ:\n{candidate['document']}"
+        "\n\nREHBERLİK METODOLOJİSİ KİMLİĞİ: "
+        f"{guidance['id']}@{guidance['version']}\n"
+        f"REHBERLİK METODOLOJİSİ SHA256: {guidance['sha256']}\n\n"
+        f"REHBERLİK METODOLOJİSİ BELGESİ:\n{guidance['document']}"
     )
     user_text = (
         "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON yalnız "
@@ -750,11 +821,12 @@ def _validate_wellbeing_language(summary, evidence_rows, evidence):
         return
 
     moon_pattern = re.compile(r"(?:\bay\b|\bay['’]|\bmoon\b)", re.IGNORECASE)
-    panchanga_pattern = re.compile(
+    visible_day_context_pattern = re.compile(
+        r"(?:günün|günlük)\s+(?:gökyüzü\s+)?(?:ritmi|tonu|bağlamı)|"
         r"\b(?:panchanga|tithi|vara|nakshatra|yoga|karana)\w*\b",
         re.IGNORECASE,
     )
-    if not moon_pattern.search(summary) or not panchanga_pattern.search(summary):
+    if not moon_pattern.search(summary) or not visible_day_context_pattern.search(summary):
         raise MethodologyOrchestrationError(
             "methodology_model_timing_evidence_invalid",
             502,
@@ -769,8 +841,12 @@ def _validate_wellbeing_language(summary, evidence_rows, evidence):
         ))
     ]
     has_moon_citation = any(moon_pattern.search(row["claim"]) for row in transit_rows)
+    evidence_panchanga_pattern = re.compile(
+        r"\b(?:panchanga|tithi|vara|nakshatra|yoga|karana)\w*\b",
+        re.IGNORECASE,
+    )
     has_panchanga_citation = any(
-        panchanga_pattern.search(row["claim"])
+        evidence_panchanga_pattern.search(row["claim"])
         for row in transit_rows
     )
     if not has_moon_citation or not has_panchanga_citation:
@@ -895,8 +971,14 @@ def validate_methodology_response(payload, evidence):
     timing_required = expected_timing
     if analysis_status not in {"COMPLETE", "INCOMPLETE"} or not isinstance(coverage, list):
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
+    # Legacy diagnostic fixtures may not contain the new spine projection. A
+    # production evidence package always carries ``vedic_spine`` and therefore
+    # uses the complete 13-step contract.
+    expected_steps = REQUIRED_METHODOLOGY_STEPS
+    if not evidence.get("vedic_spine"):
+        expected_steps = tuple(step for step in REQUIRED_METHODOLOGY_STEPS if step != "vedic_spine")
     normalized_coverage = []
-    for expected_step, row in zip(REQUIRED_METHODOLOGY_STEPS, coverage, strict=False):
+    for expected_step, row in zip(expected_steps, coverage, strict=False):
         if not isinstance(row, dict):
             raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
         step = str(row.get("step") or "").strip()
@@ -905,7 +987,7 @@ def validate_methodology_response(payload, evidence):
         if step != expected_step or status not in COVERAGE_STATUSES or not note:
             raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
         normalized_coverage.append({"step": step, "status": status, "note": note})
-    if len(coverage) != len(REQUIRED_METHODOLOGY_STEPS):
+    if len(coverage) != len(expected_steps):
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
     if any(row["status"] == "missing" for row in normalized_coverage) and analysis_status != "INCOMPLETE":
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
@@ -1014,10 +1096,60 @@ def validate_narrative_response(payload, analysis, evidence):
         "challenging_evidence",
         "rul-",
         "künye:",
+        "uygulanabilir rehberlik",
+        "\nuygulanabilir öneri:",
+        "\nrehberlik:",
+        "\nöneri:",
+        "\nana içgörü:",
+        "\nteknik kanıt",
+        "\ngüçlü ve zorlayıcı yönler",
     )
-    if any(marker in normalized_answer for marker in forbidden_markers):
+    forbidden_technical_pattern = re.compile(
+        r"(?:\bsav\b|\bbav\b|ashtakavarga|aṣṭakavarga|shadbala|ṣaḍbala|"
+        r"graha\s+yuddha|gezegen\s+savaşı|drishti|dṛṣṭi|dispozitör|"
+        r"debilitated|debilitasyon|düşüş\s+konumu|düşüşte|yücelim|exalted|"
+        r"\bkaraka\b|\bkāraka\b|\byoga\b|\bdosha\b|\bdoṣa\b|\bvarga\b|"
+        r"navamsha|navamşa|\bavastha\b|\bvakri\b|\bvakrī\b|retrograde|combust|yanıklık|"
+        r"mahadasha|mahādaśā|antardasha|antardaśā|pratyantardasha|pratyantardaśā|"
+        r"sookshma|sūkṣma|ev\s+yöneticisi|ev\s+lordu|"
+        r"(?:güneş|ay|mars|merkür|jüpiter|venüs|satürn|rahu|ketu)[^\.\n]{0,30}\baçısı)",
+        re.IGNORECASE,
+    )
+    forbidden_structure_pattern = re.compile(
+        r"(?m)^\s*(?:#{1,6}\s+|[-+*]\s+|\*\*[^*\n]{2,80}(?::\*\*|\*\*\s*$))"
+    )
+    if (
+        any(marker in normalized_answer for marker in forbidden_markers)
+        or forbidden_technical_pattern.search(combined_text)
+        or forbidden_structure_pattern.search(answer)
+    ):
         raise MethodologyOrchestrationError(
             "methodology_narrative_technical_leak",
+            502,
+        )
+
+    visible_astro_anchor_pattern = re.compile(
+        r"(?:\b(?:güneş|mars|merkür|jüpiter|venüs|satürn|rahu|ketu)\b|"
+        r"\bay(?:['’](?:ın|in)|\s+(?:yerleşimi|konumu|transiti))|"
+        r"\b\d{1,2}\.\s*ev\w*\b|"
+        r"\b(?:nakshatra|nakşatra|nakṣatra|pada|dasha|daşa|transit|panchanga|tithi|vara|karana)\w*\b|"
+        r"\b(?:koç|boğa|ikizler|yengeç|aslan|başak|terazi|akrep|yay|oğlak|kova|balık)\s+burc\w*\b)",
+        re.IGNORECASE,
+    )
+    opening_has_anchor = bool(visible_astro_anchor_pattern.search(opening_summary))
+    answer_sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", answer)
+        if sentence.strip()
+    ]
+    visible_anchor_sentences = [
+        sentence
+        for sentence in answer_sentences
+        if visible_astro_anchor_pattern.search(sentence)
+    ]
+    if opening_has_anchor or len(visible_anchor_sentences) > 1:
+        raise MethodologyOrchestrationError(
+            "methodology_narrative_evidence_density_invalid",
             502,
         )
 
@@ -1078,6 +1210,7 @@ def _run_candidate(
     model_call,
     clock,
     conversation_context=None,
+    guidance=None,
 ):
     base_request_id = f"{comparison_id}-{candidate['id']}"
     validation_mode = methodology_validation_mode()
@@ -1138,6 +1271,7 @@ def _run_candidate(
         evidence,
         technical_analysis,
         conversation_context,
+        guidance,
     )
     for attempt_index in range(2):
         narrative_request_id = (
@@ -1170,6 +1304,7 @@ def _run_candidate(
             return {
                 "status": "completed",
                 "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+                "guidance_methodology": {key: guidance[key] for key in ("id", "title", "version", "status", "sha256")},
                 "request_id": narrative_request_id,
                 "technical_request_id": technical_request_id,
                 "narrative_request_id": narrative_request_id,
@@ -1216,6 +1351,7 @@ def _run_candidate(
 
 def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_root=None, clock=None):
     candidates = load_methodology_candidates(candidates_root)
+    guidance = load_guidance_methodology(candidates_root)
     evidence = compact_evidence(draft)
     conversation_context = draft.get("conversation_context") or []
     evidence_json = _canonical_json(evidence)
@@ -1231,6 +1367,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
                 model_call,
                 monotonic,
                 conversation_context,
+                guidance,
             ),
             candidates,
         ))
@@ -1250,6 +1387,10 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "context_trace": draft.get("context_trace"),
         "evidence_sha256": evidence_sha256,
         "methodology_order": [item["id"] for item in CANDIDATE_MANIFEST],
+        "guidance_methodology": {
+            key: guidance[key]
+            for key in ("id", "title", "version", "status", "sha256")
+        },
         "methodology_results": results,
         "selection": CANDIDATE_MANIFEST[0]["id"],
         "selection_status": "system_methodology_active",

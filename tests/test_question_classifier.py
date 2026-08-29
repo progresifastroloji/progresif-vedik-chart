@@ -146,9 +146,42 @@ class QuestionClassifierTest(unittest.TestCase):
         )
 
         self.assertEqual(result["primary_topic"], "wellbeing")
-        self.assertEqual(result["time_scope"], "none")
+        self.assertEqual(result["time_scope"], "instant")
         self.assertEqual(result["sensitivity"], "mental_wellbeing")
         self.assertIn("natal_emotional_core", result["required_evidence"])
+        self.assertIn("current_transit_snapshot", result["required_evidence"])
+
+    def test_present_state_anger_uses_current_sky_without_explicit_now(self):
+        def model_call(request_id, _request):
+            incomplete = _classification(
+                primary_topic="general",
+                time_scope="none",
+                timing_required=False,
+                target_start=None,
+                target_end=None,
+                target_datetime=None,
+                required_evidence=["natal_core", "active_dasha"],
+                sensitivity="standard",
+            )
+            return request_id, _model_payload(incomplete)
+
+        result = classify_question(
+            "Neden sinirliyim?",
+            "route-test-present-anger",
+            model_call,
+            "2026-08-27T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["primary_topic"], "wellbeing")
+        self.assertEqual(result["time_scope"], "instant")
+        self.assertEqual(result["target_datetime"], "2026-08-27T12:00:00+03:00")
+        self.assertTrue({
+            "moon_and_panchanga",
+            "current_transit_snapshot",
+            "stored_transit_days",
+            "transit_natal_contacts",
+            "ashtakavarga",
+        }.issubset(set(result["required_evidence"])))
 
     def test_classifier_can_bypass_server_topic_and_time_overrides(self):
         def model_call(request_id, _request):

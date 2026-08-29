@@ -104,7 +104,7 @@ app.config["USER_DATA_ROOT"] = os.environ.get(
 )
 PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v3"
 PWA_ARTIFACT_MANIFEST_VERSION = "vedic-pwa-artifact-manifest-v2"
-PWA_ARTIFACT_GENERATOR_REVISION = "compact-natal-20260815-2"
+PWA_ARTIFACT_GENERATOR_REVISION = "compact-natal-20260826-3"
 PWA_ARTIFACT_PROFILE_COMPACT = "compact_natal_v1"
 PWA_ARTIFACT_PROFILE_LEGACY = "legacy_full_v2"
 PWA_ARTIFACT_LEGACY_SCHEMA_VERSIONS = (
@@ -1694,6 +1694,7 @@ def _default_war_for_planet(planet):
     if _planet_name_en(planet) not in TARA_GRAHAS:
         return {
             "in_graha_yuddha": False,
+            "proximity_detected": False,
             "opponent": None,
             "status": "not_applicable",
             "orb": None,
@@ -2259,6 +2260,136 @@ def _build_rashi_drishti(chart):
     return aspects
 
 
+def _build_vedic_spine(chart, active_dasha=None):
+    """Build the deterministic Jyotisha backbone used by every interpretation.
+
+    This is a projection of already-calculated API values.  It deliberately
+    does not infer new astrological facts so the language model can consume a
+    stable Lagna--Moon--Sun--nakshatra chain without doing calculations.
+    """
+    planets = chart.get("planets") or []
+    by_name = {_planet_name_en(item): item for item in planets}
+    lagna = chart.get("lagna") or {}
+    aspects = chart.get("aspects") or {}
+    anchors = []
+
+    def point_record(label, point, point_name=None):
+        point = point or {}
+        sign_index = point.get("sign_index")
+        sign_lord = SIGN_LORDS.get(sign_index)
+        nak = point.get("nakshatra") or {}
+        nak_lord = nak.get("lord")
+        return {
+            "point": label,
+            "planet": point_name,
+            "sign": point.get("sign"),
+            "sign_index": sign_index,
+            "house": point.get("house"),
+            "degree": point.get("degree"),
+            "nakshatra": nak.get("name"),
+            "nakshatra_pada": nak.get("pada"),
+            "nakshatra_lord": nak_lord,
+            "sign_lord": sign_lord,
+        }
+
+    def chain_for(label, point, point_name=None):
+        first = point_record(label, point, point_name)
+        chain = [first]
+        seen = set()
+        cursor = first
+        while len(chain) < 24:
+            key = (cursor.get("point"), cursor.get("planet"), cursor.get("sign_lord"), cursor.get("nakshatra_lord"))
+            if key in seen:
+                break
+            seen.add(key)
+            next_name = cursor.get("nakshatra_lord") or cursor.get("sign_lord")
+            if not next_name or next_name not in by_name:
+                break
+            next_point = by_name[next_name]
+            next_label = f"{next_name} (nakshatra lord)" if cursor.get("nakshatra_lord") == next_name else f"{next_name} (sign lord)"
+            next_record = point_record(next_label, next_point, next_name)
+            chain.append(next_record)
+            cursor = next_record
+        return chain
+
+    for label, point, point_name in (
+        ("Lagna", lagna, None),
+        ("Moon", by_name.get("Moon"), "Moon"),
+        ("Sun", by_name.get("Sun"), "Sun"),
+    ):
+        anchors.append({
+            "anchor": label,
+            "position": point_record(label, point, point_name),
+            "lord_chain": chain_for(label, point, point_name),
+        })
+
+    anchor_names = {"Lagna", "Moon", "Sun"}
+    dasha = active_dasha or {}
+    for level in ("maha", "antara", "pratyantar", "sookshma", "prana"):
+        period = dasha.get(level) or {}
+        lord = period.get("lord") if isinstance(period, dict) else period
+        if lord and lord in by_name:
+            anchor_names.add(str(lord))
+            anchors.append({
+                "anchor": f"active_dasha_{level}",
+                "position": point_record(f"active_dasha_{level}", by_name[lord], lord),
+                "lord_chain": chain_for(f"active_dasha_{level}", by_name[lord], lord),
+            })
+
+    relationships = []
+    for aspect_type, rows in (("graha_drishti", aspects.get("graha_drishti") or []), ("rashi_drishti", aspects.get("rashi_drishti") or [])):
+        for row in rows:
+            if row.get("from") in anchor_names or any(item in anchor_names for item in row.get("to_planets") or []):
+                relationships.append({
+                    "type": aspect_type,
+                    "from": row.get("from"),
+                    "to_house": row.get("to_house"),
+                    "to_sign": row.get("to_sign"),
+                    "to_planets": row.get("to_planets") or [],
+                    "strength": row.get("strength"),
+                })
+
+    for left in ("Lagna", "Moon", "Sun"):
+        left_position = next((item["position"] for item in anchors if item["anchor"] == left), {})
+        left_lord = left_position.get("sign_lord")
+        left_nak_lord = left_position.get("nakshatra_lord")
+        for right in ("Moon", "Sun"):
+            if left == right:
+                continue
+            right_position = next((item["position"] for item in anchors if item["anchor"] == right), {})
+            right_planet = right_position.get("planet") or right
+            if left_lord == right_planet or left_nak_lord == right_planet:
+                relationships.append({
+                    "type": "lord_link",
+                    "from": left,
+                    "to": right_planet,
+                    "link": "sign_lord" if left_lord == right_planet else "nakshatra_lord",
+                })
+
+    return {
+        "status": "available",
+        "contract_version": "vedic-spine-v1",
+        "purpose": "Lagna, Lagna lord, Lagna nakshatra lord, Moon, Sun and active dasha/nakshatra chains",
+        "anchors": anchors,
+        "relationships": relationships,
+        "relationship_layers": [
+            "conjunction_from_same_sign",
+            "graha_drishti",
+            "rashi_drishti",
+            "sign_lord_and_dispositor_links",
+            "nakshatra_lord_links",
+            "natural_temporary_compound_friendship",
+        ],
+        "source_paths": [
+            "lagna",
+            "planets",
+            "aspects.graha_drishti",
+            "aspects.rashi_drishti",
+            "dashas.vimshottari.current_active",
+        ],
+    }
+
+
 def _build_houses(chart, graha_drishti=None, rashi_drishti=None):
     lagna_sign_index = chart["lagna"]["sign_index"]
     planets_by_house = {house: [] for house in range(1, 13)}
@@ -2524,7 +2655,10 @@ def _build_bhava_bala(houses, lordships, ashtakavarga, shadbala, bhava_chalit):
             },
             "lord_shadbala": {
                 "total_score": lord_shadbala.get("total_score"),
-                "grade": lord_shadbala.get("grade"),
+                "grade": (lord_shadbala.get("professional_total") or {}).get("grade"),
+                "ratio_grade": (lord_shadbala.get("professional_total") or {}).get("grade"),
+                "strength_ratio": (lord_shadbala.get("professional_total") or {}).get("strength_ratio"),
+                "legacy_raw_grade": lord_shadbala.get("grade"),
                 "confidence": lord_shadbala.get("confidence"),
             },
             "bhava_chalit": {
@@ -6105,6 +6239,7 @@ def _yuddha_bala_detail(planet):
             "score_adjustment": 0.0,
             "unit": "modifier_virupa",
             "in_graha_yuddha": False,
+            "proximity_detected": False,
             "opponent": None,
             "orb": None,
             "penalty": 0.0,
@@ -6129,44 +6264,31 @@ def _yuddha_bala_detail(planet):
             "severity": "none",
         }
 
-    orb = war.get("orb")
-    if orb is None:
-        penalty = 15.0
-        severity = "moderate"
-    elif orb <= 0.25:
-        penalty = 30.0
-        severity = "severe"
-    elif orb <= 0.5:
-        penalty = 20.0
-        severity = "moderate"
-    else:
-        penalty = 10.0
-        severity = "mild"
-
     return {
         **_shadbala_meta(
-            "graha_yuddha_orb_based_modifier",
-            "Yuddha Bala is exposed as a technical orb-based penalty modifier; classical victory/loss judgement is not asserted",
+            "graha_yuddha_proximity_only",
+            "A close planetary contact is recorded for review; classical Graha Yuddha victory/loss and Yuddha Bala are not calculated",
             assumptions=[
                 "tara_grahas_only",
-                "one_degree_orb_boundary",
-                "closer_orb_receives_larger_penalty_until_victory_loss_formula_is_validated",
+                "proximity_threshold_is_not_a_classical_yuddha_judgement",
             ],
             excluded_rules=[
+                "yuddha_bala_modifier",
                 "apparent_diameter_based_victory",
                 "northern_latitude_victory_variant",
                 "brightness_disk_size_variant",
                 "external_reference_weight_validation_pending",
             ],
         ),
-        "score": round(max(0.0, 60.0 - penalty), 2),
-        "score_adjustment": round(-penalty, 2),
+        "score": 60.0,
+        "score_adjustment": 0.0,
         "unit": "modifier_virupa",
-        "in_graha_yuddha": True,
+        "in_graha_yuddha": False,
+        "proximity_detected": True,
         "opponent": war.get("opponent"),
-        "orb": None if orb is None else round(orb, 6),
-        "penalty": penalty,
-        "severity": severity,
+        "orb": None if war.get("orb") is None else round(war.get("orb"), 6),
+        "penalty": 0.0,
+        "severity": "unvalidated_proximity",
     }
 
 
@@ -6455,7 +6577,7 @@ def _build_shadbala(
                 "visible_planets_only",
                 "one_rupa_equals_sixty_virupas",
                 "drik_bala_is_net_benefic_minus_malefic_virupa",
-                "yuddha_bala_is_applied_as_negative_adjustment_until_full_victory_loss_formula_is_validated",
+                "graha_yuddha_is_not_applied_until_classical_victory_loss_formula_is_validated",
             ],
         },
         "includes": [
@@ -6466,7 +6588,7 @@ def _build_shadbala(
             "ayana_bala_from_geocentric_declination",
             "drik_bala_from_exact_longitudinal_parashari_aspect_virupa",
             "naisargika_bala_natural_strength",
-            "yuddha_bala_technical_graha_yuddha_modifier",
+            "graha_yuddha_proximity_only_not_scored",
             "professional_total_virupa",
             "professional_total_rupa",
             "classical_minimum_required_rupa_check",
@@ -8271,6 +8393,35 @@ def _panchanga_reference_from_input(birth_input, tz_offset, timezone_id):
     }
 
 
+def _planetary_day_context_for_reference(birth_input, tz_offset, reference_jd):
+    """Resolve Vara from the sunrise-defined planetary day, not civil midnight."""
+    year, month, day, *_ = swe.revjul(reference_jd)
+    local_date = (datetime(year, month, day) + timedelta(hours=float(tz_offset))).date()
+    base = dict(birth_input)
+    base.update({"year": local_date.year, "month": local_date.month, "day": local_date.day})
+    sunrise = _solar_event_jd(base, tz_offset, swe.CALC_RISE, 0)
+    previous_sunrise = _solar_event_jd(base, tz_offset, swe.CALC_RISE, -1)
+    next_sunrise = _solar_event_jd(base, tz_offset, swe.CALC_RISE, 1)
+    if sunrise is None:
+        return {"status": "not_available", "boundary": "sunrise", "day_lord": None}
+    if reference_jd < sunrise and previous_sunrise is not None:
+        day_start = previous_sunrise
+        civil_date = local_date - timedelta(days=1)
+    else:
+        day_start = sunrise
+        civil_date = local_date
+    day_lord = _weekday_planet_for_jd(day_start)
+    return {
+        "status": "available",
+        "boundary": "sunrise",
+        "day_lord": day_lord,
+        "weekday_index": civil_date.weekday(),
+        "civil_date": civil_date.isoformat(),
+        "planetary_day_start_jd": round(day_start, 8),
+        "next_sunrise_jd": round(next_sunrise, 8) if next_sunrise is not None else None,
+    }
+
+
 def _panchanga_planetary_positions(chart):
     return [
         {
@@ -8400,8 +8551,16 @@ def _build_panchanga(chart, birth_input, tz_offset=None, timezone_id=None, input
         half_tithi_number = 60
 
     reference = _panchanga_reference_from_input(birth_input, tz_offset, timezone_id)
-    local_date = datetime.fromisoformat(reference["local_datetime"])
-    vara_name, vara_sanskrit = VARA_BY_WEEKDAY[local_date.weekday()]
+    vara_context = _planetary_day_context_for_reference(
+        birth_input,
+        tz_offset,
+        reference["julian_day"],
+    )
+    vara_planet = vara_context.get("day_lord")
+    vara_name, vara_sanskrit = VARA_BY_WEEKDAY.get(
+        vara_context.get("weekday_index"),
+        (vara_planet or "", ""),
+    )
 
     moon_nakshatra = moon["nakshatra"]
     method = (
@@ -8452,7 +8611,11 @@ def _build_panchanga(chart, birth_input, tz_offset=None, timezone_id=None, input
         "vara": {
             "name": vara_name,
             "sanskrit": vara_sanskrit,
-            "weekday_index": local_date.weekday(),
+            "weekday_index": vara_context.get("weekday_index"),
+            "boundary": vara_context.get("boundary", "sunrise"),
+            "planetary_day_start_jd": vara_context.get("planetary_day_start_jd"),
+            "civil_date": vara_context.get("civil_date"),
+            "status": vara_context.get("status"),
         },
         "yoga": {
             "number": yoga_number,
@@ -11165,6 +11328,10 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
     analysis_modules = _build_analysis_modules(vargas, analysis_layers)
     result["analysis_modules"] = analysis_modules
     result["decision_engine"] = _build_decision_engine(panchanga, dashas, analysis_modules)
+    result["vedic_spine"] = _build_vedic_spine(
+        result,
+        (dashas.get("vimshottari") or {}).get("current_active") or {},
+    )
     return result
 
 
@@ -15085,6 +15252,7 @@ def _expert_shadbala_rows(chart):
             professional_total.get("total_rupa"),
             professional_total.get("required_rupa"),
             professional_total.get("strength_ratio"),
+            professional_total.get("grade"),
             professional_total.get("professional_status"),
             component_summary.get("strongest_component"),
             component_summary.get("weakest_component"),
@@ -15291,6 +15459,60 @@ def _expert_join(items):
     return ", ".join(str(item) for item in items if item) if items else ""
 
 
+def _expert_vedic_spine_rows(chart):
+    spine = chart.get("vedic_spine") or {}
+    rows = []
+    for anchor in spine.get("anchors") or []:
+        position = anchor.get("position") or {}
+        chain = anchor.get("lord_chain") or []
+        chain_text = " → ".join(
+            str(item.get("planet") or item.get("nakshatra_lord") or item.get("sign_lord") or "")
+            for item in chain
+            if item
+        )
+        rows.append([
+            anchor.get("anchor", ""),
+            position.get("planet") or "Lagna",
+            position.get("sign", ""),
+            position.get("house", ""),
+            position.get("nakshatra", ""),
+            position.get("nakshatra_pada", ""),
+            position.get("nakshatra_lord", ""),
+            position.get("sign_lord", ""),
+            chain_text,
+        ])
+    return rows or [["status", "not_available", "", "", "", "", "", "", ""]]
+
+
+def _expert_vedic_spine_markdown(chart):
+    spine = chart.get("vedic_spine") or {}
+    relationships = spine.get("relationships") or []
+    relationship_rows = [
+        [
+            item.get("type", ""),
+            item.get("from", ""),
+            item.get("to") or item.get("to_sign") or "",
+            ", ".join(item.get("to_planets") or []),
+            item.get("link") or item.get("strength") or "",
+        ]
+        for item in relationships
+    ] or [["status", "not_available", "", "", ""]]
+    return "\n".join([
+        "## Vedik Omurga (Lagna–Ay–Güneş–Nakshatra)",
+        "",
+        f"- Durum: {spine.get('status', 'not_available')}",
+        f"- Sözleşme: {spine.get('contract_version', '')}",
+        "- Zincirler API tarafından hesaplanmış konum, burç yöneticisi ve nakshatra lordu verilerinden oluşturulur; model yeni hesap yapmaz.",
+        "",
+        _markdown_table(
+            ["Çapa", "Gezegen", "Burç", "Ev", "Nakshatra", "Pada", "Nakshatra Lordu", "Burç Lordu", "Lord Zinciri"],
+            _expert_vedic_spine_rows(chart),
+        ),
+        "",
+        _markdown_table(["İlişki Katmanı", "Kaynak", "Hedef", "Hedefteki Gezegenler", "Bağ/Güç"], relationship_rows),
+    ])
+
+
 def _expert_bhava_bala_rows(chart):
     bhava_bala = chart.get("bhava_bala") or {}
     rows = []
@@ -15315,14 +15537,16 @@ def _expert_bhava_bala_rows(chart):
             ashtakavarga.get("sav", ""),
             ashtakavarga.get("lord_bav", ""),
             lord_shadbala.get("total_score", ""),
-            lord_shadbala.get("grade", ""),
+            lord_shadbala.get("strength_ratio", ""),
+            lord_shadbala.get("ratio_grade") or lord_shadbala.get("grade", ""),
             condition.get("dignity", ""),
             "yes" if condition.get("combust") else "no",
             bhava_chalit.get("cusp_sign", ""),
             _expert_join(changed_planets),
+            house.get("score", ""),
             house.get("score_status", ""),
         ])
-    return rows or [["status", "not_available", "", "", "", "", "", "", "", "", "", "", "", "", ""]]
+    return rows or [["status", "not_available", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]]
 
 
 def _expert_bhava_bala_markdown(chart):
@@ -15358,11 +15582,13 @@ def _expert_bhava_bala_markdown(chart):
                 "SAV",
                 "Lord BAV",
                 "Lord Shadbala",
-                "Shadbala Seviye",
+                "Shadbala Oran",
+                "Shadbala Oran Seviyesi",
                 "Dignity",
                 "Combust",
                 "Bhava Cusp",
                 "Chalit Değişim",
+                "Skor",
                 "Skor Durumu",
             ],
             _expert_bhava_bala_rows(chart),
@@ -15449,12 +15675,16 @@ def _expert_vimshopaka_bala_rows(chart):
         rows.append([
             planet.get("planet"),
             planet.get("status"),
+            shadvarga.get("raw_score"),
+            shadvarga.get("normalized_score"),
             shadvarga.get("score_status"),
             len(shadvarga.get("rows") or []),
+            saptavarga.get("raw_score"),
+            saptavarga.get("normalized_score"),
             saptavarga.get("score_status"),
             len(saptavarga.get("rows") or []),
         ])
-    return rows or [["status", "not_available", "", "", "", ""]]
+    return rows or [["status", "not_available", "", "", "", "", "", "", ""]]
 
 
 def _expert_vimshopaka_bala_markdown(chart):
@@ -15480,7 +15710,7 @@ def _expert_vimshopaka_bala_markdown(chart):
         "- D27/D40/D45 gerektiren tam Shodashavarga bu sürümde kapsam dışıdır.",
         "",
         _markdown_table(
-            ["Gezegen", "Durum", "Shadvarga Skor", "Shadvarga Satır", "Saptavarga Skor", "Saptavarga Satır"],
+            ["Gezegen", "Durum", "Shadvarga Ham", "Shadvarga Normalize", "Shadvarga Durum", "Shadvarga Satır", "Saptavarga Ham", "Saptavarga Normalize", "Saptavarga Durum", "Saptavarga Satır"],
             _expert_vimshopaka_bala_rows(chart),
         ),
     ])
@@ -15641,8 +15871,8 @@ def _expert_graha_yuddha_rows(chart):
         war = planet.get("war", {})
         if war.get("status") == "not_applicable":
             result = "Graha Yuddha kapsam dışı"
-        elif war.get("in_graha_yuddha"):
-            result = "Graha Yuddha var; kazanan/kaybeden hesaplanmıyor"
+        elif war.get("proximity_detected") or war.get("in_graha_yuddha"):
+            result = "Yakın temas var; klasik Graha Yuddha/Yuddha Bala hesaplanmadı"
         else:
             result = "Graha Yuddha yok"
         rows.append([
@@ -15724,7 +15954,7 @@ def _expert_panchanga_core_rows(chart):
     return [
         ["Tithi", tithi.get("name", ""), tithi.get("number", ""), tithi.get("paksha_tithi", ""), tithi.get("elapsed_degrees", ""), tithi.get("remaining_degrees", "")],
         ["Paksha", paksha.get("name", ""), paksha.get("phase", ""), "", "", ""],
-        ["Vara", vara.get("name", ""), vara.get("sanskrit", ""), vara.get("weekday_index", ""), "", ""],
+        ["Vara", vara.get("name", ""), vara.get("sanskrit", ""), vara.get("weekday_index", ""), vara.get("boundary", ""), vara.get("planetary_day_start_jd", "")],
         ["Yoga", yoga.get("name", ""), yoga.get("number", ""), "", yoga.get("elapsed_degrees", ""), yoga.get("remaining_degrees", "")],
         ["Karana", karana.get("name", ""), karana.get("number", ""), "", karana.get("elapsed_degrees", ""), karana.get("remaining_degrees", "")],
         ["Ay Nakshatra", moon_nakshatra.get("name", ""), moon_nakshatra.get("number", ""), moon_nakshatra.get("pada", ""), moon_nakshatra.get("lord", ""), moon_nakshatra.get("degree_str", "")],
@@ -16695,6 +16925,13 @@ def _topic_shadbala(chart, planet_name):
     )
 
 
+def _topic_shadbala_ratio_grade(chart, planet_name):
+    row = _topic_shadbala(chart, planet_name)
+    professional = row.get("professional_total") or {}
+    ratio = professional.get("strength_ratio")
+    return _shadbala_professional_grade(float(ratio)) if isinstance(ratio, (int, float)) else "veri yok"
+
+
 def _topic_lordship(chart, house):
     return (chart.get("lordships") or {}).get(str(house)) or {}
 
@@ -16756,8 +16993,10 @@ def _topic_varga_debilitated(chart, division, planet_name):
 
 
 def _topic_append_flags(lines, flags):
-    for flag in flags:
-        lines.append(f"- ⚑ {flag}")
+    # Topic summaries are a neutral data projection.  Supporting/challenging
+    # interpretations belong to the structured evidence layer, not this
+    # Markdown source, so no ready/fatalistic flag is emitted here.
+    return lines
 
 
 CAREER_ANALYSIS_HOUSES = [10, 6, 2, 11, 1]
@@ -16866,7 +17105,7 @@ def _career_karaka_rows(chart):
             _career_nakshatra_text(planet),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _career_varga_position_text(chart, "D10", planet_name),
         ])
     return rows
@@ -17100,7 +17339,7 @@ def _expert_topic_finance_summary(chart):
     d11_lagna = _topic_varga_lagna(chart, "D11")
     d11_lord = SIGN_LORDS.get(d11_lagna.get("sign_index")) if d11_lagna else None
     flags = []
-    if jupiter_shadbala.get("grade") == "weak":
+    if (jupiter_shadbala.get("professional_total") or {}).get("grade") == "below_required":
         flags.append("Jupiter zayıf -> büyüme ve genişleme enerjisi kısıtlı")
     sav_11 = _topic_sav(chart, 11)
     if isinstance(sav_11, (int, float)) and sav_11 < 25:
@@ -18115,7 +18354,7 @@ def _health_planet_rows(chart):
             _career_nakshatra_text(planet),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D6", planet_name),
             _topic_planet_varga_text(chart, "D12", planet_name),
             _topic_planet_varga_text(chart, "D30", planet_name),
@@ -18536,7 +18775,7 @@ def _family_planet_rows(chart):
             _career_nakshatra_text(planet),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D7", planet_name),
             _topic_planet_varga_text(chart, "D12", planet_name),
         ])
@@ -18848,7 +19087,7 @@ def _education_planet_rows(chart):
             _career_nakshatra_text(planet),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D24", planet_name),
             _topic_planet_varga_text(chart, "D9", planet_name),
             _topic_planet_varga_text(chart, "D10", planet_name),
@@ -19262,7 +19501,7 @@ def _finance_planet_rows(chart):
             (planet or {}).get("degree_str", ""),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D2", name),
             _topic_planet_varga_text(chart, "D11", name),
             _topic_planet_varga_text(chart, "D10", name),
@@ -19452,7 +19691,7 @@ def _relationship_planet_rows(chart):
             _career_nakshatra_text(planet),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D9", planet_name),
         ])
     return rows
@@ -19749,7 +19988,7 @@ def _character_planet_rows(chart):
             _topic_value(((planet or {}).get("combustion") or {}).get("severity")),
             _career_motion_text(planet),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D9", planet_name),
         ])
     return rows
@@ -19966,7 +20205,7 @@ def _spiritual_planet_rows(chart):
             _career_nakshatra_text(planet),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D9", name),
             _topic_planet_varga_text(chart, "D20", name),
             _topic_planet_varga_text(chart, "D60", name),
@@ -20597,7 +20836,7 @@ def _legal_planet_rows(chart):
             _career_nakshatra_text(planet),
             _topic_value(((planet or {}).get("dignity") or {}).get("essential")),
             _topic_value(shadbala.get("total_score")),
-            _topic_value(shadbala.get("grade")),
+            _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D9", name),
             _topic_planet_varga_text(chart, "D10", name),
             _topic_planet_varga_text(chart, "D4", name),
@@ -21099,7 +21338,7 @@ def _planet_role_shadbala_display(chart, planet_name):
     return (
         f"{_topic_value(raw_total)} ham / "
         f"{float(ratio):.4f} oran / "
-        f"{_planet_role_shadbala_label(float(ratio))}"
+        f"{professional_total.get('grade') or _shadbala_professional_grade(float(ratio))}"
     )
 
 
@@ -24020,7 +24259,7 @@ def _transit_pack_panchanga_rows(day):
     return [
         ["Tithi", tithi.get("name", ""), tithi.get("number", ""), tithi.get("paksha_tithi", ""), paksha.get("name", ""), tithi.get("remaining_degrees", "")],
         ["Paksha", paksha.get("name", ""), paksha.get("phase", ""), "", "", ""],
-        ["Vara", vara.get("name", ""), vara.get("weekday_index", ""), "", vara.get("sanskrit", ""), ""],
+        ["Vara", vara.get("name", ""), vara.get("weekday_index", ""), vara.get("boundary", ""), vara.get("sanskrit", ""), vara.get("planetary_day_start_jd", "")],
         ["Yoga", yoga.get("name", ""), yoga.get("number", ""), "", "", yoga.get("remaining_degrees", "")],
         ["Karana", karana.get("name", ""), karana.get("number", ""), "", "", karana.get("remaining_degrees", "")],
         ["Ay Nakshatra", moon_nakshatra.get("name", ""), moon_nakshatra.get("number", ""), moon_nakshatra.get("pada", ""), moon_nakshatra.get("lord", ""), moon_nakshatra.get("degree_str", "")],
@@ -24127,6 +24366,52 @@ def _transit_pack_event_rows(events):
         "status", "Önemli gökyüzü olayı kaydı yok", "", "", "", "", "", "",
         "Kayıt yok", "Kayıt yok", "Hesaplanmadı",
     ]]
+
+
+def _strip_model_instructions(markdown):
+    """Keep data artifacts declarative; prompts and imperative reading rules stay in system skill."""
+    text = str(markdown or "")
+    text = re.sub(
+        r"\n## AstroGPT Kullanım Notu\n.*?(?=\n## Dönem Özeti\n)",
+        "\n## Veri Kapsamı\n\n- Bu dosya API tarafından üretilen doğrulanmış transit ve dasha kayıtlarını içerir.\n- Tarih, derece, nakshatra ve olay alanları yalnız kayıtta bulunduğu ölçüde mevcuttur.\n",
+        text,
+        flags=re.S,
+    )
+    text = re.sub(
+        r"\n## Transit Veri Paketi Kılavuzu\n.*?(?=\n## Günlük Özet Tablosu\n)",
+        "\n## Transit Veri Paketi Kapsamı\n\n- Günlük kayıtlar gerçek tarih aralığı ve örnekleme bilgisiyle birlikte tutulur.\n- Eksik katmanlar ilgili kayıtların durum alanlarında gösterilir.\n- Bu paket hazır bir en güçlü pencere sıralaması üretmez.\n",
+        text,
+        flags=re.S,
+    )
+    return text
+
+
+def _strip_natal_model_instructions(markdown):
+    text = str(markdown or "")
+    text = re.sub(
+        r"\n## (?:\d+\.\s*)?Gemini Okuma Protokolü\n.*?(?=\n## )",
+        "\n## Paket Kapsamı\n\n- API natal veri ve teknik kanıt katmanlarını içerir.\n",
+        text,
+        flags=re.S,
+    )
+    text = re.sub(
+        r"\n## (?:\d+\.\s*)?Kullanım Sınırı\n.*?(?=\n## )",
+        "\n## Veri Sınırları\n\n- Dosyada bulunmayan hesap veya olay bu kaynaktan çıkarılamaz.\n",
+        text,
+        flags=re.S,
+    )
+    return text
+
+
+def _strip_stale_natal_runtime_sections(markdown):
+    """Prevent persisted Markdown snapshots from overriding fresh dasha evidence."""
+    text = str(markdown or "")
+    return re.sub(
+        r"\n## Güncel Vimshottari Zinciri\n.*?(?=\n## )",
+        "\n## Güncel Vimshottari Zinciri\n\n- Güncel aktif dönem çalışma zamanı `evidence.active_dasha` alanında yenilenir; bu kaynak bölümü tarihsel/yardımcıdır.\n",
+        text,
+        flags=re.S,
+    )
 
 
 def _build_transit_pack_markdown(pack):
@@ -24302,7 +24587,7 @@ def _build_transit_pack_markdown(pack):
         "- Bu paket API hesap verisidir; nihai yorum katmanı ayrı üretilmelidir.",
         "",
     ])
-    return "\n".join(lines)
+    return _strip_model_instructions("\n".join(lines))
 
 
 def _build_transit_pack(data):
@@ -29407,7 +29692,19 @@ def _beta_json(value):
 
 
 def _beta_public_methodology_response(comparison):
-    """Keep the full audit record server-side and expose only concise UI evidence."""
+    """Keep raw evidence server-side and expose path-free claims to the UI drawer."""
+
+    def public_claims(rows):
+        claims = []
+        seen = set()
+        for item in rows or []:
+            if not isinstance(item, dict):
+                continue
+            claim = str(item.get("claim") or "").strip()
+            if claim and claim not in seen:
+                seen.add(claim)
+                claims.append(claim)
+        return claims
 
     public = json.loads(json.dumps(comparison))
     public.pop("validation_mode", None)
@@ -29418,12 +29715,9 @@ def _beta_public_methodology_response(comparison):
         if not isinstance(analysis, dict):
             continue
         supporting = analysis.pop("supporting_evidence", [])
-        analysis["display_evidence"] = [
-            str(item.get("claim") or "").strip()
-            for item in supporting[:3]
-            if isinstance(item, dict) and str(item.get("claim") or "").strip()
-        ]
-        analysis.pop("challenging_evidence", None)
+        challenging = analysis.pop("challenging_evidence", [])
+        analysis["display_evidence"] = public_claims(supporting)
+        analysis["display_counter_evidence"] = public_claims(challenging)
         analysis.pop("methodology_coverage", None)
         analysis.pop("technical_summary", None)
         analysis.pop("validation_bypassed", None)
@@ -29677,7 +29971,7 @@ def _pwa_natal_sections(chart, person_name, group_name, rectification_record=Non
         _markdown_table(["Özet", "Değer"], _expert_shadbala_summary_rows(chart)),
         "",
         _markdown_table(
-            ["Gezegen", "Ham Toplam", "Rupa", "Gerekli Rupa", "Oran", "Durum", "En Güçlü", "En Zayıf", "Yuddha Ayarı"],
+            ["Gezegen", "Ham Toplam", "Rupa", "Gerekli Rupa", "Oran", "Oran Seviyesi", "Durum", "En Güçlü", "En Zayıf", "Yuddha Ayarı"],
             _expert_shadbala_rows(chart),
         ),
         "",
@@ -29731,21 +30025,15 @@ def _pwa_natal_sections(chart, person_name, group_name, rectification_record=Non
     validation_registry = (meta.get("calculation_validation_registry") or _calculation_validation_registry())
 
     return [
-        _pwa_natal_section("gemini_reading_protocol", "Gemini Okuma Protokolü", "\n".join([
-            "1. Kullanıcı sorusunun niyetini ve zamanlama içerip içermediğini belirle.",
-            "2. Soruyla ilgili natal bölümleri seç; ilgisiz bölümleri cevapta yığma.",
-            "3. Teknik kanıtları destekleyen, zorlayan ve eksik katmanlar olarak birlikte değerlendir.",
-            "4. Bulguları birleştirerek soruya doğrudan, zengin ve doğal bir yanıt ver.",
-            "5. Dosyada olmayan hesabı veya olayı üretme; belirsizliği açıkça yaz.",
-            "6. Zamanlama sorusunda ayrıca üç aylık transit paketinin gerçek tarih aralığını doğrula.",
-            "7. Ana yanıtı danışmanlık dilinde ver; teknik dayanağı ayrı gösterilebilir katmanda tut.",
+        _pwa_natal_section("gemini_reading_protocol", "Paket Kapsamı", "\n".join([
+            "- Kaynak, API tarafından hesaplanan natal ve zaman katmanlarını içerir.",
+            "- Vedik omurga, teknik kanıtlar ve konu paketleri ayrı alanlarda tutulur.",
+            "- Teknik katman ile danışan anlatımı uygulamada ayrı gösterilir.",
         ]), ["all", "protocol"]),
-        _pwa_natal_section("usage_limits", "Kullanım Sınırı", "\n".join([
-            "- Bu paket doğrulanmış teknik veridir; model ek astrolojik hesap yapmaz.",
-            "- Kesin olay, kader hükmü, tıbbi veya psikolojik teşhis üretmez.",
-            "- Tek göstergeyle hüküm kurulmaz; ana ve karşı göstergeler birlikte okunur.",
-            "- Transit dosyasının kapsamadığı tarihler için transit kanıtı varmış gibi konuşulmaz.",
-            "- Eksik veya dış doğrulaması olmayan katmanlar açıkça belirtilir.",
+        _pwa_natal_section("usage_limits", "Veri Sınırları", "\n".join([
+            "- Dosyada bulunmayan hesap, olay veya tarih bu kaynaktan çıkarılamaz.",
+            "- Eksik ve dış doğrulaması bekleyen katmanlar kendi durum alanlarıyla işaretlenir.",
+            "- Kesin olay, kader, tıbbi veya psikolojik teşhis verisi içermez.",
         ]), ["all", "safety"]),
         _pwa_natal_section("identity_settings", "Kimlik ve Hesap Ayarları", identity, ["all", "identity"]),
         _pwa_natal_section("birth_time_confidence", "Doğum Bilgisi ve Saat Güveni", birth_details, ["all", "birth_time"]),
@@ -29760,6 +30048,7 @@ def _pwa_natal_sections(chart, person_name, group_name, rectification_record=Non
             _planet_rows(chart),
         ), ["all", "character", "relationship", "career", "finance", "health"]),
         _pwa_natal_section("main_indicators", "Ana Göstergeler", main_indicators, ["all", "character", "spiritual"]),
+        _pwa_natal_section("vedic_spine", "Vedik Omurga", _pwa_nested_markdown(_expert_vedic_spine_markdown(chart)), ["all", "character", "career", "relationship", "finance", "health", "spiritual", "timing"]),
         _pwa_natal_section("panchanga", "Panchanga Teknik Paketi", _pwa_nested_markdown(_expert_panchanga_markdown(chart)), ["all", "character", "timing"]),
         _pwa_natal_section("varga_tables", "Varga Tabloları (D2-D60)", _pwa_nested_markdown("\n".join(_expert_varga_full_markdown_sections(chart, varga_divisions))), ["all", "vargas", "career", "relationship", "finance", "health", "spiritual"]),
         _pwa_natal_section("varga_confidence", "Varga Güven Durumu", varga_status, ["all", "vargas", "birth_time"]),
@@ -29804,7 +30093,7 @@ def _build_natal_interpretation_package_markdown(
     transit_pack=None,
     rectification_record=None,
 ):
-    """Build the 32-section user artifact and its byte-addressable index."""
+    """Build the 33-section user artifact and its byte-addressable index."""
 
     title = f"{person_name}-Natal-Yorum-Paketi"
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -30421,9 +30710,12 @@ def _pwa_full_markdown_test_document(owner_user_id, chart_id):
         path, item, sha256 = _pwa_source_file(owner_user_id, chart_id, "natal_interpretation")
     except FileNotFoundError as exc:
         raise ValueError("full_markdown_source_artifact_not_found") from exc
-    content = path.read_text(encoding="utf-8")
+    content = _strip_stale_natal_runtime_sections(
+        _strip_natal_model_instructions(path.read_text(encoding="utf-8"))
+    )
     if not content:
         raise ValueError("full_markdown_source_artifact_empty")
+    sha256 = _pwa_artifact_sha256(content.encode("utf-8"))
     return {
         "filename": item.get("filename") or "natal-interpretation.md",
         "source_schema_version": item.get("source_schema_version"),
@@ -30446,9 +30738,10 @@ def _pwa_full_markdown_documents(owner_user_id, chart_id, *, include_transit=Fal
             path, item, sha256 = _pwa_source_file(owner_user_id, chart_id, "transit_three_month")
         except FileNotFoundError as exc:
             raise ValueError("full_markdown_source_transit_artifact_not_found") from exc
-        content = path.read_text(encoding="utf-8")
+        content = _strip_model_instructions(path.read_text(encoding="utf-8"))
         if not content:
             raise ValueError("full_markdown_source_transit_artifact_empty")
+        sha256 = _pwa_artifact_sha256(content.encode("utf-8"))
         documents.append({
             "filename": item.get("filename") or "transit-three-month.md",
             "source_schema_version": item.get("source_schema_version"),
@@ -30577,6 +30870,7 @@ def _beta_chart_summary(chart):
             })
     return {
         "schema_version": "vedic-pwa-chart-summary-v2",
+        "vedic_spine": chart.get("vedic_spine"),
         "display_name": ((birth.get("person") or {}).get("name")),
         "birth": {
             "date": birth.get("date"),
@@ -31106,7 +31400,43 @@ def _beta_active_dasha_evidence(chart):
         "pratyantar": active.get("pratyantar"),
         "sookshma": active.get("sookshma"),
         "prana": active.get("prana"),
+        "reference_utc": vimshottari.get("current_active_reference_utc"),
+        "calculated_for_jd": active.get("calculated_for_jd"),
+        "source": "runtime_refreshed_vimshottari",
     }
+
+
+def _beta_vedic_spine_evidence(chart):
+    spine = chart.get("vedic_spine") or {}
+    return spine if spine else {"status": "missing", "source_paths": ["vedic_spine"]}
+
+
+def _refresh_runtime_dasha(chart, reference_dt_utc):
+    """Refresh time-dependent dasha layers before every chat evidence build."""
+    birth = chart.get("birth") or {}
+    try:
+        birth_date = date.fromisoformat(str(birth.get("date")))
+        hour, minute = [int(part) for part in str(birth.get("time") or "00:00").split(":")[:2]]
+        tz_offset = float(birth.get("tz_offset") or 0.0)
+        birth_jd = date_to_jd(
+            birth_date.year,
+            birth_date.month,
+            birth_date.day,
+            hour,
+            minute,
+            tz_offset,
+            int(birth.get("second") or 0),
+        )
+    except (TypeError, ValueError, KeyError):
+        return chart
+    refreshed = _v2_dashas(chart, birth_jd, reference_dt_utc)
+    runtime_chart = json.loads(json.dumps(chart))
+    runtime_chart["dashas"] = refreshed
+    runtime_chart["vedic_spine"] = _build_vedic_spine(
+        runtime_chart,
+        (refreshed.get("vimshottari") or {}).get("current_active") or {},
+    )
+    return runtime_chart
 
 
 def _beta_safety_notes(topic, sensitivity=None):
@@ -31132,6 +31462,7 @@ PWA_NATAL_CORE_SECTION_IDS = {
     "lagna",
     "d1_planets",
     "main_indicators",
+    "vedic_spine",
     "varga_confidence",
     "vimshottari_current",
     "active_planets",
@@ -31140,35 +31471,42 @@ PWA_NATAL_CORE_SECTION_IDS = {
 
 PWA_NATAL_TOPIC_SECTION_IDS = {
     "wellbeing": {
+        "vedic_spine",
         "panchanga", "varga_tables", "shadbala", "bhava_bala",
         "ashtakavarga", "avasthas", "planet_quick_read",
         "house_drishti", "topic_summaries",
     },
     "character": {
+        "vedic_spine",
         "varga_tables", "shadbala", "vimshopaka_bala", "bhava_bala",
         "ashtakavarga", "avasthas", "jaimini", "yogas",
         "planet_quick_read", "house_drishti", "topic_summaries",
     },
     "career": {
+        "vedic_spine",
         "shadbala", "vimshopaka_bala", "bhava_bala", "ashtakavarga",
         "jaimini", "yogas", "planet_quick_read", "house_drishti",
         "career_packet", "topic_summaries",
     },
     "marriage": {
+        "vedic_spine",
         "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
         "jaimini", "yogas", "doshas", "planet_quick_read",
         "house_drishti", "planet_role_blocks", "topic_summaries",
     },
     "wealth": {
+        "vedic_spine",
         "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
         "yogas", "planet_quick_read", "house_drishti", "topic_summaries",
     },
     "health": {
+        "vedic_spine",
         "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
         "avasthas", "bhava_chalit", "yogas", "doshas",
         "planet_quick_read", "house_drishti",
     },
     "spiritual": {
+        "vedic_spine",
         "varga_tables", "shadbala", "jaimini", "yogas", "doshas",
         "planet_quick_read", "topic_summaries",
     },
@@ -31230,6 +31568,7 @@ def _beta_selected_natal_sections(
     if include_all:
         selected_ids.update({
             "panchanga", "varga_tables", "shadbala", "vimshopaka_bala",
+            "vedic_spine",
             "bhava_bala", "ashtakavarga", "avasthas", "bhava_chalit",
             "graha_yuddha", "kp", "jaimini", "yogas", "doshas",
             "planet_quick_read", "house_drishti", "planet_role_blocks", "chara_dasha",
@@ -31334,6 +31673,15 @@ def _beta_build_chat_draft(
     include_full_markdown_sources=False,
 ):
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
+    reference_dt_utc = datetime.now(timezone.utc)
+    if selected_route.get("time_scope") == "instant":
+        try:
+            _, _, routed_target = _beta_route_time_window(selected_route, chart)
+            if routed_target is not None:
+                reference_dt_utc = routed_target.astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            pass
+    chart = _refresh_runtime_dasha(chart, reference_dt_utc)
     subject_topic = selected_route["primary_topic"]
     topic = "transit" if selected_route["timing_required"] else subject_topic
     packets = chart.get("topic_packets") or {}
@@ -31400,6 +31748,7 @@ def _beta_build_chat_draft(
         }
     evidence = {
         "chart_summary": _beta_chart_summary(chart),
+        "vedic_spine": _beta_vedic_spine_evidence(chart),
         "active_dasha": _beta_active_dasha_evidence(chart),
         "strength_summary": _beta_shadbala_strength_summary(chart),
         "topic_packet": packet,
@@ -31429,6 +31778,13 @@ def _beta_build_chat_draft(
         else None
     )
     missing = _beta_missing_for_topic(chart, packet)
+    if not (chart.get("vedic_spine") or {}).get("anchors"):
+        missing.append({
+            "key": "vedic_spine",
+            "status": "missing",
+            "reason": "Zorunlu Lagna–Ay–Güneş–nakshatra omurga kaydı bulunmuyor",
+            "impact": "Temel Jyotisha zinciri kurulmadan kişisel sentez tamamlanamaz",
+        })
     event_required_keys = {
         "important_sky_events",
         "eclipse_events",

@@ -14,6 +14,7 @@ from app import (
     _beta_db,
     _beta_load_json,
     _pwa_full_markdown_documents,
+    _strip_natal_model_instructions,
     app,
 )
 from methodology_orchestrator import (
@@ -100,11 +101,11 @@ class PwaArtifactEndpointTest(unittest.TestCase):
             {"natal_interpretation", "transit_three_month"},
         )
         natal = next(item for item in manifest["artifacts"] if item["code"] == "natal_interpretation")
-        self.assertEqual(natal["section_count"], 32)
-        self.assertEqual(len(natal["sections"]), 32)
+        self.assertEqual(natal["section_count"], 33)
+        self.assertEqual(len(natal["sections"]), 33)
         self.assertEqual(natal["sections"][0]["id"], "gemini_reading_protocol")
         self.assertEqual(natal["sections"][-1]["id"], "technical_layer_status")
-        self.assertEqual(len({item["id"] for item in natal["sections"]}), 32)
+        self.assertEqual(len({item["id"] for item in natal["sections"]}), 33)
         self.assertEqual(natal["sections"][-1]["byte_end"], natal["byte_size"])
 
         root = (
@@ -236,6 +237,25 @@ class PwaArtifactEndpointTest(unittest.TestCase):
         )
         self.assertEqual(loaded["documents"][0]["content"], natal.decode())
         self.assertEqual(loaded["documents"][1]["content"], transit.decode())
+
+    def test_natal_sanitizer_removes_numbered_model_instruction_sections(self):
+        source = (
+            "# Natal\n\n"
+            "## 1. Gemini Okuma Protokolü\n\n"
+            "1. Dosyayı böyle oku.\n\n"
+            "## 2. Kullanım Sınırı\n\n"
+            "- Eski model talimatı.\n\n"
+            "## 3. Lagna\n\n"
+            "- Oğlak.\n"
+        )
+
+        cleaned = _strip_natal_model_instructions(source)
+
+        self.assertNotIn("Gemini Okuma Protokolü", cleaned)
+        self.assertNotIn("Kullanım Sınırı", cleaned)
+        self.assertIn("## Paket Kapsamı", cleaned)
+        self.assertIn("## Veri Sınırları", cleaned)
+        self.assertIn("## 3. Lagna", cleaned)
 
 
 if __name__ == "__main__":

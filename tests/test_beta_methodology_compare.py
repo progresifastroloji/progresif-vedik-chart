@@ -18,6 +18,7 @@ from app import (
     _beta_json,
     _beta_load_json,
     _beta_now,
+    _beta_public_methodology_response,
     _build_transit_pack_markdown,
     _beta_compact_transit_evidence,
     _normalize_important_sky_events,
@@ -42,6 +43,7 @@ def _model_payload():
             {"step": step, "status": "applied", "note": f"{step} uygulandı"}
             for step in (
                 "question_and_scope", "topic_package", "data_gate",
+                "vedic_spine",
                 "d1_natal_promise", "bhava_lord_karaka",
                 "dispositor_and_nakshatra", "strength_capacity_delivery",
                 "relevant_varga", "dasha_access", "transit_trigger",
@@ -132,6 +134,33 @@ def _route_payload(topic, time_scope, *, sensitivity="standard"):
 
 
 class BetaMethodologyCompareEndpointTest(unittest.TestCase):
+    def test_public_evidence_drawer_keeps_all_path_free_support_and_counter_claims(self):
+        comparison = {
+            "methodology_results": [{
+                "analysis": {
+                    "supporting_evidence": [
+                        {"claim": f"Destek {index}", "evidence_path": f"evidence.support.{index}"}
+                        for index in range(1, 5)
+                    ],
+                    "challenging_evidence": [
+                        {"claim": "Karşıt 1", "evidence_path": "evidence.counter.1"},
+                        {"claim": "Karşıt 2", "evidence_path": "evidence.counter.2"},
+                    ],
+                    "missing_layers": [],
+                    "limitations": [],
+                },
+            }],
+        }
+
+        public = _beta_public_methodology_response(comparison)
+        analysis = public["methodology_results"][0]["analysis"]
+
+        self.assertEqual(analysis["display_evidence"], ["Destek 1", "Destek 2", "Destek 3", "Destek 4"])
+        self.assertEqual(analysis["display_counter_evidence"], ["Karşıt 1", "Karşıt 2"])
+        self.assertNotIn("supporting_evidence", analysis)
+        self.assertNotIn("challenging_evidence", analysis)
+        self.assertNotIn("evidence.support.1", json.dumps(public))
+
     def test_source_only_eclipse_is_preserved_in_runtime_and_markdown(self):
         event = {
             "event_type": "lunar_eclipse",
@@ -316,6 +345,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         chart = {
             "birth": {"person": {"id": PROFILE_ID}, "date": "2000-01-01"},
             "lagna": {"sign": "Aries", "degree_str": "10°"},
+            "planets": [],
             "dashas": {"vimshottari": {"current_active": {"maha": "Saturn"}}},
             "topic_packets": {
                 "career": {
@@ -389,6 +419,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
             "İlerlemenizi hızlandıracak seçim, gereksiz yükleri azaltıp emeğinizi görünür kılmaktır."
         ))
         self.assertEqual(public_analysis["display_evidence"], ["Destekleyici faktör var"])
+        self.assertEqual(public_analysis["display_counter_evidence"], ["Zorlayıcı faktör var"])
         self.assertNotIn("supporting_evidence", public_analysis)
         self.assertNotIn("challenging_evidence", public_analysis)
         self.assertNotIn("methodology_coverage", public_analysis)
@@ -497,9 +528,10 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         ))
 
     @patch("app.call_vertex_bridge")
-    def test_controlled_eight_question_shadow_comparison(self, bridge_call):
+    def test_controlled_nine_question_shadow_comparison(self, bridge_call):
         cases = [
-            ("İyi hissetmiyorum.", "wellbeing", "none", "mental_wellbeing"),
+            ("İyi hissetmiyorum.", "wellbeing", "instant", "mental_wellbeing"),
+            ("Neden sinirliyim?", "wellbeing", "instant", "mental_wellbeing"),
             ("Tam şu anda neden böyle hissediyorum?", "wellbeing", "instant", "mental_wellbeing"),
             ("Bugün kendimi neden gergin hissediyorum?", "wellbeing", "daily", "mental_wellbeing"),
             ("İşimde neden mutsuzum?", "career", "none", "standard"),
@@ -523,7 +555,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         data = response.get_json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["mode"], "shadow")
-        self.assertEqual(data["count"], 8)
+        self.assertEqual(data["count"], 9)
         for result, (_, topic, scope, sensitivity) in zip(data["results"], cases):
             self.assertEqual(result["model"]["primary_topic"], topic)
             self.assertEqual(result["model"]["time_scope"], scope)
@@ -537,7 +569,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
                 "SELECT COUNT(*) FROM beta_question_routes WHERE chart_id = ?",
                 ("question-router-diagnostic",),
             ).fetchone()[0]
-        self.assertEqual(stored, 8)
+        self.assertEqual(stored, 9)
 
     @patch("app.call_vertex_bridge")
     def test_active_router_fixes_hissetmiyorum_without_file_authority(self, bridge_call):

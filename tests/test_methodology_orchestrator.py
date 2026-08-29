@@ -7,11 +7,13 @@ from unittest.mock import patch
 
 from methodology_orchestrator import (
     CANDIDATE_MANIFEST,
+    GUIDANCE_MANIFEST,
     MethodologyOrchestrationError,
     _model_request,
     _narrative_request,
     compact_evidence,
     full_markdown_test_mode,
+    load_guidance_methodology,
     load_methodology_candidates,
     ordered_full_markdown_mode,
     run_methodology_comparison,
@@ -247,6 +249,20 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertTrue(all(candidate["status"] == "active" for candidate in candidates))
         self.assertTrue(all(candidate["document"].startswith("---\n") for candidate in candidates))
 
+    def test_guidance_methodology_is_versioned_and_narrative_only(self):
+        guidance = load_guidance_methodology()
+
+        self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
+        self.assertEqual(guidance["version"], "1.2.0")
+        self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
+        self.assertIn("runtime_stage: narrative_only", guidance["document"])
+        self.assertIn("en fazla tek kısa", guidance["document"])
+        self.assertIn("bütün karşıt kanıtlar", guidance["document"])
+        self.assertIn("yalnız kullanıcının açık sözlerinden", guidance["document"])
+        self.assertIn("SAV/BAV", guidance["document"])
+        self.assertIn("Uygulanabilir Rehberlik", guidance["document"])
+        self.assertIn("başlık, alt başlık, numaralı liste", guidance["document"])
+
     def test_analysis_runs_single_active_methodology_and_selects_it(self):
         calls = []
         draft = _draft()
@@ -285,14 +301,21 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         technical_request = calls[0][1]
         system_text = technical_request["systemInstruction"]["parts"][0]["text"]
         self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.5.0", system_text)
+        self.assertNotIn("vedic-guidance-skill-v1", system_text)
         user_text = technical_request["contents"][0]["parts"][0]["text"]
         self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", user_text)
         self.assertIn("Ay etkisini de açıklar mısın?", user_text)
         narrative_request = calls[1][1]
         narrative_text = narrative_request["contents"][0]["parts"][0]["text"]
+        narrative_system = narrative_request["systemInstruction"]["parts"][0]["text"]
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
+        self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.2.0", narrative_system)
+        self.assertIn("en fazla tek kısa ve sade dayanak cümlesini", narrative_system)
+        self.assertIn("SAV/BAV", narrative_system)
+        self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
         self.assertEqual(
             narrative_request["generationConfig"]["maxOutputTokens"],
             8192,
@@ -302,6 +325,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             8192,
         )
         system_result = result["methodology_results"][0]
+        self.assertEqual(result["guidance_methodology"]["id"], "vedic-guidance-skill-v1")
+        self.assertEqual(system_result["guidance_methodology"]["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("technical_summary", system_result["analysis"])
         self.assertEqual(
             system_result["analysis"]["opening_summary"].count("."),
@@ -358,6 +383,107 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
         self.assertEqual(context.exception.code, "methodology_narrative_technical_leak")
 
+    def test_narrative_rejects_sav_graha_yuddha_drishti_and_guidance_heading(self):
+        answer = (
+            "Bazı dengeleyici unsurlar ilişki kararlarınızda daha dikkatli ilerlemeyi gerektiriyor.\n\n"
+            "**Mars'ın Düşüş Konumu ve Düşük SAV Skoru:** 7. evdeki Mars düşüşte olduğu ve "
+            "SAV puanı düşük kaldığı için hızlı başlangıçların ardından güç savaşı riski vardır. "
+            "Venüs ile Jüpiter arasındaki Graha Yuddha ve Satürn drishti etkisi bu teknik hükmü destekler.\n\n"
+            "**Uygulanabilir Rehberlik:** Karşınızdaki kişiyi tanımak için kendinize zaman tanıyın. "
+            "Sosyal ortamlarda açık olun fakat acele bir karar vermeyin. Bu yaklaşım ilişkinin gerçekçi "
+            "biçimde gelişip gelişmediğini görmenizi ve kendi sınırlarınızı daha iyi korumanızı sağlayabilir."
+        )
+        analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
+
+        with self.assertRaises(MethodologyOrchestrationError) as context:
+            validate_narrative_response(
+                _narrative_payload(answer),
+                analysis,
+                compact_evidence(_draft()),
+            )
+
+        self.assertEqual(context.exception.code, "methodology_narrative_technical_leak")
+
+    def test_narrative_allows_one_plain_astrological_anchor_after_the_answer(self):
+        answer = (
+            "İlişkilerde hızlı yakınlaşma isteğiniz ile güveni zamana yayma ihtiyacınız birlikte çalışabilir. "
+            "Bunu destekleyen ana astrolojik işaret, Ay'ın duygusal güveni acele etmeden kurma ihtiyacını öne "
+            "çıkarmasıdır.\n\n"
+            "Bu nedenle ilk heyecanın yanında karşınızdaki kişinin davranışlarının zaman içindeki tutarlılığına da "
+            "bakmanız daha dengeli olabilir. Yeni bir tanışmada hemen sonuç çıkarmak yerine birkaç görüşme boyunca "
+            "sözler ile davranışların ne kadar örtüştüğünü gözlemlemeyi deneyebilirsiniz."
+        )
+        analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
+
+        validated = validate_narrative_response(
+            _narrative_payload(answer),
+            analysis,
+            compact_evidence(_draft()),
+        )
+
+        self.assertEqual(validated["answer"], answer)
+
+    def test_narrative_rejects_more_than_one_visible_astrological_anchor_sentence(self):
+        answer = (
+            "İlişkilerde hızlı yakınlaşma isteğiniz ile güveni zamana yayma ihtiyacınız birlikte çalışabilir. "
+            "Mars doğrudan davranma eğilimini güçlendirebilir. Ay'ın konumu ise güveni zamana yayma ihtiyacını "
+            "öne çıkarabilir.\n\n"
+            "Bu nedenle birkaç görüşme boyunca sözler ile davranışların ne kadar örtüştüğünü gözlemlemek daha "
+            "dengeli bir seçim yapmanıza yardımcı olabilir."
+        )
+        analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
+
+        with self.assertRaises(MethodologyOrchestrationError) as context:
+            validate_narrative_response(
+                _narrative_payload(answer),
+                analysis,
+                compact_evidence(_draft()),
+            )
+
+        self.assertEqual(
+            context.exception.code,
+            "methodology_narrative_evidence_density_invalid",
+        )
+
+    def test_narrative_rejects_astrological_anchor_in_opening_summary(self):
+        analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
+
+        with self.assertRaises(MethodologyOrchestrationError) as context:
+            validate_narrative_response(
+                _narrative_payload(
+                    opening_summary=(
+                        "Satürn kariyerinizde sabırlı ve kalıcı ilerlemenin ana dayanağıdır."
+                    ),
+                ),
+                analysis,
+                compact_evidence(_draft()),
+            )
+
+        self.assertEqual(
+            context.exception.code,
+            "methodology_narrative_evidence_density_invalid",
+        )
+
+    def test_narrative_rejects_guidance_heading_even_without_technical_terms(self):
+        answer = (
+            "İlişkilerde güveni zamana yaymanız, ilk izlenim ile kalıcı uyumu birbirinden ayırmanıza yardımcı olabilir. "
+            "Karşınızdaki kişinin farklı koşullarda nasıl davrandığını görmek, kendi ihtiyaçlarınızı daha açık biçimde "
+            "fark etmenizi ve acele bir sonuca bağlanmamanızı sağlayabilir.\n\n"
+            "**Uygulanabilir Rehberlik:** Önümüzdeki tanışmalarda birkaç görüşme boyunca sözler ile davranışların "
+            "ne kadar örtüştüğünü gözlemleyebilirsiniz. Bu küçük gözlem, seçiminizi korkudan veya ilk heyecandan değil, "
+            "yaşanmış deneyimden yapmanıza yardımcı olabilir."
+        )
+        analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
+
+        with self.assertRaises(MethodologyOrchestrationError) as context:
+            validate_narrative_response(
+                _narrative_payload(answer),
+                analysis,
+                compact_evidence(_draft()),
+            )
+
+        self.assertEqual(context.exception.code, "methodology_narrative_technical_leak")
+
     def test_narrative_allows_expanded_technical_opening_summary(self):
         analysis = validate_methodology_response(
             _payload(),
@@ -408,6 +534,39 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         result = run_methodology_comparison(
             _draft(),
             "methodology-narrative-retry",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        phases = [item.rsplit("vedic-system-methodology-v1", 1)[1] for item in calls]
+        self.assertEqual(sum(item.startswith("-analysis") for item in phases), 1)
+        self.assertEqual(sum(item.startswith("-narrative") for item in phases), 2)
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["technical_attempt_count"], 1)
+        self.assertEqual(system_result["narrative_attempt_count"], 2)
+
+    def test_technical_main_text_is_retried_without_rerunning_analysis(self):
+        calls = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            if request_id.endswith("-analysis"):
+                return request_id, _payload()
+            if request_id.endswith("-narrative"):
+                answer = (
+                    "İlişki konusunda dikkatli ilerlemek önemlidir. "
+                    "7. ev SAV puanı ve Graha Yuddha teknik olarak zorlayıcı bir tablo gösterir. "
+                    "Bu nedenle ilk izlenimle karar vermek yerine davranışların zaman içindeki tutarlılığına bakmak gerekir.\n\n"
+                    "**Uygulanabilir Rehberlik:** Birkaç görüşme boyunca sözler ile davranışların ne kadar örtüştüğünü "
+                    "gözlemleyebilirsiniz. Bu küçük adım, acele bir sonuç yerine yaşanmış deneyime dayanarak seçim "
+                    "yapmanıza ve kendi sınırlarınızı daha açık görmenize yardımcı olabilir."
+                )
+                return request_id, _narrative_payload(answer)
+            return request_id, _narrative_payload()
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-narrative-technical-retry",
             model_call,
         )
 
@@ -797,6 +956,19 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 load_methodology_candidates(root)
 
         self.assertEqual(raised.exception.code, "methodology_checksum_mismatch")
+
+    def test_guidance_checksum_mismatch_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_root = Path(__file__).resolve().parents[1] / "methodologies"
+            path = root / GUIDANCE_MANIFEST["filename"]
+            content = (source_root / GUIDANCE_MANIFEST["filename"]).read_text(encoding="utf-8")
+            path.write_text(content + "\nchanged", encoding="utf-8")
+
+            with self.assertRaises(MethodologyOrchestrationError) as raised:
+                load_guidance_methodology(root)
+
+        self.assertEqual(raised.exception.code, "guidance_methodology_checksum_mismatch")
 
 
 if __name__ == "__main__":
