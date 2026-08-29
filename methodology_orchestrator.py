@@ -660,6 +660,81 @@ def _relaxed_narrative_response(payload):
     }
 
 
+def _fallback_narrative_response(evidence):
+    """Return a safe client-facing answer when strict narrative validation fails.
+
+    The fallback is deliberately plain and operational. It never reconstructs
+    technical chart claims; those remain available in the separate evidence
+    payload. The result still goes through ``validate_narrative_response``.
+    """
+
+    topic = str(evidence.get("subject_topic") or evidence.get("topic") or "").strip().lower()
+    question = str(evidence.get("question") or "").strip()
+    timing_requested = bool(re.search(r"\b(?:\d{1,2}\s+\w+|\d{4}-\d{2}-\d{2})", question))
+
+    opening = (
+        "Önümüzdeki üç ayda kararları aceleye getirmeden, şartları yazılılaştırarak "
+        "ve küçük kontrol adımlarıyla ilerlemek daha sağlıklı olacaktır."
+    )
+    if topic in {"career", "business", "work"}:
+        paragraphs = [
+            (
+                "Yeni bir ortaklık, iş teklifi veya sözleşme gündeme geldiğinde görevleri, "
+                "yetkileri, gelir-gider paylaşımını, teslim tarihlerini ve ayrılma koşullarını "
+                "yazılı hale getirin. İmzadan önce metni bağımsız bir hukukçuya inceletin ve "
+                "belirsiz kalan maddeleri netleşmeden ilerletmeyin."
+            ),
+            (
+                "Mevcut işinizi koruyacak öncelikleri belirleyin; bütçe, nakit akışı, müşteri "
+                "yükümlülükleri ve sorumluluk paylaşımı için düzenli kontrol noktaları koyun. "
+                "Büyük bir sıçrama yerine, ölçülebilir ve geri alınabilir bir deneme adımıyla "
+                "başlamak riski azaltır."
+            ),
+        ]
+    elif topic in {"relationship", "partnership"}:
+        paragraphs = [
+            (
+                "Yeni bir yakınlaşmada veya ortak kararda beklentileri açıkça konuşun; sözler ile "
+                "davranışların zaman içindeki tutarlılığını gözlemlemeden kesin bir taahhütte bulunmayın."
+            ),
+            (
+                "Kendi sınırlarınızı, ihtiyaçlarınızı ve vazgeçemeyeceğiniz koşulları yazılı veya "
+                "net biçimde belirleyin. Belirsizlik sürüyorsa kararınızı ertelemek, aceleyle "
+                "ilerlemekten daha koruyucu olabilir."
+            ),
+        ]
+    else:
+        paragraphs = [
+            (
+                "Önceliklerinizi ve sizi zorlayabilecek koşulları kısa bir listede toplayın. "
+                "Her adım için sorumluyu, tarihi ve kontrol ölçütünü belirlemek belirsizliği azaltır."
+            ),
+            (
+                "Kararı tek seferde kesinleştirmek yerine küçük bir deneme, geri bildirim ve "
+                "yeniden değerlendirme döngüsü kurun. Netleşmeyen noktaları açıklığa kavuşmadan "
+                "geri dönüşü zor bir taahhüde çevirmeyin."
+            ),
+        ]
+
+    if timing_requested:
+        paragraphs.append(
+            "Sorunuzda belirttiğiniz tarih pencerelerinde yeni bir imza veya büyük harcama "
+            "yapmadan önce teklifleri karşılaştırın, ikinci bir görüş alın ve kısa bir "
+            "değerlendirme süresi bırakın. Sonraki haftalarda uygulamayı küçük adımlara bölüp "
+            "sonuçları düzenli olarak gözden geçirin."
+        )
+    else:
+        paragraphs.append(
+            "Önümüzdeki haftalarda uygulamayı küçük adımlara bölüp sonuçları düzenli olarak "
+            "gözden geçirin; koşullar değişirse planınızı güncelleyin."
+        )
+
+    return {
+        "opening_summary": opening,
+        "answer": "\n\n".join(paragraphs),
+    }
+
+
 def _evidence_path_exists(evidence, evidence_path):
     current = evidence
     for key in evidence_path.split(".")[1:]:
@@ -1330,6 +1405,58 @@ def _run_candidate(
             )
             if attempt_index == 0 and code in RETRYABLE_NARRATIVE_ERRORS:
                 continue
+            if (
+                validation_mode == "strict"
+                and technical_analysis is not None
+                and code in RETRYABLE_NARRATIVE_ERRORS
+            ):
+                try:
+                    fallback_payload = {
+                        "candidates": [{
+                            "content": {
+                                "parts": [{
+                                    "text": json.dumps(
+                                        _fallback_narrative_response(evidence),
+                                        ensure_ascii=False,
+                                    )
+                                }]
+                            }
+                        }]
+                    }
+                    narrative = validate_narrative_response(
+                        fallback_payload,
+                        technical_analysis,
+                        evidence,
+                    )
+                    analysis = {
+                        **technical_analysis,
+                        "technical_summary": technical_analysis["summary"],
+                        "opening_summary": narrative["opening_summary"],
+                        "summary": narrative["answer"],
+                    }
+                    return {
+                        "status": "completed",
+                        "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+                        "guidance_methodology": {key: guidance[key] for key in ("id", "title", "version", "status", "sha256")},
+                        "request_id": narrative_request_id,
+                        "technical_request_id": technical_request_id,
+                        "narrative_request_id": narrative_request_id,
+                        "attempt_count": technical_attempt_count + attempt_index + 1,
+                        "technical_attempt_count": technical_attempt_count,
+                        "narrative_attempt_count": attempt_index + 1,
+                        "evidence_sha256": evidence_sha256,
+                        "prompt_sha256": narrative_prompt_sha256,
+                        "technical_prompt_sha256": technical_prompt_sha256,
+                        "narrative_prompt_sha256": narrative_prompt_sha256,
+                        "latency_ms": max(round((clock() - started) * 1000), 0),
+                        "usage": _combined_usage(technical_payload, narrative_payload),
+                        "analysis": analysis,
+                        "validation_mode": validation_mode,
+                        "narrative_fallback": True,
+                        "narrative_fallback_reason": code,
+                    }
+                except MethodologyOrchestrationError:
+                    pass
             return {
                 "status": "failed",
                 "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},

@@ -578,6 +578,33 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(system_result["technical_attempt_count"], 1)
         self.assertEqual(system_result["narrative_attempt_count"], 2)
 
+    def test_strict_mode_uses_validated_plain_fallback_after_narrative_retries(self):
+        def model_call(request_id, _request):
+            if request_id.endswith("-analysis"):
+                return request_id, _payload()
+            return request_id, _narrative_payload(
+                opening_summary="Mars ve düşük SAV teknik olarak belirleyicidir.",
+                answer=(
+                    "### Uygulanabilir Rehberlik\n\n"
+                    "7. ev ve Graha Yuddha nedeniyle acele etmeyin. "
+                    "Bu metin teknik görünürlüğü özellikle artırır. " * 8
+                ),
+            )
+
+        with patch.dict(os.environ, {"VEDIC_METHODOLOGY_VALIDATION_MODE": "strict"}):
+            result = run_methodology_comparison(
+                _draft(),
+                "methodology-compare-narrative-fallback",
+                model_call,
+            )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        system_result = result["methodology_results"][0]
+        self.assertTrue(system_result["narrative_fallback"])
+        self.assertNotIn("SAV", system_result["analysis"]["summary"])
+        self.assertNotIn("Graha Yuddha", system_result["analysis"]["summary"])
+        self.assertNotIn("###", system_result["analysis"]["summary"])
+
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):
             return request_id, {"candidates": []}
