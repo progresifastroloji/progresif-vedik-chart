@@ -79,6 +79,7 @@ RETRYABLE_NARRATIVE_ERRORS = {
     "methodology_narrative_timing_evidence_invalid",
     "methodology_narrative_technical_leak",
     "methodology_narrative_evidence_density_invalid",
+    "methodology_narrative_topic_mismatch",
 }
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
@@ -86,10 +87,10 @@ CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.5.0",
+        "version": "1.6.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "620cbfdea8921133847a654fdf935873a537d260e4d50b6729b3414609fbfd92",
+        "sha256": "269e33fbb7029a8643e74e24159f4e9939a9e82d6cd88b89e3a12872c6500a56",
     },
 )
 
@@ -668,65 +669,84 @@ def _fallback_narrative_response(evidence):
     payload. The result still goes through ``validate_narrative_response``.
     """
 
-    topic = str(evidence.get("subject_topic") or evidence.get("topic") or "").strip().lower()
-    question = str(evidence.get("question") or "").strip()
-    timing_requested = bool(re.search(r"\b(?:\d{1,2}\s+\w+|\d{4}-\d{2}-\d{2})", question))
-
-    opening = (
-        "Önümüzdeki üç ayda kararları aceleye getirmeden, şartları yazılılaştırarak "
-        "ve küçük kontrol adımlarıyla ilerlemek daha sağlıklı olacaktır."
+    topic = str(evidence.get("subject_topic") or evidence.get("topic") or "general").strip().lower()
+    timing_requested = bool(
+        evidence.get("topic") == "transit"
+        or (evidence.get("question_route") or {}).get("timing_required")
     )
-    if topic in {"career", "business", "work"}:
-        paragraphs = [
-            (
-                "Yeni bir ortaklık, iş teklifi veya sözleşme gündeme geldiğinde görevleri, "
-                "yetkileri, gelir-gider paylaşımını, teslim tarihlerini ve ayrılma koşullarını "
-                "yazılı hale getirin. İmzadan önce metni bağımsız bir hukukçuya inceletin ve "
-                "belirsiz kalan maddeleri netleşmeden ilerletmeyin."
-            ),
-            (
-                "Mevcut işinizi koruyacak öncelikleri belirleyin; bütçe, nakit akışı, müşteri "
-                "yükümlülükleri ve sorumluluk paylaşımı için düzenli kontrol noktaları koyun. "
-                "Büyük bir sıçrama yerine, ölçülebilir ve geri alınabilir bir deneme adımıyla "
-                "başlamak riski azaltır."
-            ),
-        ]
-    elif topic in {"relationship", "partnership"}:
-        paragraphs = [
-            (
-                "Yeni bir yakınlaşmada veya ortak kararda beklentileri açıkça konuşun; sözler ile "
-                "davranışların zaman içindeki tutarlılığını gözlemlemeden kesin bir taahhütte bulunmayın."
-            ),
-            (
-                "Kendi sınırlarınızı, ihtiyaçlarınızı ve vazgeçemeyeceğiniz koşulları yazılı veya "
-                "net biçimde belirleyin. Belirsizlik sürüyorsa kararınızı ertelemek, aceleyle "
-                "ilerlemekten daha koruyucu olabilir."
-            ),
-        ]
-    else:
-        paragraphs = [
-            (
-                "Önceliklerinizi ve sizi zorlayabilecek koşulları kısa bir listede toplayın. "
-                "Her adım için sorumluyu, tarihi ve kontrol ölçütünü belirlemek belirsizliği azaltır."
-            ),
-            (
-                "Kararı tek seferde kesinleştirmek yerine küçük bir deneme, geri bildirim ve "
-                "yeniden değerlendirme döngüsü kurun. Netleşmeyen noktaları açıklığa kavuşmadan "
-                "geri dönüşü zor bir taahhüde çevirmeyin."
-            ),
-        ]
 
+    templates = {
+        "character": (
+            "Kendinizi tek bir özellikle tanımlamak yerine, tekrar eden güçlü yönleriniz ile zorlandığınız kullanım biçimlerini birlikte gözlemlemek daha açıklayıcıdır.",
+            "Doğal olarak kolay üstlendiğiniz sorumlulukları, çevrenizden sık aldığınız geri bildirimleri ve baskı altında değişen davranışlarınızı ayrı ayrı not edin. Böylece size gerçekten ait olan kapasiteyi, yalnızca alışkanlıkla sürdürdüğünüz rollerden ayırabilirsiniz.",
+        ),
+        "career": (
+            "Mesleki ilerlemede en sağlıklı yön, sorumlulukları ve başarı ölçütlerini netleştirip geri alınabilir adımlarla ilerlemektir.",
+            "Yeni bir iş, görev veya ortaklık gündeme geldiğinde yetkiyi, gelir paylaşımını, teslim tarihlerini ve ayrılma koşullarını baştan yazılı hale getirin. Belirsiz kalan noktalar netleşmeden büyük bir taahhüt vermeyin.",
+        ),
+        "marriage": (
+            "Yakın ilişkilerde acele bir sonuca varmak yerine karşılıklılık, sınırlar ve davranışların sürekliliği üzerinden ilerlemek daha koruyucudur.",
+            "Beklentilerinizi açıkça konuşun ve sözlerle davranışların zaman içinde ne kadar örtüştüğünü gözlemleyin. Kendi ihtiyaçlarınızı bastırmadan, diğer kişinin sınırlarını da varsaymadan doğrudan iletişim kurun.",
+        ),
+        "wealth": (
+            "Maddi konularda hızlı kazanç arayışından çok nakit akışını, yükümlülükleri ve kayıp sınırını görünür kılmak daha güvenli bir temel oluşturur.",
+            "Gelir, zorunlu gider, borç ve birikim kalemlerini ayrı izleyin; yatırım veya büyük harcama kararını tek bir beklentiye bağlamayın. Tutar ve risk içeren kararlarda bağımsız finansal görüş alın.",
+        ),
+        "health": (
+            "Bedensel iyi oluş konusunda en güvenli yaklaşım, belirtileri küçümsemeden düzenli takip etmek ve astrolojik yorumu tıbbi değerlendirmenin yerine koymamaktır.",
+            "Uyku, enerji, ağrı, beslenme ve günlük işlevdeki değişimleri tarihleriyle kaydedin. Yeni, şiddetli veya kalıcı bir belirti varsa gecikmeden uygun bir sağlık uzmanına başvurun; burada verilen çerçeveyi tanı ya da tedavi olarak kullanmayın.",
+        ),
+        "family": (
+            "Aile ve ebeveynlik alanında yükleri görünür kılmak, konuşulmayan beklentileri varsaymak yerine açıkça paylaşmak dengeyi güçlendirir.",
+            "Bakım, ev düzeni, maddi sorumluluk ve karar yetkisini kimlerin üstlendiğini birlikte gözden geçirin. Herkes adına karar vermeden ihtiyaçları tek tek sorun ve çözümü küçük, takip edilebilir görevler halinde paylaşın.",
+        ),
+        "education": (
+            "Eğitim ve uzmanlaşmada en verimli yön, tek bir hedef seçip çalışma düzenini ölçülebilir küçük adımlara bölmektir.",
+            "Hedeflediğiniz sınavı, programı veya beceriyi somut bir çıktı ile tanımlayın; haftalık çalışma süresi, deneme sonucu ve eksik konu gibi göstergeleri takip edin. Plan işlemiyorsa hedefi değil önce yöntemi ve çalışma yükünü düzeltin.",
+        ),
+        "relocation": (
+            "Taşınma ve yerleşim kararında istek kadar bütçe, hukuki koşullar, gündelik düzen ve geri dönüş seçeneğini birlikte değerlendirmek gerekir.",
+            "Yer, maliyet, iş veya okul erişimi, sözleşme şartları ve destek ağı için ayrı bir kontrol listesi hazırlayın. Kalıcı karar vermeden önce mümkünse kısa süreli deneme yapın ve mülk ya da sözleşme adımında uzman görüşü alın.",
+        ),
+        "legal": (
+            "Hukuki bir konuda varsayımla ilerlemek yerine belgeyi, süreyi, yükümlülüğü ve yetkili profesyonel görüşünü merkeze almak gerekir.",
+            "Sözleşme, yazışma, ödeme ve son tarihleri tek yerde toplayın; sözlü anlaşmayı yeterli saymayın. Hak kaybı veya uyuşmazlık ihtimali varsa karar vermeden önce konunun uzmanı bir hukukçudan görüş alın.",
+        ),
+        "spiritual": (
+            "Ruhsal yönünüzü kesin bir kimlik veya kader hükmüyle tanımlamak yerine, hangi pratiklerin sizi daha dürüst ve dengeli kıldığını deneyim üzerinden görmek daha anlamlıdır.",
+            "Düzenli fakat küçük bir meditasyon, tefekkür veya günlük tutma pratiği seçin. Uygulamanın sizi gündelik sorumluluklardan uzaklaştırıp uzaklaştırmadığını ve ilişkilerinizde daha açık, sabırlı bir tutuma destek olup olmadığını gözlemleyin.",
+        ),
+        "wellbeing": (
+            "Şu anki duygusal yükü tek bir nedene bağlamak yerine beden, çevre, düşünce ve günlük koşulları birlikte gözlemlemek daha sağlıklı bir başlangıçtır.",
+            "Uyku, beslenme, günlük yük, çevresel gerilim ve tekrar eden düşünceleri kısa notlarla izleyin. Yoğun sıkıntı sürüyor, günlük işlevinizi bozuyor veya güvenliğinizle ilgili kaygı yaratıyorsa bir ruh sağlığı uzmanından destek alın.",
+        ),
+        "varshaphala": (
+            "Yıllık döngüyü kesin olay listesi gibi değil, hangi yaşam alanlarının daha bilinçli plan ve takip istediğini gösteren bir değerlendirme çerçevesi olarak kullanın.",
+            "Önünüzdeki yılı iş, sağlık, ilişki, para, yerleşim ve kişisel gelişim başlıklarına ayırın. Her başlık için tek bir gerçekçi hedef, ölçülebilir bir kontrol noktası ve koşullar değişirse kullanacağınız bir yedek plan belirleyin.",
+        ),
+        "general": (
+            "Sorunuz birden fazla yaşam alanını kapsıyorsa, hepsi için tek bir sonuç üretmek yerine öncelikleri ve karar koşullarını ayrı ayrı ele almak daha sağlıklıdır.",
+            "Önceliklerinizi, sizi zorlayan koşulları ve kontrol edebildiğiniz adımları kısa bir listede toplayın. Her alan için beklenen sonucu, sorumluyu ve yeniden değerlendirme ölçütünü ayrı tanımlayın.",
+        ),
+    }
+    opening, first_paragraph = templates.get(topic, templates["general"])
+    paragraphs = [first_paragraph]
+    paragraphs.append(
+        "Kararı tek seferde kesinleştirmek yerine küçük bir deneme, açık geri bildirim ve yeniden değerlendirme döngüsü kurun. Netleşmeyen noktaları açıklığa kavuşmadan geri dönüşü zor bir taahhüde çevirmeyin."
+    )
     if timing_requested:
         paragraphs.append(
-            "Sorunuzda belirttiğiniz tarih pencerelerinde yeni bir imza veya büyük harcama "
-            "yapmadan önce teklifleri karşılaştırın, ikinci bir görüş alın ve kısa bir "
-            "değerlendirme süresi bırakın. Sonraki haftalarda uygulamayı küçük adımlara bölüp "
-            "sonuçları düzenli olarak gözden geçirin."
+            "Sorunuzdaki dönem boyunca önemli kararları tek bir güne yüklemeyin; hazırlık, uygulama ve kontrol adımlarını ayırın. Her aşamada gerçek koşulları yeniden değerlendirip gerekirse planı güncelleyin."
         )
     else:
         paragraphs.append(
-            "Önümüzdeki haftalarda uygulamayı küçük adımlara bölüp sonuçları düzenli olarak "
-            "gözden geçirin; koşullar değişirse planınızı güncelleyin."
+            "İlk adımı küçük ve ölçülebilir seçin; sonucu gözlemledikten sonra bir sonraki adımı belirleyin. Böylece kararınız varsayımdan çok yaşanmış veriye dayanır."
+        )
+
+    if topic == "wellbeing" and _wellbeing_timing_fact(evidence):
+        paragraphs.insert(
+            1,
+            "Bugünün gökyüzü ritmi ve Ay'ın güncel bağlamı, duygularınızı kesin bir nedene bağlamadan gözlemlemek için kısa süreli bir arka plan olarak ele alınabilir.",
         )
 
     return {
@@ -752,6 +772,11 @@ def _fallback_methodology_analysis(evidence, error_code):
         }
         for step in expected_steps
     ]
+    timing_fact = _wellbeing_timing_fact(evidence)
+    supporting_evidence = [timing_fact] if timing_fact else []
+    technical_summary = "Teknik model doğrulaması tamamlanamadı; doğrulanmamış bir astrolojik hüküm kullanıcı metnine taşınmadı."
+    if timing_fact:
+        technical_summary = f"{technical_summary} {timing_fact['claim']}"
     return {
         "question_intent": {
             "interpreted_question": str(evidence.get("question") or "").strip(),
@@ -760,8 +785,8 @@ def _fallback_methodology_analysis(evidence, error_code):
         },
         "analysis_status": "INCOMPLETE",
         "methodology_coverage": coverage,
-        "summary": "Teknik model doğrulaması tamamlanamadı; doğrulanmamış bir astrolojik hüküm kullanıcı metnine taşınmadı.",
-        "supporting_evidence": [],
+        "summary": technical_summary,
+        "supporting_evidence": supporting_evidence,
         "challenging_evidence": [],
         "missing_layers": [str(error_code)],
         "confidence": "low",
@@ -1201,6 +1226,36 @@ def validate_narrative_response(payload, analysis, evidence):
 
     combined_text = f"{opening_summary}\n{answer}"
     normalized_answer = combined_text.replace("İ", "i").casefold()
+    expected_topic = str(evidence.get("subject_topic") or "general").strip().lower()
+    false_topic_openings = {
+        "career": ("kariyer sorunuza", "iş sorunuza", "meslek sorunuza"),
+        "marriage": ("ilişki sorunuza", "evlilik sorunuza", "aşk sorunuza"),
+        "wealth": ("finans sorunuza", "para sorunuza", "maddi sorununuza"),
+        "health": ("sağlık sorunuza", "bedensel sorunuza"),
+        "family": ("aile sorunuza", "ebeveynlik sorunuza"),
+        "education": ("eğitim sorunuza", "sınav sorunuza"),
+        "relocation": ("taşınma sorunuza", "yerleşim sorunuza"),
+        "legal": ("hukuk sorunuza", "hukuki sorunuza", "dava sorunuza"),
+        "spiritual": ("ruhsal sorunuza", "manevi sorunuza"),
+        "wellbeing": ("ruh hali sorunuza", "duygusal sorunuza"),
+        "varshaphala": ("yıllık harita sorunuza", "yıllık döngü sorunuza"),
+    }
+    normalized_opening = opening_summary.replace("İ", "i").casefold()
+    mismatched_opening = any(
+        marker in normalized_opening
+        for topic, markers in false_topic_openings.items()
+        if topic != expected_topic
+        for marker in markers
+    )
+    methodology_focus_leak = bool(re.search(
+        r"(?:sorunuza\s+karşılık\s+)?sistemimiz\w*[^.!?\n]{0,80}(?:odağ|odak|yönlen)",
+        normalized_answer,
+    ))
+    if mismatched_opening or methodology_focus_leak:
+        raise MethodologyOrchestrationError(
+            "methodology_narrative_topic_mismatch",
+            502,
+        )
     forbidden_markers = (
         "vedik analiz sistem metodolojisi",
         "evidence.",

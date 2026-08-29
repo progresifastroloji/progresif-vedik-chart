@@ -300,7 +300,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
         technical_request = calls[0][1]
         system_text = technical_request["systemInstruction"]["parts"][0]["text"]
-        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.5.0", system_text)
+        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.6.0", system_text)
         self.assertNotIn("vedic-guidance-skill-v1", system_text)
         user_text = technical_request["contents"][0]["parts"][0]["text"]
         self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
@@ -382,6 +382,33 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 compact_evidence(_draft()),
             )
         self.assertEqual(context.exception.code, "methodology_narrative_technical_leak")
+
+    def test_narrative_rejects_a_relationship_question_that_the_user_never_asked(self):
+        opening = (
+            "İlişki sorunuza karşılık sistemimizin kariyer odağına yönlenmesi nedeniyle "
+            "profesyonel sorumluluklarınız öne çıkıyor."
+        )
+        answer = (
+            "Mevcut koşulları acele etmeden gözden geçirmek ve karar ölçütlerini açık biçimde "
+            "tanımlamak yararlı olabilir. Önceliklerinizi, sorumluluklarınızı ve değiştirebildiğiniz "
+            "alanları ayrı ayrı değerlendirmeniz belirsizliği azaltır.\n\n"
+            "Tek bir sonuca hızla bağlanmak yerine küçük bir deneme adımı seçin, sonucu gözlemleyin "
+            "ve yeni bilgi geldikçe planınızı güncelleyin. Böylece kararınız varsayıma değil, gerçek "
+            "koşullara ve açık geri bildirime dayanır.\n\n"
+            "Geri dönüşü zor bir taahhüt vermeden önce seçenekleri karşılaştırın ve ihtiyaç varsa "
+            "ilgili alandaki bağımsız bir uzmandan görüş alın."
+        )
+        evidence = compact_evidence(_draft())
+        analysis = validate_methodology_response(_payload(), evidence)
+
+        with self.assertRaises(MethodologyOrchestrationError) as context:
+            validate_narrative_response(
+                _narrative_payload(answer, opening),
+                analysis,
+                evidence,
+            )
+
+        self.assertEqual(context.exception.code, "methodology_narrative_topic_mismatch")
 
     def test_narrative_rejects_sav_graha_yuddha_drishti_and_guidance_heading(self):
         answer = (

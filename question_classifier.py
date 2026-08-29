@@ -21,8 +21,13 @@ ALLOWED_TOPICS = {
     "marriage",
     "wealth",
     "health",
+    "family",
+    "education",
+    "relocation",
+    "legal",
     "spiritual",
     "wellbeing",
+    "varshaphala",
 }
 ALLOWED_TIME_SCOPES = {"none", "instant", "daily", "range"}
 ALLOWED_EVIDENCE = {
@@ -66,9 +71,121 @@ NODE_EVENT_MARKERS = (
     "retro", "gökyüzü", "gokyuzu", "yaklaş", "yaklas",
 )
 
+# Current-question topic markers.  These are intentionally word/phrase based:
+# the legacy router used raw substring matching, so the ASCII fallback ``is``
+# incorrectly classified words such as ``hissetmiyorum`` as career.  Keeping
+# the patterns here gives the Gemini normalizer and deterministic bypass route
+# one shared, auditable topic contract.
+TOPIC_PATTERNS = {
+    "character": (
+        r"(?<!\w)karakter\w*", r"(?<!\w)kişili\w*", r"(?<!\w)kisili\w*",
+        r"(?<!\w)mizaç\w*", r"(?<!\w)mizac\w*", r"(?<!\w)yetenek\w*",
+        r"(?<!\w)güçlü\s+yan\w*", r"(?<!\w)guclu\s+yan\w*",
+        r"(?<!\w)zayıf\s+yan\w*", r"(?<!\w)zayif\s+yan\w*",
+    ),
+    "career": (
+        r"(?<!\w)kariyer\w*", r"(?<!\w)mesle\w*",
+        r"(?<!\w)iş(?!\w)", r"(?<!\w)işim\w*", r"(?<!\w)işte\w*",
+        r"(?<!\w)işyer\w*", r"(?<!\w)iş\s+hayat\w*",
+        r"(?<!\w)iş\s+görüş\w*", r"(?<!\w)iş\s+değiş\w*",
+        r"(?<!\w)iş\s+ortak\w*", r"(?<!\w)çalışma\s+hayat\w*",
+        r"(?<!\w)calisma\s+hayat\w*", r"(?<!\w)terfi\w*",
+        r"(?<!\w)ticari\s+giriş\w*", r"(?<!\w)ticari\s+girisim\w*",
+    ),
+    "marriage": (
+        r"(?<!\w)ilişki\w*", r"(?<!\w)iliski\w*", r"(?<!\w)evlili\w*",
+        r"(?<!\w)evlen\w*", r"(?<!\w)sevgili\w*", r"(?<!\w)partner\w*",
+        r"(?<!\w)eş(?!\w)", r"(?<!\w)eşim\w*", r"(?<!\w)flört\w*",
+        r"(?<!\w)flort\w*", r"(?<!\w)aşk\w*", r"(?<!\w)ask\s+hayat\w*",
+    ),
+    "wealth": (
+        r"(?<!\w)para(?!\w)", r"(?<!\w)finans\w*", r"(?<!\w)gelir\w*",
+        r"(?<!\w)kazanç\w*", r"(?<!\w)kazanc\w*", r"(?<!\w)servet\w*",
+        r"(?<!\w)yatırım\w*", r"(?<!\w)yatirim\w*", r"(?<!\w)birikim\w*",
+        r"(?<!\w)maddi\s+güven\w*", r"(?<!\w)maddi\s+guven\w*",
+    ),
+    "health": (
+        r"(?<!\w)sağlık\w*", r"(?<!\w)saglik\w*", r"(?<!\w)hastalı\w*",
+        r"(?<!\w)hastali\w*", r"(?<!\w)beden\w*", r"(?<!\w)fiziksel\w*",
+        r"(?<!\w)ameliyat\w*", r"(?<!\w)rahatsızlı\w*", r"(?<!\w)rahatsizli\w*",
+    ),
+    "family": (
+        r"(?<!\w)aile\w*", r"(?<!\w)anne\w*", r"(?<!\w)baba\w*",
+        r"(?<!\w)ebeveyn\w*", r"(?<!\w)kardeş\w*", r"(?<!\w)kardes\w*",
+        r"(?<!\w)çocuk\w*", r"(?<!\w)cocuk\w*", r"(?<!\w)soy\s+bağ\w*",
+    ),
+    "education": (
+        r"(?<!\w)eğitim\w*", r"(?<!\w)egitim\w*", r"(?<!\w)okul\w*",
+        r"(?<!\w)sınav\w*", r"(?<!\w)sinav\w*", r"(?<!\w)üniversite\w*",
+        r"(?<!\w)universite\w*", r"(?<!\w)öğrenim\w*", r"(?<!\w)ogrenim\w*",
+        r"(?<!\w)akademi\w*", r"(?<!\w)uzmanlaş\w*", r"(?<!\w)uzmanlas\w*",
+    ),
+    "relocation": (
+        r"(?<!\w)taşın\w*", r"(?<!\w)tasin\w*", r"(?<!\w)yurtdışı\w*",
+        r"(?<!\w)yurt\s+dışı\w*", r"(?<!\w)yurtdisi\w*", r"(?<!\w)göç\w*",
+        r"(?<!\w)yerleş\w*", r"(?<!\w)yerles\w*", r"(?<!\w)mülk\w*",
+        r"(?<!\w)emlak\w*", r"(?<!\w)şehir\s+değiş\w*", r"(?<!\w)sehir\s+degis\w*",
+    ),
+    "legal": (
+        r"(?<!\w)hukuk\w*", r"(?<!\w)yasal\w*", r"(?<!\w)dava\w*",
+        r"(?<!\w)mahkeme\w*", r"(?<!\w)sözleşme\w*", r"(?<!\w)sozlesme\w*",
+        r"(?<!\w)uyuşmazlı\w*", r"(?<!\w)uyusmazli\w*", r"(?<!\w)miras\w*",
+        r"(?<!\w)resm[iî]\s+kurum\w*",
+    ),
+    "spiritual": (
+        r"(?<!\w)ruhsal\w*", r"(?<!\w)spiritüel\w*", r"(?<!\w)spirituel\w*",
+        r"(?<!\w)manevi\w*", r"(?<!\w)karma(?!\w)", r"(?<!\w)dharma(?!\w)",
+        r"(?<!\w)meditasyon\w*", r"(?<!\w)yaşam\s+amac\w*", r"(?<!\w)yasam\s+amac\w*",
+    ),
+    "wellbeing": (
+        r"(?<!\w)hisset\w*", r"(?<!\w)hissed\w*", r"(?<!\w)gergin\w*", r"(?<!\w)mutsuz\w*",
+        r"(?<!\w)kayg\w*", r"(?<!\w)endiş\w*", r"(?<!\w)endis\w*",
+        r"(?<!\w)motivasyon\w*", r"(?<!\w)sinirli\w*", r"(?<!\w)öfke\w*",
+        r"(?<!\w)ofke\w*", r"(?<!\w)üzgün\w*", r"(?<!\w)uzgun\w*",
+        r"(?<!\w)stres\w*", r"(?<!\w)bunal\w*", r"(?<!\w)huzursuz\w*",
+        r"(?<!\w)keyifsiz\w*", r"(?<!\w)duygu\w*", r"(?<!\w)ruh\s+hali\w*",
+    ),
+    "varshaphala": (
+        r"(?<!\w)varshaphala\w*", r"(?<!\w)varṣaphala\w*",
+        r"(?<!\w)yıllık\s+harita\w*", r"(?<!\w)yillik\s+harita\w*",
+        r"(?<!\w)yıllık\s+döngü\w*", r"(?<!\w)yillik\s+dongu\w*",
+        r"(?<!\w)doğum\s+günümden\s+sonraki\s+yıl\w*",
+        r"(?<!\w)dogum\s+gunumden\s+sonraki\s+yil\w*",
+    ),
+}
+
 
 def _question_text(question):
     return str(question or "").replace("İ", "i").casefold()
+
+
+def explicit_topics_for_question(question):
+    """Return current-question topics without reading conversation history."""
+
+    text = _question_text(question)
+    return {
+        topic
+        for topic, patterns in TOPIC_PATTERNS.items()
+        if any(re.search(pattern, text, flags=re.UNICODE) for pattern in patterns)
+    }
+
+
+def detect_explicit_topic(question):
+    """Resolve one explicit topic; mixed current questions remain general."""
+
+    topics = explicit_topics_for_question(question)
+    if not topics:
+        return None
+    # Emotional words qualify another explicit life-area question rather than
+    # replacing it.  Example: "işimde neden mutsuzum" is still career.
+    substantive = topics - {"wellbeing"}
+    if len(substantive) == 1:
+        return next(iter(substantive))
+    if not substantive and "wellbeing" in topics:
+        return "wellbeing"
+    # More than one stated life area is a genuine multi-topic question.  Do
+    # not silently choose whichever dictionary entry happens to come first.
+    return "general"
 
 
 def event_evidence_for_question(question):
@@ -174,8 +291,8 @@ def normalize_classification(value, question, now_iso):
     """Repair bounded model omissions without granting file or chart authority.
 
     Gemini remains the semantic classifier. The server only enforces explicit
-    time phrases, explicit career/relationship context, required evidence
-    minima, and internally supplied current time.
+    current-question topic and time phrases, required evidence minima, and
+    internally supplied current time.
     """
 
     if not isinstance(value, dict):
@@ -187,25 +304,7 @@ def normalize_classification(value, question, now_iso):
     tokens = set(re.findall(r"\w+", question_text, flags=re.UNICODE))
     event_evidence = event_evidence_for_question(question)
 
-    career_context = any(
-        token in {
-            "iş", "işim", "işimde", "işte",
-            "meslek", "mesleğim", "mesleğimde",
-        }
-        or token.startswith("kariyer")
-        for token in tokens
-    )
-    relationship_context = any(
-        token in {
-            "eş", "eşim", "eşimle", "sevgili", "sevgilim", "sevgilimle",
-            "partner", "partnerim", "ilişki", "evlilik", "flört", "flörtüm",
-            "çıktığım", "ciktigim", "adamla", "kadınla", "kadinla",
-        }
-        or token.startswith("ilişki")
-        or token.startswith("evlili")
-        or token.startswith("evlen")
-        for token in tokens
-    )
+    explicit_topic = detect_explicit_topic(question)
     emotional_context = any(
         token.startswith((
             "hisset", "gergin", "mutsuz", "kayg", "endiş", "motivasyon",
@@ -216,10 +315,8 @@ def normalize_classification(value, question, now_iso):
         for token in tokens
     )
 
-    if career_context:
-        normalized["primary_topic"] = "career"
-    elif relationship_context:
-        normalized["primary_topic"] = "marriage"
+    if explicit_topic:
+        normalized["primary_topic"] = explicit_topic
     elif emotional_context:
         normalized["primary_topic"] = "wellbeing"
 
@@ -251,8 +348,8 @@ def normalize_classification(value, question, now_iso):
         # asks about the current sky even when the user does not type "şimdi".
         normalized["time_scope"] = "instant"
     elif emotional_context and primary_topic != "wellbeing" and normalized.get("time_scope") == "instant":
-        # Work/relationship context must not become an instant wellbeing
-        # route merely because it contains an emotional word.
+        # An explicit life-area question must not become an instant wellbeing
+        # route merely because it also contains an emotional word.
         normalized["time_scope"] = "none"
 
     time_scope = str(normalized.get("time_scope") or "").strip()
@@ -456,7 +553,10 @@ def build_request(question, now_iso, conversation_context=None):
         "Kelime icindeki kisa harf eslesmelerine gore karar verme: 'hissetmiyorum' kariyer "
         "degildir. Ruh hali, duygu, gerginlik, motivasyon veya iyi hissetmeme sorularini "
         "wellbeing olarak siniflandir; career yalniz is, meslek veya kariyer baglami acikca "
-        "varsa secilir. 'Simdi/tam su anda' instant; present-state wellbeing questions such as "
+        "varsa secilir. Ana konu listesi kariyerle sinirli degildir: aile ve ebeveynlik family; "
+        "egitim, sinav ve uzmanlasma education; tasinma, yurtdisi, yerlesim ve mulk relocation; "
+        "hukuk, sozlesme ve uyusmazlik legal; yillik harita/dongu varshaphala olur. Birden fazla "
+        "yasam alani ayni soruda acikca soruluyorsa general sec. 'Simdi/tam su anda' instant; present-state wellbeing questions such as "
         "'neden sinirliyim?' also use instant; 'bugun' daily, tarih veya donem isteyen "
         "sorular range olur. 'Evlenebilir miyim?' gibi gelecekte bir sonucun olup olmayacağını "
         "soran kipler de range olur; tarih verilmemişse bugünden başlayan 92 günlük ufku seç. "

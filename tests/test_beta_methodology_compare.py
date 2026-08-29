@@ -14,6 +14,7 @@ from app import (
     _beta_detect_subject_topic,
     _beta_detect_topic,
     _beta_question_route,
+    _beta_topic_packet,
     _beta_shadbala_strength_summary,
     _beta_json,
     _beta_load_json,
@@ -561,7 +562,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
             self.assertEqual(result["model"]["time_scope"], scope)
             self.assertEqual(result["model"]["sensitivity"], sensitivity)
             self.assertEqual(result["selected"], result["legacy"])
-        self.assertEqual(data["results"][0]["legacy"]["primary_topic"], "career")
+        self.assertEqual(data["results"][0]["legacy"]["primary_topic"], "wellbeing")
         self.assertEqual(data["results"][0]["model"]["primary_topic"], "wellbeing")
 
         with closing(_beta_db()) as conn:
@@ -572,7 +573,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(stored, 9)
 
     @patch("app.call_vertex_bridge")
-    def test_active_router_fixes_hissetmiyorum_without_file_authority(self, bridge_call):
+    def test_active_router_agrees_that_hissetmiyorum_is_not_career(self, bridge_call):
         app.config["QUESTION_ROUTER_MODE"] = "active"
         bridge_call.side_effect = lambda request_id, _request: (
             request_id,
@@ -585,7 +586,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
             "active-route-test",
         )
 
-        self.assertEqual(routing["legacy"]["primary_topic"], "career")
+        self.assertEqual(routing["legacy"]["primary_topic"], "wellbeing")
         self.assertEqual(routing["selected"]["primary_topic"], "wellbeing")
         self.assertEqual(routing["selected"]["time_scope"], "instant")
         self.assertNotIn("path", routing["selected"])
@@ -657,6 +658,74 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(routing["selected"]["time_scope"], "range")
         self.assertTrue(routing["selected"]["timing_required"])
         self.assertIn("stored_transit_days", routing["selected"]["required_evidence"])
+
+    def test_bypass_router_covers_all_api_subjects_and_never_inherits_an_absent_topic(self):
+        cases = {
+            "Karakterimde öne çıkan güçlü yön nedir?": "character",
+            "Kariyerimde hangi becerimi geliştirmeliyim?": "career",
+            "Evlilik konusunda sınırlarımı nasıl kurarım?": "marriage",
+            "Maddi güven ve birikim düzenimi nasıl ele almalıyım?": "wealth",
+            "Sağlık ve enerji düzenimde neye dikkat etmeliyim?": "health",
+            "Aile içinde sorumlulukları nasıl dengelemeliyim?": "family",
+            "Eğitim ve uzmanlaşma yönüm nasıl görünüyor?": "education",
+            "Yurtdışına taşınma kararını nasıl değerlendirmeliyim?": "relocation",
+            "Hukuki sözleşme sürecinde neye dikkat etmeliyim?": "legal",
+            "Ruhsal yönüm ve yaşam amacım hakkında ne görünüyor?": "spiritual",
+            "İyi hissetmiyorum.": "wellbeing",
+            "Yıllık haritam hangi alanları öne çıkarıyor?": "varshaphala",
+        }
+        for index, (question, expected) in enumerate(cases.items()):
+            with self.subTest(question=question):
+                routing = _beta_question_route(
+                    question,
+                    {"birth": {"timezone_id": "Europe/Istanbul"}},
+                    f"bypass-all-topics-{index}",
+                    conversation_context=[{
+                        "question": "Kariyerimde ne olur?",
+                        "answer": "Önceki cevap yalnız kariyer hakkındaydı.",
+                    }],
+                    mode_override="bypass",
+                )
+                self.assertEqual(routing["selected"]["primary_topic"], expected)
+
+        neutral = _beta_question_route(
+            "Bu konuda bana ne söyleyebilirsin?",
+            {"birth": {"timezone_id": "Europe/Istanbul"}},
+            "bypass-neutral-current-question",
+            conversation_context=[{
+                "question": "İlişkim nasıl ilerler?",
+                "answer": "Önceki cevap ilişki hakkındaydı.",
+            }],
+            mode_override="bypass",
+        )
+        self.assertEqual(neutral["selected"]["primary_topic"], "general")
+
+    def test_extended_api_subjects_receive_real_topic_packets(self):
+        chart = {
+            "houses": [],
+            "lordships": {},
+            "planets": [],
+            "vargas": {},
+            "dashas": {},
+            "yogas": {},
+            "missing": [],
+            "analysis_modules": {
+                "children_education": {"confidence": "medium", "missing_data": []},
+                "property_legal": {"confidence": "medium", "missing_data": []},
+                "spiritual_karma_dharma": {"confidence": "medium", "missing_data": []},
+                "varshaphala": {"confidence": "medium", "missing_data": []},
+            },
+            "varshaphala": {"status": "available", "year": {"varsha_start_year": 2026}},
+        }
+        for topic in (
+            "character", "wellbeing", "family", "education", "relocation",
+            "legal", "spiritual", "varshaphala",
+        ):
+            with self.subTest(topic=topic):
+                packet = _beta_topic_packet(chart, topic)
+                self.assertEqual(packet["topic"], topic)
+                self.assertEqual(packet["source"], "canonical_chart_topic_selection")
+                self.assertIn("evidence", packet)
 
     def test_character_router_and_shadbala_ranking_use_ratio(self):
         self.assertEqual(

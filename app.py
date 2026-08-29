@@ -31,6 +31,7 @@ from place_catalog import PlaceCatalogUnavailable, get_place, search_places
 from question_classifier import (
     QuestionClassificationError,
     classify_question,
+    detect_explicit_topic,
     enforce_explicit_time_scope,
     event_evidence_for_question,
 )
@@ -29516,21 +29517,6 @@ BETA_DEFAULT_OPTIONS = {
     "language": "tr",
 }
 
-BETA_TOPIC_KEYWORDS = {
-    "character": {
-        "karakter", "kişilik", "kisilik", "mizaç", "mizac", "yetenek",
-        "güçlü yan", "guclu yan", "zayıf yan", "zayif yan",
-    },
-    "career": {"kariyer", "meslek", "iş", "is", "çalışma", "para kazanma", "d10"},
-    "marriage": {
-        "evlilik", "evlen", "ilişki", "iliski", "partner", "eş", "es",
-        "aşk", "ask", "flört", "çıktığım", "ciktigim", "d7",
-    },
-    "wealth": {"para", "finans", "gelir", "kazanç", "kazanc", "servet", "yatırım"},
-    "health": {"sağlık", "saglik", "hastalık", "hastalik", "beden", "d12"},
-    "transit": {"transit", "güncel", "bugün", "bugun", "şimdi", "simdi"},
-}
-
 BETA_TIMING_KEYWORDS = {
     "transit",
     "güncel",
@@ -29563,6 +29549,10 @@ BETA_TIMING_KEYWORDS = {
     "gokyuzu",
     "gökyüzündeki önemli",
     "onemli gokyuzu",
+    "ne zaman",
+    "olur mu",
+    "olacak mı",
+    "olacak mi",
 }
 
 BETA_RECTIFICATION_KEYWORDS = {
@@ -30900,28 +30890,24 @@ def _beta_chart_summary(chart):
 
 
 def _beta_detect_topic(question):
-    normalized = str(question or "").casefold()
-    if any(keyword.casefold() in normalized for keyword in BETA_TIMING_KEYWORDS):
+    if any(_beta_question_has_marker(question, keyword) for keyword in BETA_TIMING_KEYWORDS):
         return "transit"
-    for topic, keywords in BETA_TOPIC_KEYWORDS.items():
-        if any(keyword.casefold() in normalized for keyword in keywords):
-            return topic
-    return "general"
+    return detect_explicit_topic(question) or "general"
+
+
+def _beta_question_has_marker(question, marker):
+    normalized = str(question or "").replace("İ", "i").casefold()
+    normalized_marker = str(marker or "").replace("İ", "i").casefold()
+    escaped = re.escape(normalized_marker).replace(r"\ ", r"\s+")
+    return bool(re.search(rf"(?<!\w){escaped}(?!\w)", normalized, flags=re.UNICODE))
 
 
 def _beta_is_rectification_question(question):
-    normalized = str(question or "").casefold()
-    return any(keyword.casefold() in normalized for keyword in BETA_RECTIFICATION_KEYWORDS)
+    return any(_beta_question_has_marker(question, keyword) for keyword in BETA_RECTIFICATION_KEYWORDS)
 
 
 def _beta_detect_subject_topic(question):
-    normalized = str(question or "").casefold()
-    for topic, keywords in BETA_TOPIC_KEYWORDS.items():
-        if topic == "transit":
-            continue
-        if any(keyword.casefold() in normalized for keyword in keywords):
-            return topic
-    return "general"
+    return detect_explicit_topic(question) or "general"
 
 
 def _beta_legacy_question_route(question):
@@ -30965,7 +30951,11 @@ def _beta_legacy_question_route(question):
         "target_datetime": "now" if time_scope == "instant" else None,
         "required_evidence": required,
         "sensitivity": (
-            "medical" if subject_topic == "health" else "standard"
+            "medical" if subject_topic == "health"
+            else "financial" if subject_topic == "wealth"
+            else "legal" if subject_topic == "legal"
+            else "mental_wellbeing" if subject_topic == "wellbeing"
+            else "standard"
         ),
         "confidence": "low",
         "clarification_required": False,
@@ -31448,6 +31438,10 @@ def _beta_safety_notes(topic, sensitivity=None):
         notes.append("Sağlık başlıkları için profesyonel tıbbi görüşün yerine geçmez.")
     if topic == "wealth":
         notes.append("Finans başlıkları yatırım tavsiyesi değildir.")
+    if topic == "legal":
+        notes.append("Hukuki başlıklar profesyonel hukuk görüşünün yerine geçmez.")
+    if topic == "relocation":
+        notes.append("Taşınma ve mülk başlıkları hukuki veya finansal sonuç garantisi değildir.")
     if topic == "wellbeing" or sensitivity == "mental_wellbeing":
         notes.append(
             "Ruh hâli sorularında psikolojik/psikiyatrik teşhis veya kriz güvencesi üretilmez."
@@ -31510,6 +31504,98 @@ PWA_NATAL_TOPIC_SECTION_IDS = {
         "varga_tables", "shadbala", "jaimini", "yogas", "doshas",
         "planet_quick_read", "topic_summaries",
     },
+    "family": {
+        "vedic_spine",
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "planet_quick_read", "house_drishti",
+        "planet_role_blocks", "topic_summaries",
+    },
+    "education": {
+        "vedic_spine",
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "planet_quick_read", "house_drishti", "topic_summaries",
+    },
+    "relocation": {
+        "vedic_spine",
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "planet_quick_read", "house_drishti", "topic_summaries",
+    },
+    "legal": {
+        "vedic_spine",
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "planet_quick_read", "house_drishti",
+        "planet_role_blocks", "topic_summaries",
+    },
+    "varshaphala": {
+        "vedic_spine",
+        "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "planet_quick_read", "topic_summaries",
+    },
+}
+
+
+# These chat selections mirror the subject surfaces already produced by the
+# API's topic Markdown builders.  They do not change the public chart response
+# or calculate new astrology; they select existing canonical chart fields for
+# topics that predate the four legacy ``topic_packets``.
+BETA_EXTENDED_TOPIC_PACKET_CONFIG = {
+    "character": {
+        "houses": [1, 3, 4, 5, 9, 10],
+        "lordships": ["1", "3", "4", "5", "9", "10"],
+        "planets": ["Sun", "Moon", "Mercury", "Jupiter", "Saturn", "Mars"],
+        "vargas": ["D1", "D9", "D10", "D24"],
+    },
+    "wellbeing": {
+        "houses": [1, 4, 5, 8, 12],
+        "lordships": ["1", "4", "5", "8", "12"],
+        "planets": ["Moon", "Sun", "Mercury", "Mars", "Saturn", "Jupiter"],
+        "vargas": ["D1", "D9"],
+    },
+    "family": {
+        "houses": [2, 3, 4, 5, 6, 8, 9, 11, 12],
+        "lordships": ["2", "3", "4", "5", "6", "8", "9", "11", "12"],
+        "planets": ["Sun", "Moon", "Jupiter", "Saturn", "Mars", "Venus", "Rahu (True)", "Ketu"],
+        "vargas": ["D1", "D7", "D12", "D9", "D4"],
+    },
+    "education": {
+        "houses": [3, 4, 5, 6, 8, 9, 10, 11, 12],
+        "lordships": ["3", "4", "5", "6", "8", "9", "10", "11", "12"],
+        "planets": ["Mercury", "Jupiter", "Sun", "Moon", "Saturn", "Mars", "Rahu (True)", "Ketu"],
+        "vargas": ["D1", "D24", "D9", "D10"],
+    },
+    "relocation": {
+        "houses": [2, 3, 4, 6, 8, 9, 11, 12],
+        "lordships": ["2", "3", "4", "6", "8", "9", "11", "12"],
+        "planets": ["Moon", "Mars", "Saturn", "Jupiter", "Venus", "Mercury", "Rahu (True)", "Ketu"],
+        "vargas": ["D1", "D4", "D9", "D12"],
+    },
+    "legal": {
+        "houses": [2, 4, 6, 7, 8, 9, 11, 12],
+        "lordships": ["2", "4", "6", "7", "8", "9", "11", "12"],
+        "planets": ["Saturn", "Mars", "Jupiter", "Mercury", "Venus", "Rahu (True)", "Ketu"],
+        "vargas": ["D1", "D9", "D10", "D4", "D30"],
+    },
+    "spiritual": {
+        "houses": [1, 5, 8, 9, 12],
+        "lordships": ["1", "5", "8", "9", "12"],
+        "planets": ["Sun", "Moon", "Jupiter", "Saturn", "Rahu (True)", "Ketu"],
+        "vargas": ["D1", "D9", "D20"],
+    },
+    "varshaphala": {
+        "houses": [1, 5, 9, 10, 11],
+        "lordships": ["1", "5", "9", "10", "11"],
+        "planets": ["Sun", "Moon", "Jupiter", "Saturn"],
+        "vargas": ["D1", "D9", "D10"],
+    },
+}
+
+BETA_TOPIC_ANALYSIS_MODULE = {
+    "family": "children_education",
+    "education": "children_education",
+    "relocation": "property_legal",
+    "legal": "property_legal",
+    "spiritual": "spiritual_karma_dharma",
+    "varshaphala": "varshaphala",
 }
 
 
@@ -31577,16 +31663,7 @@ def _beta_selected_natal_sections(
         })
     elif timing_mode:
         selected_ids.update({"planet_quick_read", "topic_summaries"})
-        if subject_topic == "career":
-            selected_ids.add("career_packet")
-        elif subject_topic == "wellbeing":
-            selected_ids.update({"shadbala", "bhava_bala", "avasthas"})
-        elif subject_topic == "marriage":
-            selected_ids.update({
-                "varga_tables", "doshas", "house_drishti", "planet_role_blocks",
-            })
-        elif subject_topic in {"wealth", "health", "spiritual"}:
-            selected_ids.add("varga_tables")
+        selected_ids.update(PWA_NATAL_TOPIC_SECTION_IDS.get(subject_topic, set()))
     else:
         selected_ids.update(PWA_NATAL_TOPIC_SECTION_IDS.get(subject_topic, set()))
     return [
@@ -31641,22 +31718,80 @@ def _beta_topic_packet(chart, subject_topic):
     packet = (chart.get("topic_packets") or {}).get(subject_topic)
     if packet:
         return packet
-    if subject_topic not in {"character", "wellbeing", "general"}:
+    if subject_topic == "general":
+        return {
+            "contract_version": "vedic-natal-topic-selection-v2",
+            "package_code": "GENERAL",
+            "topic": "general",
+            "source": "selected_natal_sections",
+            "confidence": "medium",
+            "missing_factors": [],
+            "required_but_missing": [],
+            "evidence": {
+                "selection_rule": "Genel veya birden çok konulu soruda temel natal göstergeler ve karşı kanıt birlikte okunur."
+            },
+        }
+
+    config = BETA_EXTENDED_TOPIC_PACKET_CONFIG.get(subject_topic)
+    if not config:
         return None
-    selection_rules = {
-        "character": "Lagna, Lagna lordu, Ay, Atmakaraka, Shadbala, D9, yoga ve karşı kanıt birlikte okunur.",
-        "wellbeing": "Ay, Lagna, Lagna lordu, aktif daşa, duygusal bhavalar ve zaman sorusunda güncel Ay/Panchanga birlikte okunur.",
-        "general": "Genel harita sorusunda temel natal göstergeler ve karşı kanıt birlikte okunur.",
+    topic_evidence = {
+        "houses": _topic_house_evidence(chart.get("houses") or [], config["houses"]),
+        "lordships": _topic_lordship_evidence(chart.get("lordships") or {}, config["lordships"]),
+        "planets": _topic_planet_evidence(chart.get("planets") or [], config["planets"]),
+        "vargas": _topic_varga_evidence(chart.get("vargas") or {}, config["vargas"]),
+        "active_dasha": _topic_active_dasha_evidence(chart.get("dashas") or {}),
+        "yogas": _topic_yoga_refs(chart.get("yogas") or {}, subject_topic),
     }
+    module_key = BETA_TOPIC_ANALYSIS_MODULE.get(subject_topic)
+    if module_key:
+        topic_evidence["analysis_module"] = (
+            (chart.get("analysis_modules") or {}).get(module_key) or {}
+        )
+    if subject_topic == "varshaphala":
+        annual = chart.get("varshaphala") or {}
+        topic_evidence["annual_cycle"] = {
+            "status": annual.get("status"),
+            "year": annual.get("year"),
+            "varsha_lagna": annual.get("varsha_lagna"),
+            "muntha": annual.get("muntha"),
+            "year_lord": (annual.get("year_lord") or {}).get("selected"),
+            "active_mudda_dasha": (annual.get("mudda_dasha") or {}).get("active"),
+            "technical_layers": annual.get("technical_layers") or [],
+        }
+
+    missing = chart.get("missing") or []
+    missing_factors = _topic_missing_factors(config, topic_evidence, missing)
+    required_but_missing = _topic_required_but_missing(config, topic_evidence, missing)
+    module = topic_evidence.get("analysis_module") or {}
+    required_but_missing = sorted(set(
+        required_but_missing + list(module.get("missing_data") or [])
+    ))
+    supporting = _topic_supporting_factors(topic_evidence)
+    challenging = _topic_challenging_factors(topic_evidence)
+    mixed = _topic_mixed_factors(topic_evidence)
+    confidence = _topic_confidence(topic_evidence, required_but_missing)
+    module_confidence = str(module.get("confidence") or "").strip()
+    if module_confidence in {"low", "medium", "high"}:
+        confidence = module_confidence if confidence != "low" else "low"
     return {
-        "contract_version": "vedic-natal-topic-selection-v1",
+        "contract_version": "vedic-natal-topic-selection-v2",
         "package_code": subject_topic.upper(),
         "topic": subject_topic,
-        "source": "selected_natal_sections",
-        "confidence": "medium",
-        "missing_factors": [],
-        "required_but_missing": [],
-        "evidence": {"selection_rule": selection_rules[subject_topic]},
+        "source": "canonical_chart_topic_selection",
+        "promise_level": _topic_promise_level(
+            supporting,
+            challenging,
+            mixed,
+            required_but_missing,
+        ),
+        "supporting_factors": supporting,
+        "challenging_factors": challenging,
+        "mixed_factors": mixed,
+        "confidence": confidence,
+        "missing_factors": missing_factors,
+        "required_but_missing": required_but_missing,
+        "evidence": topic_evidence,
     }
 
 

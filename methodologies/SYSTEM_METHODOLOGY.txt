@@ -1,7 +1,7 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.5.0
-date: 2026-08-16
+version: 1.6.0
+date: 2026-08-29
 language: tr
 transliteration: IAST
 runtime_profile: compact_natal_v1
@@ -22,6 +22,8 @@ Bu dosya Vedik AI sohbetinin tek aktif analiz metodolojisidir. Model astrolojik 
 | `transit_three_month` | `transit-three-month.md` | Kayıtlı üç aylık transit kaynağı. Yalnız zaman sorularında ilgili günler seçilir. |
 | `canonical_snapshot` | `canonical-snapshot.json` | Sunucu içi kanonik hesap kaydıdır. Tamamı modele gönderilmez. |
 | `manifest` | `manifest.json` | Dosya kodu, sahiplik, bölüm aralığı, boyut ve SHA-256 doğrulamasıdır. Astrolojik yorum kaynağı değildir. |
+
+API'nin konu paketi üreticileri kariyer, sağlık, aile/ebeveynlik, eğitim/uzmanlaşma, taşınma/yurtdışı/yerleşim, finans, ilişki/evlilik, karakter, ruhsal yön, yıllık döngü/Varṣaphala ve hukuki süreç alanlarını kapsar. Gezegen rolleri ile seans hazırlığı ise bağımsız kullanıcı konusu değil, bu analizleri destekleyen teknik dosyalardır. Sohbet yönlendiricisi kullanıcının güncel sorusunu bu alanların tamamında sınıflandırır; yalnız kariyer veya önceki sohbet konusu varsayılmaz.
 
 
 ### 0.2 Modele ne gönderilir?
@@ -93,8 +95,15 @@ Gemini'nin ilk çağrısı yalnız soruyu sınıflandırır; astrolojik analiz y
 - `marriage`: romantik ilişki, evlilik ve resmî birliktelik;
 - `wealth`: gelir, para, kaynak ve maddi güven;
 - `health`: beden, canlılık ve bakım; teşhis dışı;
+- `family`: aile, ebeveynlik, çocuklar, kardeşler, bakım ve aile düzeni;
+- `education`: eğitim, sınav, öğrenim, beceri ve uzmanlaşma;
+- `relocation`: taşınma, yurtdışı, yerleşim, konut ve mülk bağlamı;
+- `legal`: sözleşme, resmî süreç, uyuşmazlık, yükümlülük ve miras; hukuk tavsiyesi dışı;
 - `spiritual`: ruhsal yön, pratik, anlam ve dharma; epistemik sınırla;
-- `wellbeing`: günlük/anlık ruh hâli, motivasyon ve içsel deneyim; teşhis dışı.
+- `wellbeing`: günlük/anlık ruh hâli, motivasyon ve içsel deneyim; teşhis dışı;
+- `varshaphala`: yıllık harita ve yıllık yaşam alanı döngüsü; kesin olay kehaneti dışı.
+
+Güncel soruda açıkça belirtilen konu, eski sohbetin konusundan önce gelir. Kullanıcı yeni sorusunda ilişki, kariyer veya başka bir alan söylemediyse geçmiş cevap bu etiketi güncel soruya taşıyamaz. Birden fazla yaşam alanı aynı soruda açıkça isteniyorsa `general` seçilir ve alanlar ayrı koşullarla ele alınır.
 
 İzinli zaman kapsamları:
 
@@ -271,6 +280,22 @@ Vedik omurga, 2./11./5./9. ev ve lordları, Lagna, Jüpiter, Merkür, Venüs, Sa
 
 Vedik omurga, Lagna/lord, Güneş, Ay, 6./8./12. ev, Mars, Satürn, Jüpiter, koruyucu göstergeler; veri kapısı uygunsa D6/D30. Hastalık teşhisi, ölüm/ömür, ilaç veya acil durum güvencesi üretilmez.
 
+### `family`
+
+Vedik omurga, 2./3./4./5./9. ev ağları, Güneş, Ay, Jüpiter, Satürn, Mars ve Venüs; D7 çocuk/ebeveynlik, D12 ebeveyn/soy, D4 ev düzeni ve D9 destek katmanı olarak kullanılır. Doğum, kayıp, ayrılık veya aile sonucu garanti edilmez.
+
+### `education`
+
+Vedik omurga, 3./4./5./9./10. ev ağları, Merkür, Jüpiter, Güneş, Ay ve Satürn; D24 ana uzmanlaşma, D9/D10 destek katmanıdır. Kabul, sınav başarısı, diploma veya mesleki yeterlilik garanti edilmez.
+
+### `relocation`
+
+Vedik omurga, 3./4./9./12. ev ağları, Ay, Mars, Satürn, Jüpiter, Venüs, Rāhu ve Ketu; D4 ana yerleşim/mülk, D9 ve D12 destek katmanıdır. Ülke, şehir, adres, mülk edinimi veya kalıcılık sonucu üretilmez.
+
+### `legal`
+
+Vedik omurga, 2./4./6./7./8./9./11./12. ev ağları, Satürn, Mars, Jüpiter, Merkür, Venüs, Rāhu ve Ketu; veri kapısına göre D4/D9/D10/D30 destekleri. Kusur, dava sonucu, ceza, sözleşme geçerliliği, miras hakkı veya kazanma/kaybetme hükmü üretilmez; profesyonel hukuk görüşü önerilir.
+
 ### `spiritual`
 
 Vedik omurga, 5./9./12. ev ve lordları, Jüpiter, Ketu, Satürn, Ay, Güneş, Lagna, D20 ve D9. Geçmiş yaşam, mokṣa, ruhsal üstünlük veya guru emri olgu gibi sunulmaz.
@@ -278,6 +303,10 @@ Vedik omurga, 5./9./12. ev ve lordları, Jüpiter, Ketu, Satürn, Ay, Güneş, L
 ### `wellbeing`
 
 Vedik omurga, Lagna/lord, Ay/Janma Nakṣatra, 1./4. ev, Ay'ın dispozitör ve nakṣatra lordu, aktif daśā ve koruyucu/zorlayıcı örüntüler. Günlük/anlık soruda kayıtlı gün, transit Ay, en az bir Panchanga bileşeni ve gerekiyorsa tek anlık görüntü kullanılır. Klinik veya psikiyatrik teşhis konmaz.
+
+### `varshaphala`
+
+Seçilen yıllık dönüş kaydı, Varṣa Lagna, Muntha, teknik yıl lordu adayı, aktif Mudda Daśā ve hazır yıllık yaşam alanı göstergeleri kullanılır. Starter Tajika/Saham katmanları final hüküm gibi sunulmaz; yıllık döngü kesin olay listesi veya garanti tarih üretmez.
 
 ## 7. Kanıt sözleşmesi
 

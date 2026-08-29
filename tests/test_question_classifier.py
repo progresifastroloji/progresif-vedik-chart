@@ -2,9 +2,11 @@ import json
 import unittest
 
 from question_classifier import (
+    ALLOWED_TOPICS,
     QuestionClassificationError,
     build_request,
     classify_question,
+    detect_explicit_topic,
     enforce_explicit_time_scope,
     event_evidence_for_question,
     validate_classification,
@@ -48,6 +50,42 @@ def _model_payload(value):
 
 
 class QuestionClassifierTest(unittest.TestCase):
+    def test_api_subject_inventory_is_available_to_the_question_contract(self):
+        self.assertEqual(
+            ALLOWED_TOPICS,
+            {
+                "general", "character", "career", "marriage", "wealth",
+                "health", "family", "education", "relocation", "legal",
+                "spiritual", "wellbeing", "varshaphala",
+            },
+        )
+
+    def test_current_question_detects_every_api_subject_without_raw_substrings(self):
+        cases = {
+            "Karakterimde öne çıkan güçlü yön nedir?": "character",
+            "Kariyerimde hangi becerimi geliştirmeliyim?": "career",
+            "Evlilik konusunda sınırlarımı nasıl kurarım?": "marriage",
+            "Maddi güven ve birikim düzenimi nasıl ele almalıyım?": "wealth",
+            "Sağlık ve enerji düzenimde neye dikkat etmeliyim?": "health",
+            "Aile içinde sorumlulukları nasıl dengelemeliyim?": "family",
+            "Eğitim ve uzmanlaşma yönüm nasıl görünüyor?": "education",
+            "Yurtdışına taşınma kararını nasıl değerlendirmeliyim?": "relocation",
+            "Hukuki sözleşme sürecinde neye dikkat etmeliyim?": "legal",
+            "Ruhsal yönüm ve yaşam amacım hakkında ne görünüyor?": "spiritual",
+            "Neden gergin ve mutsuz hissediyorum?": "wellbeing",
+            "Yıllık haritam hangi alanları öne çıkarıyor?": "varshaphala",
+        }
+        for question, expected in cases.items():
+            with self.subTest(question=question):
+                self.assertEqual(detect_explicit_topic(question), expected)
+
+        self.assertEqual(
+            detect_explicit_topic("Aile ve kariyer alanlarını birlikte değerlendir."),
+            "general",
+        )
+        self.assertIsNone(detect_explicit_topic("Bu konuda ne görüyorsun?"))
+        self.assertEqual(detect_explicit_topic("İyi hissetmiyorum."), "wellbeing")
+
     def test_eclipse_question_forces_stored_event_layers_without_calculation(self):
         def model_call(request_id, _request):
             return request_id, _model_payload(_classification(
