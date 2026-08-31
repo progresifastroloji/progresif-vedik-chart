@@ -7,13 +7,10 @@ donem_bulundugu_alan/guc gercekten kisiye ozeldir.
 
 DASHA LORDU ARTIK DISARIDAN ALINMAZ. Ilk surumde caller "Jupiter",
 "Saturn" gibi elle veriyordu; bu, yanlis lord verilirse sessizce yanlis
-uretim riski tasiyordu. Simdi chart['dashas']['vimshottari']
-['current_active'] okunuyor (app.py:_v2_dashas, satir ~8133). Bu alan
-'active' (dogum ani) DEGIL; reference_dt_utc'ye gore hesaplanir ve v2
-chart route'u bu referansi transit_reference'tan (varsayilan: simdi)
-gecirir. Kod kaynagindan dogrulandi; ornek JSON dosyasi (statik,
-1990 dogum ani) uzerinde 'current_active' ayrica calistirilmadi --
-canli /api/v2/chart/full cagrisinda mutlaka kontrol edilmeli.
+uretim riski tasiyordu. Tam Vimshottari ağacı varsa dönem, güncel Julian
+güne göre yeniden seçilir; böylece harita kaydındaki eski current_active
+değeri zaman geçtikçe haftalık yorumu bayatlatmaz. Tam ağacı olmayan eski
+ve küçük kayıtlar için current_active geriye dönük uyumluluk sağlar.
 
 ana_tema/gun_kalitesi/sade_sati/burc_degisimi icin kendi mantigini
 YAZMAZ; situation.build_situation()'i cagirir.
@@ -23,8 +20,9 @@ Yalniz saf fonksiyon icerir; DB, dosya, ag erisimi yoktur.
 
 Girdi:
     chart : _build_v2_chart() ciktisi (veya chart_summary esdegeri).
-        chart['dashas']['vimshottari']['current_active'] sart.
-    katman: "daily" | "weekly" | "monthly"
+        Tam Vimshottari dönem ağacı tercih edilir; eski kayıtlarda
+        current_active geriye dönük uyumluluk için kullanılabilir.
+    katman: "daily" | "weekly"
     snaps : situation.required_days(katman, d) ile ayni uzunlukta,
         situation.planet_signs() ciktilarindan olusan liste.
 
@@ -40,8 +38,23 @@ from .situation import build_situation
 _STRONG_DIGNITY = ("uccha", "moolatrikona", "swakshetra")
 _WEAK_DIGNITY_ESSENTIAL = ("enemy",)
 
-HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v1"
-HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v2"
+HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v2"
+HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v4"
+
+FOCUS_BY_HOUSE = {
+    1: "kendin",
+    2: "kaynak",
+    3: "girişim",
+    4: "huzur",
+    5: "yaratıcılık",
+    6: "düzen",
+    7: "ilişki",
+    8: "derinlik",
+    9: "anlam",
+    10: "iş",
+    11: "çevre",
+    12: "dinlenme",
+}
 
 
 def _find_planet(chart, planet_name):
@@ -61,11 +74,24 @@ def _natal_moon_sign_index(chart):
     return int(idx) if idx is not None else None
 
 
-def _current_dasha_lord(chart, katman):
+def _period_at_jd(periods, target_jd):
+    """Tam Vimshottari ağacında hedef anı kapsayan dönemi bulur."""
+    for period in periods or []:
+        try:
+            start = float(period.get("actual_start_jd"))
+            end = float(period.get("actual_end_jd"))
+        except (TypeError, ValueError):
+            continue
+        if start <= target_jd < end:
+            return period
+    return None
+
+
+def _current_dasha_lord(chart, katman, reference_jd=None):
     """Katmanin ihtiyac duydugu Vimshottari seviyesinin GUNCEL lordu.
 
     daily -> None (mevcut tasarimda gunluk katmanda dasha yan parcasi yok).
-    weekly -> pratyantar, monthly -> antara (digest/keys.py ile ayni esleme).
+    weekly -> pratyantar (digest/keys.py ile ayni esleme).
 
     current_active yoksa veya seviye eksikse None doner; caller bu
     durumda dasha baglamini pakete eklemez (uydurma yok).
@@ -73,11 +99,23 @@ def _current_dasha_lord(chart, katman):
     level = LAYER_DASHA_LEVEL.get(katman)
     if level is None:
         return None
-    current_active = (
-        (chart.get("dashas") or {})
-        .get("vimshottari", {})
-        .get("current_active", {})
-    )
+    vimshottari = (chart.get("dashas") or {}).get("vimshottari", {})
+    if reference_jd is not None and vimshottari.get("maha"):
+        period = _period_at_jd(vimshottari.get("maha"), reference_jd)
+        for child_level in ("antara", "pratyantar", "sookshma", "prana"):
+            if period is None:
+                break
+            period = _period_at_jd(period.get(child_level), reference_jd)
+            if child_level == level:
+                break
+        if period is not None and period.get("level") == level:
+            lord = period.get("lord")
+            return str(lord) if lord else None
+        return None
+
+    # Eski/küçük test kayıtlarında tam dönem ağacı olmayabilir. Bu durumda
+    # kayıt oluşturulurken hesaplanan alan geriye dönük uyumluluk sağlar.
+    current_active = vimshottari.get("current_active", {})
     period = current_active.get(level) or {}
     lord = period.get("lord")
     return str(lord) if lord else None
@@ -130,7 +168,7 @@ def _theme_join(house_numbers):
     return " ve ".join(themes)
 
 
-def build_paid_situation(chart, katman, snaps):
+def build_paid_situation(chart, katman, snaps, *, reference_jd=None):
     """Kisiye ozel durum paketi. Dasha lordu haritadan otomatik okunur.
 
     Doner: dict, veya girdi eksikse None.
@@ -139,7 +177,7 @@ def build_paid_situation(chart, katman, snaps):
     if natal_moon is None or not snaps:
         return None
 
-    dasha_lord = _current_dasha_lord(chart, katman)
+    dasha_lord = _current_dasha_lord(chart, katman, reference_jd=reference_jd)
     level = LAYER_DASHA_LEVEL.get(katman)
     taban = build_situation(katman, snaps, natal_moon, dasha_lord, level)
 
@@ -149,6 +187,9 @@ def build_paid_situation(chart, katman, snaps):
     ev = house_of(taban)
     if ev in HOUSE_THEME:
         paket["ana_tema"] = HOUSE_THEME[ev]
+        paket["odak"] = FOCUS_BY_HOUSE[ev]
+    if katman == "daily" and taban.get("snapshot_local_datetime"):
+        paket["snapshot_local_datetime"] = taban["snapshot_local_datetime"]
 
     # --- gecis_notu: burc degisimi sinyalleri (varsa) ---
     if taban.get("ay_burc_degisimi"):
@@ -190,9 +231,10 @@ def build_homepage_context(chart, d, paketler):
     missing = []
     if _natal_moon_sign_index(chart) is None:
         missing.append("natal_moon")
-    if not (chart.get("dashas") or {}).get("vimshottari", {}).get("current_active"):
+    vimshottari = (chart.get("dashas") or {}).get("vimshottari", {})
+    if not (vimshottari.get("maha") or vimshottari.get("current_active")):
         missing.append("current_period")
-    for layer in ("daily", "weekly", "monthly"):
+    for layer in ("daily", "weekly"):
         if not paketler.get(layer):
             missing.append(layer)
 
@@ -202,7 +244,8 @@ def build_homepage_context(chart, d, paketler):
         "local_date": d.isoformat(),
         "calculation": {
             "generator_version": meta.get("engine_version") or GENERATOR_VERSION,
-            "snapshot_hour_istanbul": SNAPSHOT_HOUR,
+            "current_snapshot_local_datetime": (paketler.get("daily") or {}).get("snapshot_local_datetime"),
+            "weekly_snapshot_hour_istanbul": SNAPSHOT_HOUR,
             "source": "verified_chart_and_cached_transit_snapshots",
         },
         "data_quality": {
@@ -211,6 +254,6 @@ def build_homepage_context(chart, d, paketler):
         },
         "layers": {
             layer: paketler.get(layer) or {}
-            for layer in ("daily", "weekly", "monthly")
+            for layer in ("daily", "weekly")
         },
     }

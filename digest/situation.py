@@ -12,12 +12,13 @@ kayitlarina dokunmaz.
 """
 
 from collections import Counter
+from datetime import datetime
 
 from .keys import (
     house_from,
+    IST,
     month_days,
     quality,
-    tz_offset_hours,
     week_days,
 )
 
@@ -44,12 +45,25 @@ def planet_signs(d):
 
     Doner: {"date": "YYYY-MM-DD", "planets": {"Sun": 4, "Moon": 5, ...}}
     """
+    local_dt = datetime(d.year, d.month, d.day, 12, 0, tzinfo=IST)
+    return planet_signs_at(local_dt)
+
+
+def planet_signs_at(local_dt):
+    """Verilen saat için gerçek gezegen burç indeksleri.
+
+    ``local_dt`` saat dilimli olmalıdır. Kişisel ana sayfa günlük yorumu
+    bu fonksiyonu İstanbul saatinin saatlik kovasıyla kullanır.
+    """
     from vedic_chart import calculate_chart
 
+    if local_dt.tzinfo is None or local_dt.utcoffset() is None:
+        raise ValueError("Saat dilimli yerel zaman gerekli")
+
     chart = calculate_chart(
-        d.year, d.month, d.day,
-        12, 0,
-        tz_offset_hours(d),
+        local_dt.year, local_dt.month, local_dt.day,
+        local_dt.hour, local_dt.minute,
+        local_dt.utcoffset().total_seconds() / 3600.0,
         REF_LAT, REF_LON,
     )
 
@@ -63,7 +77,11 @@ def planet_signs(d):
     if "Moon" not in planets:
         raise RuntimeError("transit Ay hesaplanamadi")
 
-    return {"date": d.isoformat(), "planets": planets}
+    return {
+        "date": local_dt.date().isoformat(),
+        "local_datetime": local_dt.isoformat(),
+        "planets": planets,
+    }
 
 
 # ------------------------------------------------------------ yardimci
@@ -98,6 +116,7 @@ def daily_situation(snap, natal_idx):
         "ay_evi": house,
         "gun_kalitesi": quality(house),
         "snapshot_gunleri": [snap["date"]],
+        "snapshot_local_datetime": snap.get("local_datetime"),
     }
 
 

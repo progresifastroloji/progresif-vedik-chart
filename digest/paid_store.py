@@ -1,10 +1,11 @@
-"""Ucretli kisisel digest icin gunluk onbellek.
+"""Kişisel ana sayfa digest'i için bağlam sürümlü önbellek.
 
 digest/store.py'ye (ucretsiz katman) dokunmaz, ayri dosyada ayri tablo.
-Amac: ayni chart_id icin gunde bir Gemini cagrisi, geri kalan
-sayfa acilislarinda diskten oku.
+Amaç: aynı kullanıcı + chart + güncel saatlik bağlam için tek Gemini
+çağrısı, aynı bağlamdaki diğer sayfa açılışlarında diskten okuma.
 
-Sema kasitli kucuk: chart_id + tarih -> uretilen JSON metni.
+Eski `paid_digest` tablosu geriye dönük uyumluluk için korunur; yeni ana
+sayfa yolu sürümlü `homepage_digest` tablosunu kullanır.
 """
 
 import json
@@ -16,8 +17,8 @@ from datetime import date, datetime, timedelta, timezone
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "digest_data", "paid_digest.sqlite3")
 
-GENERATOR_VERSION = "homepage-gemini-v1"
-METHODOLOGY_VERSION = "digest-methodology-v2"
+GENERATOR_VERSION = "homepage-gemini-v3"
+METHODOLOGY_VERSION = "digest-methodology-v4"
 LOCK_TIMEOUT_MIN = 10
 
 

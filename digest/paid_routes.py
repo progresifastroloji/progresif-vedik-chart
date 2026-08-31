@@ -1,4 +1,4 @@
-"""Ucretli kisisel digest route'u. Mevcut hicbir route ile cakismaz.
+"""Giriş yapmış harita sahibi için güncel kişisel digest route'u.
 
 app.py'de _beta_db / _beta_load_json / _account_deletion_user_id fonksiyonlarini
 KULLANIR ama import etmez modul seviyesinde (dongusel import olur, cunku
@@ -10,9 +10,9 @@ Sozlesme: chart_id + profile_id + owner_user_id ile /api/v2/beta/chart/summary
 ile BIREBIR ayni dogrulama/sahiplik kontrolu. beta_charts.chart_json zaten
 tam v2 chart'i tutuyor; burada AYRICA hesap yapilmaz, yalniz okunur.
 
-Gunde bir chart_id icin tek Gemini cagrisi (paid_store ile onbellek).
+Saatlik gökyüzü + chart_id için tek Gemini çağrısı (paid_store ile önbellek).
 Basarisizlikta ok:false + neden doner; 500 degil — caller (Next.js) bunu
-"mevcut statik digest'i goster" sinyali olarak okur.
+güncel yorumun hazırlanamadığı sinyali olarak okur. Eski/sabit yorum yoktur.
 """
 
 import hashlib
@@ -24,8 +24,8 @@ from contextlib import closing
 from flask import Blueprint, jsonify, request
 
 from . import batch, paid_store, paid_writer, store
-from .keys import today_ist
-from .situation import required_days
+from .keys import current_hour_ist
+from .situation import planet_signs_at, required_days
 from .paid_situation import (
     HOMEPAGE_CONTEXT_VERSION,
     HOMEPAGE_METHODOLOGY_VERSION,
@@ -71,23 +71,41 @@ def _load_owned_chart(data):
 
 
 def _required_snapshot_days(d):
-    gunler = []
-    for katman in ("daily", "weekly", "monthly"):
-        for gun in required_days(katman, d):
-            if gun not in gunler:
-                gunler.append(gun)
-    return sorted(gunler)
+    return sorted(required_days("weekly", d))
 
 
-def _load_homepage_snapshots(d):
-    """Ortak snapshot onbelleğini kullan; ayni gun icin tek hesap yap."""
+def _load_current_snapshot(local_hour):
+    """Aynı İstanbul saati için ortak gerçek gökyüzü snapshot'ı."""
+    store.init()
+    snapshot_key = "current:%s" % local_hour.strftime("%Y-%m-%dT%H")
+    snap = store.get_snapshot(snapshot_key)
+    if snap is not None:
+        return snap, 0
+
+    lock_key = "homepage:current-snapshot:%s" % snapshot_key
+    sahibi = store.acquire_lock(lock_key)
+    if sahibi is None:
+        return None, 0
+    t0 = time.time()
+    try:
+        snap = store.get_snapshot(snapshot_key)
+        if snap is None:
+            snap = planet_signs_at(local_hour)
+            store.put_snapshot(snapshot_key, snap)
+        return snap, int((time.time() - t0) * 1000)
+    finally:
+        store.release_lock(lock_key, sahibi)
+
+
+def _load_weekly_snapshots(d):
+    """Pazartesi-pazar günlük snapshot'larını ortak önbellekten oku."""
     store.init()
     gunler = _required_snapshot_days(d)
     snaps = store.get_snapshots(gunler)
     if snaps is not None:
         return snaps, 0
 
-    lock_key = "homepage:snapshots:%s" % d.isoformat()
+    lock_key = "homepage:weekly-snapshots:%s" % d.isoformat()
     sahibi = store.acquire_lock(lock_key)
     if sahibi is None:
         return None, 0
@@ -111,6 +129,13 @@ def _sha256(value):
     return hashlib.sha256(raw).hexdigest()
 
 
+def _julian_day(local_hour):
+    """Saat dilimli datetime değerini Unix kökeninden Julian güne çevirir."""
+    if local_hour.tzinfo is None or local_hour.utcoffset() is None:
+        raise ValueError("Saat dilimli yerel zaman gerekli")
+    return (local_hour.timestamp() / 86400.0) + 2440587.5
+
+
 @paid_digest_bp.route("/api/v2/pwa/digest/personal", methods=["POST"])
 def api_v2_pwa_digest_personal():
     try:
@@ -124,9 +149,11 @@ def api_v2_pwa_digest_personal():
             return jsonify({"ok": False, "status": kod, "error_code": "beta_chart_%s" % kod}), http_status
         chart, chart_id, profile_id, owner_user_id = sonuc
 
-        d = today_ist()
-        snapshots, snapshot_ms = _load_homepage_snapshots(d)
-        if snapshots is None:
+        local_hour = current_hour_ist()
+        d = local_hour.date()
+        current_snapshot, current_snapshot_ms = _load_current_snapshot(local_hour)
+        weekly_snapshots, weekly_snapshot_ms = _load_weekly_snapshots(d)
+        if current_snapshot is None or weekly_snapshots is None:
             return jsonify({
                 "ok": False,
                 "status": "generation_pending",
@@ -135,19 +162,25 @@ def api_v2_pwa_digest_personal():
                 "profile_id": profile_id,
             }), 200
 
-        required = _required_snapshot_days(d)
-        snap_by_day = {g.isoformat(): snap for g, snap in zip(required, snapshots)}
-        paketler = {}
-        for katman in ("daily", "weekly", "monthly"):
-            snaps = [snap_by_day[g.isoformat()] for g in required_days(katman, d)]
-            paketler[katman] = build_paid_situation(chart, katman, snaps)
+        reference_jd = _julian_day(local_hour)
+        paketler = {
+            "daily": build_paid_situation(
+                chart, "daily", [current_snapshot], reference_jd=reference_jd,
+            ),
+            "weekly": build_paid_situation(
+                chart, "weekly", weekly_snapshots, reference_jd=reference_jd,
+            ),
+        }
 
         context = build_homepage_context(chart, d, paketler)
         chart_hash = _sha256(chart)
         context_hash = _sha256({
             "chart_hash": chart_hash,
             "context": context,
-            "snapshot_hash": _sha256(snapshots),
+            "snapshot_hash": _sha256({
+                "current": current_snapshot,
+                "weekly": weekly_snapshots,
+            }),
         })
         onbellek = paid_store.get_homepage(
             owner_user_id, chart_id, d, context_hash,
@@ -165,7 +198,7 @@ def api_v2_pwa_digest_personal():
                 "context_version": HOMEPAGE_CONTEXT_VERSION,
             })
 
-        lock_key = "homepage:gemini:%s:%s:%s" % (owner_user_id, chart_id, d.isoformat())
+        lock_key = "homepage:gemini:%s:%s:%s" % (owner_user_id, chart_id, context_hash)
         sahibi = paid_store.acquire_lock(lock_key)
         if sahibi is None:
             return jsonify({
@@ -195,7 +228,7 @@ def api_v2_pwa_digest_personal():
                 })
 
             sonuc_llm, hata_llm = paid_writer.generate(
-                paketler["daily"], paketler["weekly"], paketler["monthly"],
+                paketler["daily"], paketler["weekly"],
                 context=context,
             )
 
@@ -224,7 +257,7 @@ def api_v2_pwa_digest_personal():
             "profile_id": profile_id,
             "digest": sonuc_llm,
             "context_version": HOMEPAGE_CONTEXT_VERSION,
-            "snapshot_ms": snapshot_ms,
+            "snapshot_ms": current_snapshot_ms + weekly_snapshot_ms,
         })
 
     except (TypeError, ValueError) as e:

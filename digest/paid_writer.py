@@ -1,16 +1,14 @@
 """Ucretli katman LLM yazicisi — vedic-vertex-bridge uzerinden.
 
-writer.py'den fark: uc katmani (gunluk/haftalik/aylik) + motto'yu TEK
+writer.py'den fark: iki katmani (gunluk/haftalik) + motto'yu TEK
 cagrida uretir; METODOLOJI_DIGEST.md'yi sistem talimati olarak yukler
-(digest-methodology-v2, ~1.4 KB — writer.py'nin "8000 sabit token
-savunulamaz" gerekcesi burada gecerli degil, cunku gunde bir kez
-calisir, katman basina degil).
+(digest-methodology-v4, ~1.8 KB — writer.py'nin "8000 sabit token
+savunulamaz" gerekcesi burada gecerli degil, cunku her saatlik sonuç
+iki katman icin tek cagrida uretilir).
 
 Donus sozlesmesi writer.py ile ayni: (sonuc, hata_bilgisi).
-    sonuc is None      -> caller fallback karar verir (bu modulde
-                           kural motoruna otomatik dusme YOK; caller
-                           HomeDashboard tarafinda mevcut statik
-                           digest'i gostermeye devam eder)
+    sonuc is None      -> caller kullaniciya guncel yorumun o anda
+                           hazirlanamadigini bildirir; sabit yoruma dusmez
     hata_bilgisi        -> None veya {"asama","exc","fallback_nedeni","sure_ms"}
 
 TEKNIK TERIM SIZINTISI: rules.has_banned() bunu kontrol ETMEZ (yalniz
@@ -27,10 +25,25 @@ import re
 import time
 import uuid
 
-MAX_WORDS = {"motto": 20, "gunluk": 50, "haftalik": 50, "aylik": 50}
+MAX_WORDS = {"motto": 20, "gunluk": 50, "haftalik": 50}
+MIN_LAYER_WORDS = 7
 ALLOWED_FOCUS = {
     "kendin", "kaynak", "girişim", "huzur", "yaratıcılık", "düzen",
     "ilişki", "derinlik", "anlam", "iş", "çevre", "dinlenme",
+}
+FOCUS_TERMS = {
+    "kendin": ("kendin", "istek", "yön", "görünür", "ifade", "duruş"),
+    "kaynak": ("kaynak", "birikim", "maddi", "para", "aile", "söz", "güven"),
+    "girişim": ("giriş", "adım", "cesaret", "iletişim", "yakın çevre", "hareket"),
+    "huzur": ("huzur", "iç dünya", "iç ses", "yuva", "evde", "yerleş", "sakin"),
+    "yaratıcılık": ("yarat", "keyif", "gönül", "fikir", "zihin", "ifade"),
+    "düzen": ("düzen", "rutin", "iş yük", "dayanıkl", "alışkanlık", "program"),
+    "ilişki": ("ilişki", "ortak", "karşı taraf", "anlaş", "yakınlık", "bağlar"),
+    "derinlik": ("derin", "gizli", "paylaşılan", "belirsiz", "dönüş", "mahrem"),
+    "anlam": ("anlam", "inanç", "öğren", "uzak", "bakış", "ufuk"),
+    "iş": ("iş ", "işin", "işte", "çalış", "kariyer", "meslek", "sorumluluk", "görev", "statü", "emek"),
+    "çevre": ("kazanç", "hedef", "çevre", "bağlantı", "destek", "arkadaş", "topluluk"),
+    "dinlenme": ("dinlen", "yavaş", "geri çekil", "sessiz", "toparlan", "mola"),
 }
 _ID_SAFE = re.compile(r"[^0-9a-zA-Z._:-]")
 
@@ -109,6 +122,11 @@ def _has_imperative(text):
     return bool(_IMPERATIVE_RE.search(text or ""))
 
 
+def _reflects_focus(text, focus):
+    low = (text or "").casefold()
+    return any(term.casefold() in low for term in FOCUS_TERMS.get(focus.casefold(), ()))
+
+
 def llm_enabled():
     return os.getenv("DIGEST_LLM_ENABLED", "0") == "1"
 
@@ -118,14 +136,13 @@ def _safe_request_id():
     return _ID_SAFE.sub("-", raw)[:200]
 
 
-def _user_text(daily_paket, weekly_paket, monthly_paket, context=None):
-    """Uc katmani model icin okunur JSON'a cevirir. Alan yoksa hic
+def _user_text(daily_paket, weekly_paket, context=None):
+    """İki katmanı model için okunur JSON'a çevirir. Alan yoksa hiç
     yazilmaz (paketlerde zaten yok)."""
     gövde = {
-        "context_schema": "homepage_digest_context_v1",
+        "context_schema": "homepage_digest_context_v2",
         "gunluk": daily_paket or {},
         "haftalik": weekly_paket or {},
-        "aylik": monthly_paket or {},
     }
     if context:
         gövde["context"] = context
@@ -165,7 +182,7 @@ def _word_count(text):
     return len([w for w in str(text).split() if w.strip()])
 
 
-def validate(payload):
+def validate(payload, expected_layers=None):
     """Gecerliyse temiz dict, degilse (None, neden)."""
     if not isinstance(payload, dict):
         return None, "json_sozluk_degil"
@@ -179,7 +196,7 @@ def validate(payload):
 
     temiz = {"motto": motto}
 
-    for katman in ("gunluk", "haftalik", "aylik"):
+    for katman in ("gunluk", "haftalik"):
         blok = payload.get(katman)
         if not isinstance(blok, dict):
             return None, "%s_eksik" % katman
@@ -191,38 +208,47 @@ def validate(payload):
             return None, "%s_odak_bos" % katman
         metin = metin.strip()
         odak = odak.strip()
-        if _word_count(metin) > MAX_WORDS[katman]:
-            return None, "%s_kelime_siniri_asildi" % katman
         if len(odak.split()) > 1:
             return None, "%s_odak_tek_kelime_degil" % katman
         if odak.casefold() not in {v.casefold() for v in ALLOWED_FOCUS}:
             return None, "%s_odak_allowlist_disi" % katman
+        if _word_count(metin) < MIN_LAYER_WORDS:
+            return None, "%s_metin_cok_genel" % katman
+        if _word_count(metin) > MAX_WORDS[katman]:
+            return None, "%s_kelime_siniri_asildi" % katman
+        if expected_layers is not None:
+            expected_focus = str((expected_layers.get(katman) or {}).get("odak") or "").strip()
+            if not expected_focus:
+                return None, "%s_baglam_odagi_eksik" % katman
+            if odak.casefold() != expected_focus.casefold():
+                return None, "%s_odak_baglamla_uyusmuyor" % katman
+            if not _reflects_focus(metin, expected_focus):
+                return None, "%s_metin_baglamla_uyusmuyor" % katman
         temiz[katman] = {"metin": metin, "odak": odak}
 
-    tum_metin = " ".join([temiz["motto"]] + [temiz[k]["metin"] for k in ("gunluk", "haftalik", "aylik")])
+    tum_metin = " ".join([temiz["motto"]] + [temiz[k]["metin"] for k in ("gunluk", "haftalik")])
     if _has_banned(tum_metin):
         return None, "yasakli_ifade"
     if _leaks_technical_terms(tum_metin):
         return None, "teknik_terim_sizintisi"
     if _has_imperative(tum_metin):
         return None, "emir_kipi"
-    metinler = [temiz[k]["metin"].casefold() for k in ("gunluk", "haftalik", "aylik")]
+    metinler = [temiz[k]["metin"].casefold() for k in ("gunluk", "haftalik")]
     if len(set(metinler)) != len(metinler):
         return None, "tekrarli_katman_metni"
 
     return temiz, None
 
 
-def generate(daily_paket, weekly_paket, monthly_paket, context=None):
-    """Doner: (sonuc, hata_bilgisi). sonuc None ise caller mevcut
-    statik digest'i gostermeye devam etmeli — kural motoruna otomatik
-    dusme burada YOK, cunku ucretli akis ayri bir bileşen."""
+def generate(daily_paket, weekly_paket, context=None):
+    """Doner: (sonuc, hata_bilgisi). sonuc None ise caller guncel
+    yorumun hazirlanamadigini gostermeli; sabit yoruma dusmemeli."""
     if not llm_enabled():
         return None, {"asama": "kapali", "exc": None,
                       "fallback_nedeni": "DIGEST_LLM_ENABLED=0", "sure_ms": 0}
 
     t0 = time.time()
-    user_text = _user_text(daily_paket, weekly_paket, monthly_paket, context)
+    user_text = _user_text(daily_paket, weekly_paket, context)
 
     try:
         payload = _call_bridge(user_text)
@@ -238,7 +264,10 @@ def generate(daily_paket, weekly_paket, monthly_paket, context=None):
                       "fallback_nedeni": "yanit_ayristirilamadi",
                       "sure_ms": int((time.time() - t0) * 1000)}
 
-    sonuc, neden = validate(raw)
+    sonuc, neden = validate(raw, {
+        "gunluk": daily_paket or {},
+        "haftalik": weekly_paket or {},
+    })
     sure = int((time.time() - t0) * 1000)
     if sonuc is None:
         return None, {"asama": "validate", "exc": None,

@@ -79,6 +79,11 @@ def today_ist():
     return datetime.now(IST).date()
 
 
+def current_hour_ist():
+    """Güncel yorum için İstanbul saatinin saatlik önbellek kovası."""
+    return datetime.now(IST).replace(minute=0, second=0, microsecond=0)
+
+
 def tz_offset_hours(d):
     """Verilen gun icin Istanbul'un gercek UTC farki (saat)."""
     dt = datetime(d.year, d.month, d.day, SNAPSHOT_HOUR, 0, tzinfo=IST)

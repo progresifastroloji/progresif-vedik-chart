@@ -1,8 +1,9 @@
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from flask import Flask
 
@@ -10,9 +11,13 @@ from digest import paid_store, paid_writer
 from digest import paid_routes
 from digest.paid_routes import _required_snapshot_days
 from digest.paid_situation import (
+    FOCUS_BY_HOUSE,
     HOMEPAGE_CONTEXT_VERSION,
+    HOMEPAGE_METHODOLOGY_VERSION,
+    _current_dasha_lord,
     build_homepage_context,
 )
+from digest.situation import planet_signs_at
 
 
 class PaidHomepageDigestContractTests(unittest.TestCase):
@@ -28,25 +33,69 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         context = build_homepage_context(
             chart,
             date(2026, 8, 21),
-            {"daily": {"ana_tema": "dinlenme"}, "weekly": {}, "monthly": {}},
+            {
+                "daily": {
+                    "ana_tema": "dinlenme",
+                    "snapshot_local_datetime": "2026-08-21T17:00:00+03:00",
+                },
+                "weekly": {},
+            },
         )
         self.assertEqual(context["schema_version"], HOMEPAGE_CONTEXT_VERSION)
         self.assertNotIn("id", context)
         self.assertNotIn("owner_user_id", context)
         self.assertNotIn("birth", context)
-        self.assertEqual(context["calculation"]["snapshot_hour_istanbul"], 12)
+        self.assertEqual(
+            context["calculation"]["current_snapshot_local_datetime"],
+            "2026-08-21T17:00:00+03:00",
+        )
+        self.assertEqual(context["calculation"]["weekly_snapshot_hour_istanbul"], 12)
+        self.assertEqual(set(context["layers"]), {"daily", "weekly"})
 
     def test_required_days_are_deduplicated(self):
         days = _required_snapshot_days(date(2026, 8, 21))
         self.assertEqual(len(days), len(set(days)))
-        self.assertGreaterEqual(len(days), 31)
+        self.assertEqual(len(days), 7)
+
+    def test_homepage_methodology_version_and_focus_contract_are_current(self):
+        self.assertEqual(HOMEPAGE_CONTEXT_VERSION, "homepage_digest_context_v2")
+        self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v4")
+        self.assertEqual(set(FOCUS_BY_HOUSE), set(range(1, 13)))
+        self.assertEqual(set(FOCUS_BY_HOUSE.values()), paid_writer.ALLOWED_FOCUS)
+
+    def test_weekly_period_is_resolved_for_now_instead_of_saved_current_active(self):
+        chart = {
+            "dashas": {
+                "vimshottari": {
+                    "current_active": {"pratyantar": {"lord": "Stale"}},
+                    "maha": [{
+                        "level": "maha",
+                        "lord": "Saturn",
+                        "actual_start_jd": 100,
+                        "actual_end_jd": 200,
+                        "antara": [{
+                            "level": "antara",
+                            "lord": "Ketu",
+                            "actual_start_jd": 100,
+                            "actual_end_jd": 200,
+                            "pratyantar": [{
+                                "level": "pratyantar",
+                                "lord": "Jupiter",
+                                "actual_start_jd": 140,
+                                "actual_end_jd": 160,
+                            }],
+                        }],
+                    }],
+                },
+            },
+        }
+        self.assertEqual(_current_dasha_lord(chart, "weekly", 150), "Jupiter")
 
     def test_writer_rejects_unsafe_or_uncontrolled_output(self):
         valid = {
             "motto": "Yavaşlamak alan açabilir.",
             "gunluk": {"metin": "Bugün yakın konularda yumuşak bir akış olabilir.", "odak": "dinlenme"},
-            "haftalik": {"metin": "Bu hafta iç sesini duymak kolaylaşabilir.", "odak": "huzur"},
-            "aylik": {"metin": "Bu ay sadeleşmek sana iyi gelebilir.", "odak": "düzen"},
+            "haftalik": {"metin": "Bu hafta iç sesini duymak biraz kolaylaşabilir.", "odak": "huzur"},
         }
         cleaned, error = paid_writer.validate(valid)
         self.assertIsNotNone(cleaned)
@@ -57,8 +106,52 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertEqual(paid_writer.validate(invalid_focus)[1], "gunluk_odak_allowlist_disi")
 
         imperative = dict(valid)
-        imperative["gunluk"] = {"metin": "Bugün başla ve kendine alan aç.", "odak": "kendin"}
+        imperative["gunluk"] = {"metin": "Bugün başla ve kendine daha geniş bir alan aç.", "odak": "kendin"}
         self.assertEqual(paid_writer.validate(imperative)[1], "emir_kipi")
+
+    def test_writer_rejects_generic_or_context_mismatched_layers(self):
+        expected = {
+            "gunluk": {"odak": "dinlenme"},
+            "haftalik": {"odak": "huzur"},
+        }
+        valid = {
+            "motto": "Sakinlik bugün sana alan açabilir.",
+            "gunluk": {"metin": "Bugün dinlenmek ve sessiz kalmak zihnini toparlamana yardım edebilir.", "odak": "dinlenme"},
+            "haftalik": {"metin": "Bu hafta evde kuracağın sakin ritim iç huzurunu destekleyebilir.", "odak": "huzur"},
+        }
+        cleaned, error = paid_writer.validate(valid, expected)
+        self.assertIsNotNone(cleaned)
+        self.assertIsNone(error)
+
+        generic = dict(valid)
+        generic["gunluk"] = {
+            "metin": "Bugün kendine alan açmak sana daha iyi gelebilir.",
+            "odak": "dinlenme",
+        }
+        self.assertEqual(
+            paid_writer.validate(generic, expected)[1],
+            "gunluk_metin_baglamla_uyusmuyor",
+        )
+
+        wrong_focus = dict(valid)
+        wrong_focus["haftalik"] = {
+            "metin": "Bu hafta ilişkiler ve ortak kararlar daha görünür olabilir.",
+            "odak": "ilişki",
+        }
+        self.assertEqual(
+            paid_writer.validate(wrong_focus, expected)[1],
+            "haftalik_odak_baglamla_uyusmuyor",
+        )
+
+    def test_current_snapshot_uses_requested_istanbul_hour(self):
+        local_hour = datetime(2026, 8, 21, 17, 0, tzinfo=ZoneInfo("Europe/Istanbul"))
+        chart = {"planets": [{"abbr": "Mo", "sign_index": 4}]}
+        with patch("vedic_chart.calculate_chart", return_value=chart) as calculate:
+            snapshot = planet_signs_at(local_hour)
+
+        self.assertEqual(snapshot["local_datetime"], "2026-08-21T17:00:00+03:00")
+        self.assertEqual(snapshot["planets"]["Moon"], 4)
+        calculate.assert_called_once_with(2026, 8, 21, 17, 0, 3.0, 41.0082, 28.9784)
 
     def test_homepage_cache_is_scoped_by_owner_chart_date_and_context(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -96,11 +189,12 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
             "motto": "Yavaşlamak alan açabilir.",
             "gunluk": {"metin": "Bugün yumuşak bir akış olabilir.", "odak": "huzur"},
             "haftalik": {"metin": "Bu hafta iç sesini duymak kolaylaşabilir.", "odak": "dinlenme"},
-            "aylik": {"metin": "Bu ay sadeleşmek sana iyi gelebilir.", "odak": "düzen"},
         }
+        current_hour = datetime(2026, 8, 21, 17, 0, tzinfo=ZoneInfo("Europe/Istanbul"))
         with patch.object(paid_routes, "_load_owned_chart", return_value=((chart, "chart-1", "profile-1", "user-1"), None)), \
-                patch.object(paid_routes, "_load_homepage_snapshots", return_value=([{"date": "2026-08-21", "planets": {}}], 0)), \
-                patch.object(paid_routes, "required_days", return_value=[]), \
+                patch.object(paid_routes, "current_hour_ist", return_value=current_hour), \
+                patch.object(paid_routes, "_load_current_snapshot", return_value=({"date": "2026-08-21", "local_datetime": current_hour.isoformat(), "planets": {}}, 0)), \
+                patch.object(paid_routes, "_load_weekly_snapshots", return_value=([{"date": "2026-08-21", "planets": {}}], 0)), \
                 patch.object(paid_routes, "build_paid_situation", return_value={"ana_tema": "huzur"}), \
                 patch.object(paid_routes, "build_homepage_context", return_value={"schema_version": HOMEPAGE_CONTEXT_VERSION}), \
                 patch.object(paid_routes, "_sha256", side_effect=["chart-hash", "snapshot-hash", "context-hash"] * 2), \
@@ -116,6 +210,7 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(first.get_json()["status"], "ready")
         self.assertEqual(second.get_json()["kaynak"], "onbellek")
+        self.assertNotIn("aylik", first.get_json()["digest"])
         generate.assert_called_once()
 
 
