@@ -25,6 +25,7 @@ from methodology_orchestrator import (
     full_source_context_mode,
     ordered_full_markdown_mode,
     new_comparison_id,
+    normalize_response_language,
     run_methodology_comparison,
 )
 from place_catalog import PlaceCatalogUnavailable, get_place, search_places
@@ -31806,7 +31807,9 @@ def _beta_build_chat_draft(
     conversation_context=None,
     include_full_markdown_test=False,
     include_full_markdown_sources=False,
+    response_language="tr",
 ):
+    response_language = normalize_response_language(response_language)
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
     reference_dt_utc = datetime.now(timezone.utc)
     if selected_route.get("time_scope") == "instant":
@@ -31946,6 +31949,7 @@ def _beta_build_chat_draft(
     draft = {
         "status": status,
         "question": question,
+        "response_language": response_language,
         "conversation_context": conversation_context or [],
         "topic": topic,
         "subject_topic": subject_topic,
@@ -32730,6 +32734,7 @@ def api_v2_beta_chat_draft():
         question = str(data.get("question") or "").strip()
         if not question:
             raise ValueError("question boş olamaz")
+        response_language = normalize_response_language(data.get("language"))
         if _beta_is_rectification_question(question):
             return jsonify({
                 "ok": False,
@@ -32821,6 +32826,7 @@ def api_v2_beta_chat_draft():
                 owner_user_id=owner_user_id,
                 profile_id=profile_id,
                 chart_id=chart_id,
+                response_language=response_language,
             )
             conn.execute(
                 """
@@ -32862,6 +32868,7 @@ def api_v2_beta_chat_compare():
             raise ValueError("question boş olamaz")
         if len(question) > 2_000:
             raise ValueError("question çok uzun")
+        response_language = normalize_response_language(data.get("language"))
         conversation_context = _beta_conversation_context(
             data.get("conversation_context")
         )
@@ -32907,6 +32914,12 @@ def api_v2_beta_chat_compare():
                         "usage": usage,
                     }), 409
                 stored = _beta_load_json(existing["response_json"])
+                if normalize_response_language(stored.get("response_language")) != response_language:
+                    return jsonify({
+                        "ok": False,
+                        "status": "invalid_request",
+                        "error_code": "comparison_language_collision",
+                    }), 400
                 status_code = (
                     422
                     if existing["status"] == "clarification_required"
@@ -33015,6 +33028,7 @@ def api_v2_beta_chat_compare():
             include_full_markdown_sources=(
                 full_source_context_mode() and not app.config.get("TESTING")
             ),
+            response_language=response_language,
         )
         comparison = run_methodology_comparison(
             draft,

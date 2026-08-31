@@ -41,6 +41,7 @@ NARRATIVE_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MIN_CHARS = 300
 NARRATIVE_MIN_PARAGRAPHS = 1
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
+SUPPORTED_RESPONSE_LANGUAGES = {"tr", "en"}
 COVERAGE_STATUSES = {"applied", "not_applicable", "missing"}
 REQUIRED_METHODOLOGY_STEPS = (
     "question_and_scope",
@@ -80,27 +81,35 @@ RETRYABLE_NARRATIVE_ERRORS = {
     "methodology_narrative_technical_leak",
     "methodology_narrative_evidence_density_invalid",
     "methodology_narrative_topic_mismatch",
+    "methodology_narrative_language_invalid",
 }
+
+
+def normalize_response_language(value):
+    """Return the app-selected response language, defaulting safely to Turkish."""
+
+    normalized = str(value or "tr").strip().lower()
+    return normalized if normalized in SUPPORTED_RESPONSE_LANGUAGES else "tr"
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
 CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.6.0",
+        "version": "1.7.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "269e33fbb7029a8643e74e24159f4e9939a9e82d6cd88b89e3a12872c6500a56",
+        "sha256": "d96c3d888f4ce8a0d792d7fd98f5f71a4184bd8db3e5aa15f3d4be2d88376082",
     },
 )
 
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "25e89a7c916f1a6e184b73c5c621b10ee272811a365091469f0ad57a35b7ed6f",
+    "sha256": "664fec77526c8d2c7839ce321d2997a47826296b5dfa1e83165708a504dc2a51",
 }
 
 
@@ -353,7 +362,8 @@ def _evidence_path_catalog(evidence):
     return sorted(paths)
 
 
-def _model_request(candidate, evidence, conversation_context=None):
+def _model_request(candidate, evidence, conversation_context=None, response_language="tr"):
+    response_language = normalize_response_language(response_language)
     full_markdown_content = evidence.get("_full_markdown_source_content")
     if full_markdown_content is None:
         full_markdown_content = evidence.get("_full_markdown_test_content")
@@ -394,6 +404,9 @@ def _model_request(candidate, evidence, conversation_context=None):
         "Panchanga bileşenini (Tithi, Vara, Nakshatra, Yoga veya Karana) değerlendir. Bunları birlikte "
         "adlandıran en az bir kanıt satırı gerçek daily_records veya instant_snapshot yolunu kullansın. "
         "Teknik analiz tamamlanmadan koçluk veya motivasyon ekleme. "
+        f"Kullanıcının uygulamada seçtiği cevap dili {response_language.upper()} dilidir. "
+        "summary, interpreted_question, claim, missing_layers ve limitations metinlerini bu dilde üret; "
+        "JSON alan adlarını ve konu kodlarını değiştirme. Önceki sohbetin dili bu seçimi geçersiz kılamaz. "
         "Yanıt yalnız geçerli JSON olsun.\n\n"
         f"METODOLOJİ KİMLİĞİ: {candidate['id']}@{candidate['version']}\n"
         f"METODOLOJİ SHA256: {candidate['sha256']}\n\n"
@@ -474,10 +487,13 @@ def _narrative_request(
     analysis,
     conversation_context=None,
     guidance=None,
+    response_language="tr",
 ):
     """Build the client-facing call from validated analysis and active sources."""
 
     guidance = guidance or load_guidance_methodology()
+    response_language = normalize_response_language(response_language)
+    language_name = "English" if response_language == "en" else "natural Türkiye Türkçesi"
 
     full_markdown_content = evidence.get("_full_markdown_source_content")
     if full_markdown_content is None:
@@ -502,7 +518,8 @@ def _narrative_request(
     }
     system_text = (
         "Sen Vedik AI'nin danışan anlatımı ve rehberlik katmanısın. Astrolojik hesap veya yeni teknik analiz yapma. "
-        "Sunucu tarafından doğrulanmış Aşama 1 JSON'unu ve etkin tam Markdown kaynaklarını doğal Türkiye Türkçesine çevir. "
+        f"Sunucu tarafından doğrulanmış Aşama 1 JSON'unu ve etkin tam Markdown kaynaklarını {language_name} diline çevir. "
+        f"Uygulamanın seçtiği cevap dili {response_language.upper()} dilidir; önceki konuşma dili bunu değiştiremez. "
         "Tam Markdown kaynakları verilmişse onları Aşama 1 hükmünü doğru anlamlandırmak için kullan; ana yanıttaki "
         "teknik görünürlüğü rehberlik metodolojisinin sınırında tut. Kaynaklarda veya Aşama 1 kanıtında bulunmayan "
         "yeni teknik veri, olay, derece veya tarih üretme. "
@@ -670,6 +687,18 @@ def _fallback_narrative_response(evidence):
     """
 
     topic = str(evidence.get("subject_topic") or evidence.get("topic") or "general").strip().lower()
+    if normalize_response_language(evidence.get("response_language")) == "en":
+        return {
+            "opening_summary": "A cautious reading is more useful here than a certain prediction.",
+            "answer": (
+                "The validated chart evidence could not be turned into a complete personal interpretation right now, "
+                "so no unverified astrological conclusion is being added. Keep the question focused on the decision or "
+                "experience you can observe in real life.\n\n"
+                "Choose one small, reversible step, note what actually happens, and review it before making a larger "
+                "commitment. If the question concerns health, law, money or safety, use an appropriately qualified "
+                "professional as the primary source of advice."
+            ),
+        }
     timing_requested = bool(
         evidence.get("topic") == "transit"
         or (evidence.get("question_route") or {}).get("timing_required")
@@ -993,6 +1022,26 @@ def _validate_wellbeing_language(summary, evidence_rows, evidence):
             502,
         )
 
+
+def _validate_selected_response_language(text, evidence):
+    """Reject an obviously wrong-language client narrative before delivery."""
+
+    if normalize_response_language(evidence.get("response_language")) != "en":
+        return
+    normalized = text.casefold()
+    english_markers = re.findall(
+        r"\b(?:the|and|is|are|your|this|that|with|for|from|can|may|when|more|than)\b",
+        normalized,
+    )
+    turkish_markers = re.findall(
+        r"\b(?:ve|bir|bu|için|olan|olarak|değil|gerekir|daha|sizin|harita|sorunuza)\b",
+        normalized,
+    )
+    if len(english_markers) < 2 and len(turkish_markers) >= 2:
+        raise MethodologyOrchestrationError(
+            "methodology_narrative_language_invalid",
+            502,
+        )
 
 def _validate_global_transit_absence_claim(text, evidence):
     """Reject a system-wide absence claim when transit evidence is present."""
@@ -1335,6 +1384,7 @@ def validate_narrative_response(payload, analysis, evidence):
             ) from exc
     _validate_global_transit_absence_claim(combined_text, evidence)
     _validate_wellbeing_language(combined_text, evidence_rows, evidence)
+    _validate_selected_response_language(combined_text, evidence)
     return {
         "opening_summary": opening_summary,
         "answer": answer,
@@ -1379,6 +1429,7 @@ def _run_candidate(
     clock,
     conversation_context=None,
     guidance=None,
+    response_language="tr",
 ):
     base_request_id = f"{comparison_id}-{candidate['id']}"
     validation_mode = methodology_validation_mode()
@@ -1386,6 +1437,7 @@ def _run_candidate(
         candidate,
         evidence,
         conversation_context,
+        response_language,
     )
     started = clock()
     technical_payload = None
@@ -1447,6 +1499,7 @@ def _run_candidate(
         technical_analysis,
         conversation_context,
         guidance,
+        response_language,
     )
     for attempt_index in range(2):
         narrative_request_id = (
@@ -1516,7 +1569,7 @@ def _run_candidate(
                             "content": {
                                 "parts": [{
                                     "text": json.dumps(
-                                        _fallback_narrative_response(evidence),
+                                        _fallback_narrative_response({**evidence, "response_language": response_language}),
                                         ensure_ascii=False,
                                     )
                                 }]
@@ -1579,7 +1632,8 @@ def _run_candidate(
 def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_root=None, clock=None):
     candidates = load_methodology_candidates(candidates_root)
     guidance = load_guidance_methodology(candidates_root)
-    evidence = compact_evidence(draft)
+    response_language = normalize_response_language(draft.get("response_language"))
+    evidence = {**compact_evidence(draft), "response_language": response_language}
     conversation_context = draft.get("conversation_context") or []
     evidence_json = _canonical_json(evidence)
     evidence_sha256 = _sha256(evidence_json)
@@ -1595,6 +1649,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
                 monotonic,
                 conversation_context,
                 guidance,
+                response_language,
             ),
             candidates,
         ))
@@ -1610,6 +1665,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "topic": draft.get("topic"),
         "subject_topic": draft.get("subject_topic"),
         "question_route": draft.get("question_route"),
+        "response_language": response_language,
         "routing_comparison": draft.get("routing_comparison"),
         "context_trace": draft.get("context_trace"),
         "evidence_sha256": evidence_sha256,

@@ -253,7 +253,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         guidance = load_guidance_methodology()
 
         self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
-        self.assertEqual(guidance["version"], "1.2.0")
+        self.assertEqual(guidance["version"], "1.3.0")
         self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("runtime_stage: narrative_only", guidance["document"])
         self.assertIn("en fazla tek kısa", guidance["document"])
@@ -300,7 +300,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
         technical_request = calls[0][1]
         system_text = technical_request["systemInstruction"]["parts"][0]["text"]
-        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.6.0", system_text)
+        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.7.0", system_text)
         self.assertNotIn("vedic-guidance-skill-v1", system_text)
         user_text = technical_request["contents"][0]["parts"][0]["text"]
         self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
@@ -312,7 +312,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.2.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.3.0", narrative_system)
         self.assertIn("en fazla tek kısa ve sade dayanak cümlesini", narrative_system)
         self.assertIn("SAV/BAV", narrative_system)
         self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
@@ -334,6 +334,38 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
         self.assertGreater(len(system_result["analysis"]["summary"]), 700)
         self.assertEqual(system_result["usage"]["total_tokens"], 370)
+
+    def test_selected_english_language_reaches_both_model_prompts(self):
+        calls = []
+        draft = _draft()
+        draft["response_language"] = "en"
+
+        english_narrative = _narrative_payload(
+            opening_summary=(
+                "Your career direction can become clearer when responsibility and progress are measured together. "
+                "A steady, practical choice is more useful than a certain promise."
+            ),
+            answer=(
+                "The available evidence supports building expertise through consistent responsibility, while keeping "
+                "your commitments clear and reviewable. This is a conditional interpretation rather than a guaranteed "
+                "outcome.\n\n"
+                "In practice, choose one priority, define a visible measure of progress, and review it regularly. "
+                "If circumstances change, adjust the plan before making a larger commitment."
+            ),
+        )
+
+        def model_call(request_id, request):
+            calls.append((request_id, request))
+            return request_id, english_narrative if "-narrative" in request_id else _payload(request_id)
+
+        result = run_methodology_comparison(draft, "methodology-compare-en", model_call)
+        self.assertEqual(result["response_language"], "en")
+        self.assertEqual(result["status"], "comparison_ready")
+        technical_text = calls[0][1]["systemInstruction"]["parts"][0]["text"]
+        narrative_text = calls[1][1]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("cevap dili EN", technical_text)
+        self.assertIn("cevap dili EN", narrative_text)
+        self.assertIn("English", narrative_text)
 
     def test_methodology_uses_customer_declaration_data_gate_without_event_file(self):
         document = load_methodology_candidates()[0]["document"]

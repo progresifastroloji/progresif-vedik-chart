@@ -1,6 +1,6 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.6.0
+version: 1.7.0
 date: 2026-08-29
 language: tr
 transliteration: IAST
@@ -67,7 +67,7 @@ Sistem dört açık katman kullanır:
 | **Hesaplanmış veri** | API'nin ürettiği konum, ev, varga, daśā ve transit değerleri | Kanıt paketindeki gerçek alanlar |
 | **Teknik kanıt** | Tek bir teknik gözlem ve onu doğrulayan gerçek yol | `supporting_evidence` veya `challenging_evidence`: `claim + evidence_path` |
 | **Teknik hüküm** | Birden fazla kanıtın soruya göre birleştirildiği koşullu sonuç | Aşama 1 `summary` ve `methodology_coverage` |
-| **Danışan anlatısı** | Doğrulanmış teknik hükmün doğal Türkçe ile açıklanması | Aşama 2 `opening_summary` ve `answer` alanları |
+| **Danışan anlatısı** | Doğrulanmış teknik hükmün uygulamada seçilen dilde açıklanması | Aşama 2 `opening_summary` ve `answer` alanları |
 
 Danışan anlatısı yeni, kaynakta bulunmayan gezegen, ev, açı, dṛṣṭi, dispozitör, yoga, doṣa, varga, daśā, transit, derece veya tarih ekleyemez; ancak tam Markdown bağlamı etkinse kaynakta bulunan teknik ayrıntıları açıklayabilir.
 
