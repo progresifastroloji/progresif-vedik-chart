@@ -30845,6 +30845,32 @@ def _beta_chart_summary(chart):
                 if planet.get("id")
             ],
         }
+    planet_ids_by_name = {
+        "Sun": "sun",
+        "Moon": "moon",
+        "Mars": "mars",
+        "Mercury": "mercury",
+        "Jupiter": "jupiter",
+        "Venus": "venus",
+        "Saturn": "saturn",
+        "Rahu": "rahu_true",
+        "Rahu (True)": "rahu_true",
+        "Ketu": "ketu",
+    }
+
+    def compact_special_planets(rows):
+        compact = []
+        for planet in rows or []:
+            if not isinstance(planet, dict):
+                continue
+            name = str(planet.get("name") or "").strip()
+            planet_id = planet.get("id") or planet_ids_by_name.get(name)
+            longitude = planet.get("longitude")
+            if not planet_id or not isinstance(longitude, (int, float)):
+                continue
+            compact.append({"id": planet_id, "longitude": float(longitude) % 360.0})
+        return compact
+
     special_charts = {}
     for code, special in (chart.get("special_lagnas") or {}).items():
         if not isinstance(special, dict):
@@ -30885,6 +30911,37 @@ def _beta_chart_summary(chart):
         "status": bhava_chalit.get("status"),
         "method": bhava_chalit.get("method"),
         "summary": bhava_chalit.get("summary") or {},
+    }
+    transit = chart.get("transits") or {}
+    transit_planets = compact_special_planets(transit.get("planets"))
+    natal_lagna_longitude = lagna.get("longitude")
+    special_charts["transit"] = {
+        "code": "transit",
+        "name": "Transit",
+        "kind": "transit",
+        "available": len(transit_planets) >= 9 and isinstance(natal_lagna_longitude, (int, float)),
+        "ascendant_longitude": natal_lagna_longitude,
+        "confidence": transit.get("confidence") or "medium",
+        "planets": transit_planets,
+        "status": transit.get("status"),
+        "method": transit.get("method"),
+        "reference_datetime_utc": transit.get("reference_datetime_utc"),
+    }
+    varshaphala = chart.get("varshaphala") or {}
+    varsha_lagna = varshaphala.get("varsha_lagna") or {}
+    varsha_planets = compact_special_planets(varshaphala.get("planets"))
+    varsha_lagna_longitude = varsha_lagna.get("longitude")
+    special_charts["varshaphala"] = {
+        "code": "varshaphala",
+        "name": "Varshaphal",
+        "kind": "varshaphala",
+        "available": len(varsha_planets) >= 9 and isinstance(varsha_lagna_longitude, (int, float)),
+        "ascendant_longitude": varsha_lagna_longitude,
+        "confidence": varshaphala.get("confidence") or "medium",
+        "planets": varsha_planets,
+        "status": varshaphala.get("status"),
+        "method": varshaphala.get("method"),
+        "reference_datetime_utc": varshaphala.get("reference_datetime_utc"),
     }
     active_periods = []
     for level in ("maha", "antara", "pratyantar", "sookshma"):
