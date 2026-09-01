@@ -30845,6 +30845,47 @@ def _beta_chart_summary(chart):
                 if planet.get("id")
             ],
         }
+    special_charts = {}
+    for code, special in (chart.get("special_lagnas") or {}).items():
+        if not isinstance(special, dict):
+            continue
+        sign_index = special.get("sign_index")
+        degree = special.get("degree") or 0.0
+        if not isinstance(sign_index, int) or not isinstance(degree, (int, float)):
+            continue
+        special_charts[code] = {
+            "code": code,
+            "name": special.get("name") or code,
+            "kind": "lagna",
+            "available": True,
+            "ascendant_longitude": (sign_index % 12) * 30.0 + float(degree),
+            "confidence": special.get("confidence") or "low",
+            "sign_index": sign_index % 12,
+            "sign": special.get("sign"),
+            "sign_tr": special.get("sign_tr"),
+            "degree": degree,
+            "degree_str": special.get("degree_str"),
+            "source": special.get("source"),
+        }
+    bhava_chalit = chart.get("bhava_chalit") or {}
+    chalit_planets = {}
+    for planet in bhava_chalit.get("planets") or []:
+        planet_id = planet.get("planet_id")
+        house = planet.get("bhava_chalit_house")
+        if planet_id and isinstance(house, int) and 1 <= house <= 12:
+            chalit_planets[planet_id] = house
+    special_charts["bhava_chalit"] = {
+        "code": "bhava_chalit",
+        "name": "Bhava Chalit",
+        "kind": "bhava_chalit",
+        "available": bhava_chalit.get("status") == "implemented_passive_technical_layer",
+        "ascendant_longitude": lagna.get("longitude"),
+        "confidence": bhava_chalit.get("confidence") or "none",
+        "house_by_planet": chalit_planets,
+        "status": bhava_chalit.get("status"),
+        "method": bhava_chalit.get("method"),
+        "summary": bhava_chalit.get("summary") or {},
+    }
     active_periods = []
     for level in ("maha", "antara", "pratyantar", "sookshma"):
         period = active.get(level) or {}
@@ -30885,6 +30926,7 @@ def _beta_chart_summary(chart):
         "ayanamsa": (chart.get("ayanamsa") or {}).get("type") or "Lahiri",
         "planets": planets,
         "vargas": vargas,
+        "special_charts": special_charts,
         "active_dasha_path": active.get("path"),
         "active_dasha_periods": active_periods,
     }
