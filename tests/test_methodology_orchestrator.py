@@ -34,6 +34,7 @@ def _draft():
         "safety_notes": ["Kesin hüküm üretme."],
         "evidence": {
             "chart_summary": {"lagna": {"sign": "Aries"}},
+            "vedic_spine": {"status": "available", "anchors": [{"anchor": "Lagna"}]},
             "active_dasha": {"status": "available", "maha": "Saturn"},
             "topic_packet": {
                 "supporting_factors": [{"code": "career-support"}],
@@ -57,6 +58,7 @@ def _payload(summary="Teknik özet"):
             {"step": step, "status": "applied", "note": f"{step} uygulandı"}
             for step in (
                 "question_and_scope", "topic_package", "data_gate",
+                "vedic_spine",
                 "d1_natal_promise", "bhava_lord_karaka",
                 "dispositor_and_nakshatra", "strength_capacity_delivery",
                 "relevant_varga", "dasha_access", "transit_trigger",
@@ -303,7 +305,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.7.0", system_text)
         self.assertNotIn("vedic-guidance-skill-v1", system_text)
         user_text = technical_request["contents"][0]["parts"][0]["text"]
-        self.assertNotIn("must_not_be_sent_for_natal_topic", user_text)
+        self.assertIn("must_not_be_sent_for_natal_topic", user_text)
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", user_text)
         self.assertIn("Ay etkisini de açıklar mısın?", user_text)
         narrative_request = calls[1][1]

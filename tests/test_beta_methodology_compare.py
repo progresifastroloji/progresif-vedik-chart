@@ -10,6 +10,7 @@ from app import (
     TOPIC_PACKET_CONFIG,
     app,
     _beta_build_chat_draft,
+    _beta_build_chart,
     _beta_db,
     _beta_detect_subject_topic,
     _beta_detect_topic,
@@ -19,12 +20,20 @@ from app import (
     _beta_json,
     _beta_load_json,
     _beta_now,
+    _beta_options,
     _beta_public_methodology_response,
     _build_transit_pack_markdown,
     _beta_compact_transit_evidence,
     _normalize_important_sky_events,
 )
-from methodology_orchestrator import MAX_PROMPT_BYTES, _canonical_json, _model_request, compact_evidence, load_methodology_candidates
+from methodology_orchestrator import (
+    MAX_PROMPT_BYTES,
+    MethodologyOrchestrationError,
+    _canonical_json,
+    _model_request,
+    compact_evidence,
+    load_methodology_candidates,
+)
 from question_classifier import QuestionClassificationError
 
 
@@ -102,7 +111,7 @@ def _analysis_or_narrative_payload(request_id):
 
 
 def _route_payload(topic, time_scope, *, sensitivity="standard"):
-    required = ["natal_core", "active_dasha"]
+    required = ["natal_core", "vedic_spine", "active_dasha", "transits"]
     if topic == "wellbeing":
         required.append("natal_emotional_core")
     if time_scope != "none":
@@ -343,23 +352,21 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         app.config["QUESTION_ROUTER_MODE"] = "off"
         app.config["QUESTION_ROUTER_ACTIVE_USER_IDS"] = set()
         self.client = app.test_client()
-        chart = {
-            "birth": {"person": {"id": PROFILE_ID}, "date": "2000-01-01"},
-            "lagna": {"sign": "Aries", "degree_str": "10°"},
-            "planets": [],
-            "dashas": {"vimshottari": {"current_active": {"maha": "Saturn"}}},
-            "topic_packets": {
-                "career": {
-                    "confidence": "medium",
-                    "supporting_factors": [{"code": "career-support"}],
-                    "challenging_factors": [{"code": "career-challenge"}],
-                    "missing_factors": [],
-                    "required_but_missing": [],
-                },
+        chart = _beta_build_chart(
+            {"id": PROFILE_ID, "name": "Test"},
+            {
+                "year": 2000,
+                "month": 1,
+                "day": 1,
+                "hour": 12,
+                "minute": 0,
+                "second": 0,
+                "lat": 41.0082,
+                "lon": 28.9784,
+                "timezone_id": "Europe/Istanbul",
             },
-            "missing": [],
-            "data_quality": {"status": "complete"},
-        }
+            _beta_options({}),
+        )
         with closing(_beta_db()) as conn:
             conn.execute(
                 "INSERT INTO beta_charts (id, profile_id, chart_json, created_at) VALUES (?, ?, ?, ?)",
@@ -373,6 +380,73 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         app.config["QUESTION_ROUTER_MODE"] = self._old_router_mode
         app.config["QUESTION_ROUTER_ACTIVE_USER_IDS"] = self._old_router_users
         self._tmp.cleanup()
+
+    def test_strict_chat_rebuilds_missing_spine_and_includes_transits_for_general(self):
+        chart = _beta_build_chart(
+            {"id": PROFILE_ID, "name": "Test"},
+            {
+                "year": 2000,
+                "month": 1,
+                "day": 1,
+                "hour": 12,
+                "minute": 0,
+                "second": 0,
+                "lat": 41.0082,
+                "lon": 28.9784,
+                "timezone_id": "Europe/Istanbul",
+            },
+            _beta_options({}),
+        )
+        chart.pop("vedic_spine", None)
+        question = "Genel haritam hakkında ne görüyorsun?"
+        routing = _beta_question_route(question, chart, "general-mandatory-evidence", mode_override="bypass")
+
+        draft = _beta_build_chat_draft(
+            question,
+            chart,
+            routing=routing,
+            require_mandatory_evidence=True,
+        )
+        evidence = compact_evidence(draft)
+
+        self.assertEqual(draft["topic"], "general")
+        self.assertTrue(evidence["vedic_spine"]["anchors"])
+        self.assertEqual(evidence["vedic_spine"]["status"], "available")
+        self.assertEqual(evidence["active_dasha"]["status"], "available")
+        self.assertTrue(evidence["transits"]["contract_version"].startswith("vedic-compact-transit-evidence"))
+
+    def test_strict_chat_stops_when_spine_refresh_inputs_are_invalid(self):
+        chart = _beta_build_chart(
+            {"id": PROFILE_ID, "name": "Test"},
+            {
+                "year": 2000,
+                "month": 1,
+                "day": 1,
+                "hour": 12,
+                "minute": 0,
+                "second": 0,
+                "lat": 41.0082,
+                "lon": 28.9784,
+                "timezone_id": "Europe/Istanbul",
+            },
+            _beta_options({}),
+        )
+        chart["birth"]["date"] = "not-a-date"
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            _beta_build_chat_draft(
+                "Genel haritam hakkında ne görüyorsun?",
+                chart,
+                routing={"selected": _beta_question_route(
+                    "Genel haritam hakkında ne görüyorsun?",
+                    chart,
+                    "general-invalid-birth",
+                    mode_override="bypass",
+                )["selected"]},
+                require_mandatory_evidence=True,
+            )
+
+        self.assertEqual(raised.exception.code, "vedic_spine_refresh_required")
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_runs_three_candidates_and_replays_idempotently(self, bridge_call):
@@ -412,7 +486,9 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(data["context_trace"]["primary_topic"], "career")
         self.assertEqual(data["context_trace"]["time_scope"], "none")
         self.assertEqual(data["context_trace"]["conversation_turn_count"], 2)
-        self.assertIsNone(data["context_trace"]["transit"])
+        self.assertIsNotNone(data["context_trace"]["transit"])
+        self.assertEqual(data["context_trace"]["transit"]["range_start"], "2026-09-02")
+        self.assertEqual(data["context_trace"]["transit"]["range_end"], "2026-12-02")
         public_analysis = data["methodology_results"][0]["analysis"]
         self.assertEqual(public_analysis["opening_summary"], (
             "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "

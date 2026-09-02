@@ -277,6 +277,9 @@ def load_guidance_methodology(root=None):
 
 def compact_evidence(draft):
     source = draft.get("evidence") or {}
+    spine = source.get("vedic_spine")
+    active_dasha = source.get("active_dasha")
+    transits = source.get("transits")
     evidence = {
         "contract_version": "vedic-evidence-package-v1",
         "question": draft.get("question"),
@@ -286,8 +289,8 @@ def compact_evidence(draft):
         "status": draft.get("status"),
         "confidence": draft.get("confidence"),
         "chart_summary": source.get("chart_summary"),
-        "vedic_spine": source.get("vedic_spine"),
-        "active_dasha": source.get("active_dasha"),
+        "vedic_spine": spine,
+        "active_dasha": active_dasha,
         "strength_summary": source.get("strength_summary"),
         "topic_packet": source.get("topic_packet"),
         "natal_sections": source.get("natal_sections") or [],
@@ -296,8 +299,10 @@ def compact_evidence(draft):
         "missing": draft.get("missing") or [],
         "safety_notes": draft.get("safety_notes") or [],
     }
-    if draft.get("topic") == "transit":
-        evidence["transits"] = source.get("transits")
+    # The transit package is mandatory even for natal/general questions. The
+    # question router may add daily or instant layers, but it never removes
+    # the bounded three-month transit context.
+    evidence["transits"] = transits
     # Normal PWA chat uses ``_full_markdown_sources``. The older
     # ``_full_markdown_test`` field remains supported only behind the explicit
     # diagnostic switch so existing callers do not silently change behavior.
@@ -788,6 +793,11 @@ def _fallback_methodology_analysis(evidence, error_code):
     """Create an explicitly incomplete technical shell without new claims."""
 
     expected_steps = REQUIRED_METHODOLOGY_STEPS
+    # Legacy direct validator fixtures may intentionally omit the new spine.
+    # Customer chat calls preflight mandatory evidence before reaching this
+    # validator, so production requests always use the complete contract.
+    if not evidence.get("vedic_spine") and not evidence.get("mandatory_evidence_required"):
+        expected_steps = tuple(step for step in REQUIRED_METHODOLOGY_STEPS if step != "vedic_spine")
     missing_spine = not evidence.get("vedic_spine")
     if missing_spine:
         expected_steps = tuple(step for step in expected_steps if step != "vedic_spine")
@@ -1158,12 +1168,7 @@ def validate_methodology_response(payload, evidence):
     timing_required = expected_timing
     if analysis_status not in {"COMPLETE", "INCOMPLETE"} or not isinstance(coverage, list):
         raise MethodologyOrchestrationError("methodology_model_coverage_invalid", 502)
-    # Legacy diagnostic fixtures may not contain the new spine projection. A
-    # production evidence package always carries ``vedic_spine`` and therefore
-    # uses the complete 13-step contract.
     expected_steps = REQUIRED_METHODOLOGY_STEPS
-    if not evidence.get("vedic_spine"):
-        expected_steps = tuple(step for step in REQUIRED_METHODOLOGY_STEPS if step != "vedic_spine")
     normalized_coverage = []
     for expected_step, row in zip(expected_steps, coverage, strict=False):
         if not isinstance(row, dict):

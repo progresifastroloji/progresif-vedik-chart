@@ -31026,7 +31026,13 @@ def _beta_legacy_question_route(question):
         time_scope = "none"
 
     today = _beta_day()
-    required = ["natal_core", "topic_packet", "active_dasha"]
+    required = [
+        "natal_core",
+        "topic_packet",
+        "vedic_spine",
+        "active_dasha",
+        "transits",
+    ]
     if subject_topic == "wellbeing":
         required.append("natal_emotional_core")
     if time_scope != "none":
@@ -31501,11 +31507,52 @@ def _beta_vedic_spine_evidence(chart):
     return spine if spine else {"status": "missing", "source_paths": ["vedic_spine"]}
 
 
-def _refresh_runtime_dasha(chart, reference_dt_utc):
+def _beta_vedic_spine_is_ready(spine):
+    if not isinstance(spine, dict) or spine.get("status") != "available":
+        return False
+    anchors = {
+        str(item.get("anchor") or ""): item
+        for item in spine.get("anchors") or []
+        if isinstance(item, dict)
+    }
+    for required_anchor in ("Lagna", "Moon", "Sun"):
+        position = anchors.get(required_anchor, {}).get("position") or {}
+        if position.get("sign_index") is None:
+            return False
+    return True
+
+
+def _beta_require_mandatory_evidence(draft):
+    """Fail closed before a chat model can see an incomplete personal package."""
+
+    evidence = draft.get("evidence") or {}
+    chart_summary = evidence.get("chart_summary")
+    if (
+        not isinstance(chart_summary, dict)
+        or not isinstance(chart_summary.get("lagna"), dict)
+        or not chart_summary.get("planets")
+    ):
+        raise MethodologyOrchestrationError("natal_evidence_refresh_required", 409)
+    spine = evidence.get("vedic_spine")
+    if not _beta_vedic_spine_is_ready(spine):
+        raise MethodologyOrchestrationError("vedic_spine_refresh_required", 409)
+    active_dasha = evidence.get("active_dasha")
+    if not isinstance(active_dasha, dict) or active_dasha.get("status") != "available":
+        raise MethodologyOrchestrationError("active_dasha_refresh_required", 409)
+    transits = evidence.get("transits")
+    if not isinstance(transits, dict) or not transits.get("contract_version"):
+        raise MethodologyOrchestrationError("transit_evidence_refresh_required", 409)
+
+
+def _refresh_runtime_dasha(chart, reference_dt_utc, *, strict=False):
     """Refresh time-dependent dasha layers before every chat evidence build."""
     birth = chart.get("birth") or {}
     try:
-        birth_date = date.fromisoformat(str(birth.get("date")))
+        birth_date_text = str(birth.get("date") or "").strip()
+        try:
+            birth_date = date.fromisoformat(birth_date_text)
+        except ValueError:
+            birth_date = datetime.strptime(birth_date_text, "%d.%m.%Y").date()
         hour, minute = [int(part) for part in str(birth.get("time") or "00:00").split(":")[:2]]
         tz_offset = float(birth.get("tz_offset") or 0.0)
         birth_jd = date_to_jd(
@@ -31517,9 +31564,38 @@ def _refresh_runtime_dasha(chart, reference_dt_utc):
             tz_offset,
             int(birth.get("second") or 0),
         )
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, KeyError) as exc:
+        if strict:
+            raise MethodologyOrchestrationError("vedic_spine_refresh_required", 409) from exc
         return chart
-    refreshed = _v2_dashas(chart, birth_jd, reference_dt_utc)
+    try:
+        # Stored v2 charts expose the normalized public key ``sign`` while
+        # the internal dasha builders still consume the calculation-layer
+        # alias ``sign_en``. Rehydrate that alias at the boundary instead of
+        # mutating the stored chart or silently skipping the refresh.
+        dasha_source = json.loads(json.dumps(chart))
+        dasha_source["lagna"] = {
+            **(dasha_source.get("lagna") or {}),
+            "sign_en": (dasha_source.get("lagna") or {}).get("sign_en")
+            or (dasha_source.get("lagna") or {}).get("sign"),
+        }
+        dasha_source["planets"] = [
+            {
+                **planet,
+                "sign_en": planet.get("sign_en") or planet.get("sign"),
+            }
+            for planet in dasha_source.get("planets") or []
+        ]
+        refreshed = _v2_dashas(dasha_source, birth_jd, reference_dt_utc)
+    except (TypeError, ValueError, KeyError) as exc:
+        if strict:
+            raise MethodologyOrchestrationError("active_dasha_refresh_required", 409) from exc
+        return chart
+    except Exception as exc:
+        if strict:
+            app.logger.exception("Zorunlu aktif daşa yenilemesi beklenmedik hatayla durdu")
+            raise MethodologyOrchestrationError("active_dasha_refresh_required", 409) from exc
+        return chart
     runtime_chart = json.loads(json.dumps(chart))
     runtime_chart["dashas"] = refreshed
     runtime_chart["vedic_spine"] = _build_vedic_spine(
@@ -31907,6 +31983,7 @@ def _beta_build_chat_draft(
     include_full_markdown_test=False,
     include_full_markdown_sources=False,
     response_language="tr",
+    require_mandatory_evidence=False,
 ):
     response_language = normalize_response_language(response_language)
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
@@ -31918,7 +31995,11 @@ def _beta_build_chat_draft(
                 reference_dt_utc = routed_target.astimezone(timezone.utc)
         except (TypeError, ValueError):
             pass
-    chart = _refresh_runtime_dasha(chart, reference_dt_utc)
+    chart = _refresh_runtime_dasha(
+        chart,
+        reference_dt_utc,
+        strict=require_mandatory_evidence,
+    )
     subject_topic = selected_route["primary_topic"]
     topic = "transit" if selected_route["timing_required"] else subject_topic
     packets = chart.get("topic_packets") or {}
@@ -31931,13 +32012,16 @@ def _beta_build_chat_draft(
         packet.setdefault("evidence", {})["active_dasha"] = _topic_active_dasha_evidence(
             chart.get("dashas") or {}
         )
-    transits = chart.get("transits")
-    transit_trace = None
-    if topic == "transit":
-        person = ((chart.get("birth") or {}).get("person") or {})
-        range_start, range_end, target_dt = _beta_route_time_window(selected_route, chart)
-        source = "legacy_generated"
-        regenerated = True
+    person = ((chart.get("birth") or {}).get("person") or {})
+    range_start, range_end, target_dt = _beta_route_time_window(selected_route, chart)
+    if range_start is None:
+        range_start = datetime.fromisoformat(_beta_question_now(chart)).date().isoformat()
+        range_end = (
+            date.fromisoformat(range_start) + timedelta(days=91)
+        ).isoformat()
+    source = "legacy_generated"
+    regenerated = True
+    try:
         if owner_user_id and profile_id and chart_id:
             transit_pack, source, regenerated = _pwa_get_or_create_transit_runtime_cache(
                 owner_user_id,
@@ -31983,6 +32067,26 @@ def _beta_build_chat_draft(
             "important_sky_event_status": transits.get("event_data_status"),
             "important_sky_event_count": transits.get("event_count", 0),
         }
+    except (FileNotFoundError, KeyError, TypeError, ValueError) as exc:
+        if require_mandatory_evidence:
+            raise MethodologyOrchestrationError(
+                "transit_evidence_refresh_required",
+                409,
+            ) from exc
+        # Unit and diagnostic callers may supply a prebuilt chart summary
+        # without the persisted PWA artifact set. Customer chat callers use
+        # the strict path above and never continue with this fallback.
+        transits = chart.get("transits")
+        transit_trace = None
+    except Exception as exc:
+        if require_mandatory_evidence:
+            app.logger.exception("Zorunlu transit kanıtı yenilemesi beklenmedik hatayla durdu")
+            raise MethodologyOrchestrationError(
+                "transit_evidence_refresh_required",
+                409,
+            ) from exc
+        transits = chart.get("transits")
+        transit_trace = None
     evidence = {
         "chart_summary": _beta_chart_summary(chart),
         "vedic_spine": _beta_vedic_spine_evidence(chart),
@@ -32015,7 +32119,7 @@ def _beta_build_chat_draft(
         else None
     )
     missing = _beta_missing_for_topic(chart, packet)
-    if not (chart.get("vedic_spine") or {}).get("anchors"):
+    if not _beta_vedic_spine_is_ready(chart.get("vedic_spine")):
         missing.append({
             "key": "vedic_spine",
             "status": "missing",
@@ -32121,6 +32225,8 @@ def _beta_build_chat_draft(
         # the legacy alias above remains for existing diagnostics/tests.
         if include_full_markdown_sources:
             draft["_full_markdown_sources"] = full_markdown_test
+    if require_mandatory_evidence:
+        _beta_require_mandatory_evidence(draft)
     return draft
 
 
@@ -32926,6 +33032,7 @@ def api_v2_beta_chat_draft():
                 profile_id=profile_id,
                 chart_id=chart_id,
                 response_language=response_language,
+                require_mandatory_evidence=True,
             )
             conn.execute(
                 """
@@ -32947,6 +33054,13 @@ def api_v2_beta_chat_draft():
             **draft,
         })
 
+    except MethodologyOrchestrationError as e:
+        return jsonify({
+            "ok": False,
+            "status": "evidence_refresh_required",
+            "error_code": e.code,
+            "message": "Harita verilerinizi yenilememiz gerekiyor. Lütfen biraz sonra tekrar deneyin.",
+        }), e.http_status
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"error": f"Geçersiz beta sohbet verisi: {str(e)}"}), 400
     except Exception as e:
@@ -33128,6 +33242,7 @@ def api_v2_beta_chat_compare():
                 full_source_context_mode() and not app.config.get("TESTING")
             ),
             response_language=response_language,
+            require_mandatory_evidence=True,
         )
         comparison = run_methodology_comparison(
             draft,

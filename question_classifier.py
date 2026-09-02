@@ -32,9 +32,11 @@ ALLOWED_TOPICS = {
 ALLOWED_TIME_SCOPES = {"none", "instant", "daily", "range"}
 ALLOWED_EVIDENCE = {
     "natal_core",
+    "vedic_spine",
     "natal_emotional_core",
     "topic_packet",
     "active_dasha",
+    "transits",
     "stored_transit_days",
     "current_transit_snapshot",
     "moon_and_panchanga",
@@ -86,6 +88,9 @@ TOPIC_PATTERNS = {
     "career": (
         r"(?<!\w)kariyer\w*", r"(?<!\w)mesle\w*",
         r"(?<!\w)iş(?!\w)", r"(?<!\w)işim\w*", r"(?<!\w)işte\w*",
+        r"(?<!\w)işe\s+(?:gir\w*|başla\w*|basla\w*)",
+        r"(?<!\w)yeni\s+işe\s+(?:başla\w*|basla\w*)",
+        r"(?<!\w)iş\s+(?:bul\w*|ara\w*)",
         r"(?<!\w)işyer\w*", r"(?<!\w)iş\s+hayat\w*",
         r"(?<!\w)iş\s+görüş\w*", r"(?<!\w)iş\s+değiş\w*",
         r"(?<!\w)iş\s+ortak\w*", r"(?<!\w)çalışma\s+hayat\w*",
@@ -271,7 +276,10 @@ def enforce_explicit_time_scope(value, question, now_iso):
 
 
 def _required_evidence_for(primary_topic, time_scope):
-    required = {"natal_core", "active_dasha"}
+    # These layers are the minimum personal Vedik context for every chat
+    # question. Topic and time routing may add more evidence, but may not
+    # remove the natal spine, active dasha, or the transit package.
+    required = {"natal_core", "vedic_spine", "active_dasha", "transits"}
     if primary_topic == "wellbeing":
         required.add("natal_emotional_core")
     if time_scope != "none":
@@ -328,6 +336,13 @@ def normalize_classification(value, question, now_iso):
         or "şimdi" in tokens
     )
     explicit_daily = "bugün" in tokens or "bugun" in tokens
+    explicit_period_request = any(
+        phrase in question_text
+        for phrase in (
+            "uygun dönem", "uygun donem", "hangi dönem", "hangi donem",
+            "başlamak için iyi zaman", "baslamak icin iyi zaman",
+        )
+    )
     future_modal = bool(re.search(
         r"\b(?:evlenebilir|gerçekleşir|gerceklesir|etkileyecek|etkiler|olacak\s+mı|olacak\s+mi|ne\s+zaman)\b",
         question_text,
@@ -337,7 +352,7 @@ def normalize_classification(value, question, now_iso):
         normalized["time_scope"] = "instant"
     elif explicit_daily:
         normalized["time_scope"] = "daily"
-    elif future_modal and normalized.get("time_scope") == "none":
+    elif (future_modal or explicit_period_request) and normalized.get("time_scope") == "none":
         normalized["time_scope"] = "range"
     elif event_evidence and normalized.get("time_scope") == "none":
         # A named sky event is a timing request even without an exact date.
@@ -567,7 +582,7 @@ def build_request(question, now_iso, conversation_context=None):
         "sohbetin bağlamıdır. 'diğerleri', 'bunu', 'o tarih' gibi devam sorularını bu geçmişe göre "
         "çöz; current_question yeni bir konu açıyorsa geçmiş konuyu zorla taşıma. Sohbet geçmişini "
         "astrolojik kanıt sayma ve geçmiş cevaptaki teknik iddiaları doğrulanmış veri gibi kullanma. "
-        "required_evidence her zaman natal_core ve active_dasha icersin. Wellbeing icin ayrica "
+        "required_evidence her zaman natal_core, vedic_spine, active_dasha ve transits icersin. Wellbeing icin ayrica "
         "natal_emotional_core ekle. Zaman sorularinda stored_transit_days, "
         "transit_natal_contacts ve ashtakavarga ekle. Daily ve instant icin "
         "moon_and_panchanga, instant icin current_transit_snapshot ekle. "

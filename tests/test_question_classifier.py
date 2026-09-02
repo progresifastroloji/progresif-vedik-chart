@@ -24,8 +24,10 @@ def _classification(**overrides):
         "target_datetime": "now",
         "required_evidence": [
             "natal_core",
+            "vedic_spine",
             "natal_emotional_core",
             "active_dasha",
+            "transits",
             "stored_transit_days",
             "current_transit_snapshot",
             "moon_and_panchanga",
@@ -85,6 +87,8 @@ class QuestionClassifierTest(unittest.TestCase):
         )
         self.assertIsNone(detect_explicit_topic("Bu konuda ne görüyorsun?"))
         self.assertEqual(detect_explicit_topic("İyi hissetmiyorum."), "wellbeing")
+        self.assertEqual(detect_explicit_topic("İşe girmek için uygun dönem var mı?"), "career")
+        self.assertEqual(detect_explicit_topic("Yeni işe başlamak doğru mu?"), "career")
 
     def test_eclipse_question_forces_stored_event_layers_without_calculation(self):
         def model_call(request_id, _request):
@@ -95,7 +99,7 @@ class QuestionClassifierTest(unittest.TestCase):
                 target_start=None,
                 target_end=None,
                 target_datetime=None,
-                required_evidence=["natal_core", "active_dasha"],
+                required_evidence=["natal_core", "vedic_spine", "active_dasha", "transits"],
                 sensitivity="standard",
             ))
 
@@ -131,6 +135,7 @@ class QuestionClassifierTest(unittest.TestCase):
         self.assertEqual(result["primary_topic"], "wellbeing")
         self.assertEqual(result["time_scope"], "instant")
         self.assertIn("current_transit_snapshot", result["required_evidence"])
+        self.assertTrue({"vedic_spine", "transits"}.issubset(set(result["required_evidence"])))
 
     def test_model_cannot_select_user_or_file_identifiers(self):
         for forbidden in ("owner_user_id", "chart_id", "path", "filename"):
@@ -198,7 +203,7 @@ class QuestionClassifierTest(unittest.TestCase):
                 target_start=None,
                 target_end=None,
                 target_datetime=None,
-                required_evidence=["natal_core", "active_dasha"],
+                required_evidence=["natal_core", "vedic_spine", "active_dasha", "transits"],
                 sensitivity="standard",
             )
             return request_id, _model_payload(incomplete)
@@ -231,7 +236,7 @@ class QuestionClassifierTest(unittest.TestCase):
                 target_start=None,
                 target_end=None,
                 target_datetime=None,
-                required_evidence=["natal_core", "active_dasha"],
+                required_evidence=["natal_core", "vedic_spine", "active_dasha", "transits"],
                 sensitivity="standard",
             )
             return request_id, _model_payload(model_decision)
