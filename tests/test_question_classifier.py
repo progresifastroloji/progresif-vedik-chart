@@ -89,6 +89,12 @@ class QuestionClassifierTest(unittest.TestCase):
         self.assertEqual(detect_explicit_topic("İyi hissetmiyorum."), "wellbeing")
         self.assertEqual(detect_explicit_topic("İşe girmek için uygun dönem var mı?"), "career")
         self.assertEqual(detect_explicit_topic("Yeni işe başlamak doğru mu?"), "career")
+        self.assertEqual(
+            detect_explicit_topic(
+                "Mesleki yeteneklerim neler ve hangi meslekler bana uygun?"
+            ),
+            "career",
+        )
 
     def test_eclipse_question_forces_stored_event_layers_without_calculation(self):
         def model_call(request_id, _request):

@@ -181,6 +181,17 @@ def detect_explicit_topic(question):
     topics = explicit_topics_for_question(question)
     if not topics:
         return None
+    # "Mesleki yetenekler" and "uygun meslekler" contain both a career
+    # marker and the generic character marker "yetenek".  In this explicit
+    # employment context, career is the user's intended life area rather than
+    # a genuinely mixed question.
+    if topics == {"career", "character"} and re.search(
+        r"(?<!\w)(?:mesleki\s+(?:yetenek\w*|beceri\w*)|"
+        r"hangi\s+meslek\w*|uygun\s+meslek\w*)",
+        _question_text(question),
+        flags=re.UNICODE,
+    ):
+        return "career"
     # Emotional words qualify another explicit life-area question rather than
     # replacing it.  Example: "işimde neden mutsuzum" is still career.
     substantive = topics - {"wellbeing"}
