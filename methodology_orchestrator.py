@@ -82,6 +82,7 @@ RETRYABLE_NARRATIVE_ERRORS = {
     "methodology_narrative_evidence_density_invalid",
     "methodology_narrative_topic_mismatch",
     "methodology_narrative_language_invalid",
+    "methodology_narrative_safety_invalid",
 }
 
 
@@ -595,6 +596,36 @@ def _narrative_request(
     return request, _sha256(raw)
 
 
+def _narrative_repair_request(request):
+    """Make the second narrative attempt a constrained rewrite, not a repeat."""
+
+    repaired = json.loads(json.dumps(request))
+    contents = repaired.get("contents")
+    if not isinstance(contents, list) or not contents:
+        return repaired
+    parts = contents[0].get("parts") if isinstance(contents[0], dict) else None
+    if not isinstance(parts, list):
+        return repaired
+    parts.append({
+        "text": (
+            "\n\nONARIM DENEMESİ: Önceki anlatı yanıtı doğrulama kapısından geçmedi. "
+            "Bu kez yalnız DOĞRULANMIŞ AŞAMA 1 içindeki anlamı yeniden yaz. "
+            "Sadece JSON döndür ve yalnız opening_summary ile answer alanlarını kullan. "
+            "opening_summary 1–3 tamamlanmış cümle olsun. answer en az 300 karakter ve "
+            "en az iki doğal paragraf olsun; başlık, madde işareti veya etiket kullanma. "
+            "İlk cümlede kullanıcının sorusuna doğrudan ve koşullu yanıt ver. "
+            "Teknik terim, kanıt yolu, metodoloji adı, yeni tarih/derece veya kaynakta olmayan "
+            "meslek/olay ekleme. Para, sağlık, hukuk ve ilişki konularında garanti, kesin sonuç, "
+            "kayıp/kriz hükmü veya teşhis dili kullanma. Doğrulanmış analiz eksikse bunu açıkça "
+            "söyle ve yalnız küçük, geri alınabilir bir gözlem/plan adımı öner."
+        ),
+    })
+    generation_config = repaired.get("generationConfig")
+    if isinstance(generation_config, dict):
+        generation_config["temperature"] = 0.2
+    return repaired
+
+
 def _response_text(payload):
     try:
         parts = payload["candidates"][0]["content"]["parts"]
@@ -1053,6 +1084,32 @@ def _validate_selected_response_language(text, evidence):
             502,
         )
 
+
+def _validate_sensitive_narrative_language(text, evidence):
+    """Reject deterministic or high-stakes claims before customer delivery."""
+
+    normalized = str(text or "").replace("İ", "i").casefold()
+    topic = str(evidence.get("subject_topic") or "general").strip().lower()
+    patterns = [
+        r"\b(?:kesinlikle|garantili|hayatınız boyunca|muazzam)\b",
+        r"\bkesin\s+(?:sonuç|başarı|kazanç|gelir)\b",
+    ]
+    if topic == "wealth":
+        patterns.extend([
+            r"\b(?:oldukça|çok)\s+yüksek\s+(?:kazanç|gelir|servet)",
+            r"\bfinansal\s+(?:kayıp|kriz)",
+            r"\b(?:zengin|yüksek gelir)\s+ol(?:acaksınız|acak)",
+        ])
+    if topic in {"wealth", "legal", "health"}:
+        patterns.extend([
+            r"\b(?:başınıza|sizi)\s+[^.!?\n]{0,80}\b(?:gelecek|bekliyor)\b",
+        ])
+    if any(re.search(pattern, normalized) for pattern in patterns):
+        raise MethodologyOrchestrationError(
+            "methodology_narrative_safety_invalid",
+            502,
+        )
+
 def _validate_global_transit_absence_claim(text, evidence):
     """Reject a system-wide absence claim when transit evidence is present."""
 
@@ -1390,6 +1447,7 @@ def validate_narrative_response(payload, analysis, evidence):
     _validate_global_transit_absence_claim(combined_text, evidence)
     _validate_wellbeing_language(combined_text, evidence_rows, evidence)
     _validate_selected_response_language(combined_text, evidence)
+    _validate_sensitive_narrative_language(combined_text, evidence)
     return {
         "opening_summary": opening_summary,
         "answer": answer,
@@ -1498,6 +1556,63 @@ def _run_candidate(
                 "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_model_failed",
             }
 
+    # An incomplete technical result is a hard boundary: do not let the
+    # narrative model reinterpret full source documents and turn missing or
+    # invalid evidence into a confident customer answer.
+    if (
+        validation_mode == "strict"
+        and isinstance(technical_analysis, dict)
+        and (
+            technical_analysis.get("analysis_status") == "INCOMPLETE"
+            or technical_analysis.get("validation_fallback") is True
+        )
+    ):
+        fallback_payload = {
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": json.dumps(
+                            _fallback_narrative_response(
+                                {**evidence, "response_language": response_language}
+                            ),
+                            ensure_ascii=False,
+                        )
+                    }]
+                }
+            }]
+        }
+        narrative = validate_narrative_response(
+            fallback_payload,
+            technical_analysis,
+            evidence,
+        )
+        return {
+            "status": "completed",
+            "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+            "guidance_methodology": {key: guidance[key] for key in ("id", "title", "version", "status", "sha256")},
+            "request_id": technical_request_id,
+            "technical_request_id": technical_request_id,
+            "narrative_request_id": None,
+            "attempt_count": technical_attempt_count,
+            "technical_attempt_count": technical_attempt_count,
+            "narrative_attempt_count": 0,
+            "evidence_sha256": evidence_sha256,
+            "prompt_sha256": technical_prompt_sha256,
+            "technical_prompt_sha256": technical_prompt_sha256,
+            "narrative_prompt_sha256": None,
+            "latency_ms": max(round((clock() - started) * 1000), 0),
+            "usage": _combined_usage(technical_payload or {}, {}),
+            "analysis": {
+                **technical_analysis,
+                "technical_summary": technical_analysis["summary"],
+                "opening_summary": narrative["opening_summary"],
+                "summary": narrative["answer"],
+            },
+            "validation_mode": validation_mode,
+            "narrative_fallback": True,
+            "narrative_fallback_reason": "technical_analysis_incomplete",
+        }
+
     narrative_request, narrative_prompt_sha256 = _narrative_request(
         candidate,
         evidence,
@@ -1506,6 +1621,7 @@ def _run_candidate(
         guidance,
         response_language,
     )
+    current_narrative_request = narrative_request
     for attempt_index in range(2):
         narrative_request_id = (
             f"{base_request_id}-narrative"
@@ -1515,7 +1631,7 @@ def _run_candidate(
         try:
             returned_request_id, narrative_payload = model_call(
                 narrative_request_id,
-                narrative_request,
+                current_narrative_request,
             )
             if returned_request_id != narrative_request_id or not isinstance(narrative_payload, dict):
                 raise MethodologyOrchestrationError("methodology_narrative_response_invalid", 502)
@@ -1562,6 +1678,7 @@ def _run_candidate(
                 else getattr(exc, "code", "methodology_narrative_failed")
             )
             if attempt_index == 0 and code in RETRYABLE_NARRATIVE_ERRORS:
+                current_narrative_request = _narrative_repair_request(narrative_request)
                 continue
             if (
                 validation_mode == "strict"

@@ -606,6 +606,54 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(system_result["technical_attempt_count"], 1)
         self.assertEqual(system_result["narrative_attempt_count"], 2)
 
+    def test_narrative_retry_uses_a_constrained_repair_prompt(self):
+        calls = []
+
+        def model_call(request_id, request):
+            calls.append((request_id, request))
+            if request_id.endswith("-analysis"):
+                return request_id, _payload()
+            if request_id.endswith("-narrative"):
+                return request_id, _narrative_payload(answer="Kısa cevap.")
+            self.assertIn("ONARIM DENEMESİ", request["contents"][0]["parts"][-1]["text"])
+            return request_id, _narrative_payload()
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-narrative-repair-prompt",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        self.assertEqual(result["methodology_results"][0]["narrative_attempt_count"], 2)
+
+    def test_incomplete_technical_analysis_does_not_call_narrative_model(self):
+        calls = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            if not request_id.endswith("-analysis"):
+                raise AssertionError("INCOMPLETE teknik sonuçta anlatı modeli çağrılmamalı")
+            payload = _payload()
+            value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+            value["analysis_status"] = "INCOMPLETE"
+            value["methodology_coverage"][-1]["status"] = "missing"
+            payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+            return request_id, payload
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-incomplete-no-narrative",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        system_result = result["methodology_results"][0]
+        self.assertTrue(system_result["narrative_fallback"])
+        self.assertEqual(system_result["narrative_attempt_count"], 0)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("Mesleki ilerlemede", system_result["analysis"]["opening_summary"])
+
     def test_technical_main_text_is_retried_without_rerunning_analysis(self):
         calls = []
 
@@ -665,6 +713,24 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertNotIn("SAV", system_result["analysis"]["summary"])
         self.assertNotIn("Graha Yuddha", system_result["analysis"]["summary"])
         self.assertNotIn("###", system_result["analysis"]["summary"])
+
+    def test_narrative_rejects_high_stakes_certainty_language(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(
+                _narrative_payload(
+                    answer=(
+                        "Kariyerinizde hayatınız boyunca kesinlikle yüksek gelir elde edeceğiniz "
+                        "görülüyor. " * 12
+                    ),
+                ),
+                analysis,
+                {**compact_evidence(_draft()), "subject_topic": "wealth"},
+            )
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):
