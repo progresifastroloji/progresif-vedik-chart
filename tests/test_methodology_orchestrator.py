@@ -733,6 +733,24 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
+    def test_narrative_rejects_career_prediction_certainty_language(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(
+                _narrative_payload(
+                    answer=(
+                        "Önümüzdeki üç ayda yeni bir işe girmeniz yüksek bir ihtimaldir; "
+                        "Ekim ayında resmî sözleşme gerçekleşecektir. " * 10
+                    ),
+                ),
+                analysis,
+                {**compact_evidence(_draft()), "subject_topic": "career"},
+            )
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):
             return request_id, {"candidates": []}

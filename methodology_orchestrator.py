@@ -1113,6 +1113,14 @@ def _validate_sensitive_narrative_language(text, evidence):
             r"\bfinansal\s+(?:kayıp|kriz)",
             r"\b(?:zengin|yüksek gelir)\s+ol(?:acaksınız|acak)",
         ])
+    if topic == "career":
+        patterns.extend([
+            r"\b(?:yüksek|oldukça güçlü|güçlü bir)\s+(?:bir\s+)?(?:ihtimal|olasılık|potansiyel)\b",
+            r"\b(?:işe gireceksiniz|iş bulacaksınız|yeni bir işe gireceksiniz)\b",
+            r"\b(?:kariyer|iş|sözleşme|kazanç|statü)[^.!?\n]{0,100}"
+            r"(?:güçlü bir şekilde|yüksek bir ihtimal|güçlü bir kapı|somut bir kazanç|"
+            r"güçlendirecek|aralayacak|getirecektir|gerçekleşecektir|olacaktır)\b",
+        ])
     if topic in {"wealth", "legal", "health"}:
         patterns.extend([
             r"\b(?:başınıza|sizi)\s+[^.!?\n]{0,80}\b(?:gelecek|bekliyor)\b",
