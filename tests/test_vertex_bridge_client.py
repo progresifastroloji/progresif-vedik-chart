@@ -182,7 +182,40 @@ class VertexBridgeClientTest(unittest.TestCase):
             )
 
         self.assertEqual(raised.exception.code, "vertex_bridge_rejected")
+        self.assertEqual(raised.exception.upstream_status, 400)
+        self.assertFalse(raised.exception.retryable)
         self.assertNotIn("must-not-leak", str(raised.exception))
+
+    @patch.dict(
+        os.environ,
+        {
+            "VEDIC_VERTEX_BRIDGE_URL": TEST_URL,
+            "VEDIC_MACHINE_HMAC_SECRET": TEST_SECRET,
+        },
+        clear=False,
+    )
+    def test_transient_provider_status_is_classified_without_body_leak(self):
+        def opener(request, timeout):
+            raise HTTPError(
+                request.full_url,
+                429,
+                "Too Many Requests",
+                {},
+                io.BytesIO(
+                    b'{"error":"bridge_vertex_upstream_error","upstream_status":429}'
+                ),
+            )
+
+        with self.assertRaises(VertexBridgeClientError) as raised:
+            call_vertex_bridge(
+                "test-request-rate-limit",
+                {"contents": [{}]},
+                opener=opener,
+            )
+
+        self.assertEqual(raised.exception.code, "vertex_bridge_rate_limited")
+        self.assertEqual(raised.exception.upstream_status, 429)
+        self.assertTrue(raised.exception.retryable)
 
     @patch("app.call_vertex_bridge")
     def test_api_endpoint_returns_bridge_response(self, bridge_call):

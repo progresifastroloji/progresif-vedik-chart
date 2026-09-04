@@ -18,15 +18,33 @@ from urllib.request import Request, urlopen
 MAX_REQUEST_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 REQUEST_ID_PATTERN = re.compile(r"^[0-9a-z._:-]{1,200}$", re.IGNORECASE)
+TRANSIENT_UPSTREAM_STATUSES = {408, 425, 429, 500, 502, 503, 504}
+NON_RETRYABLE_BRIDGE_ERRORS = {
+    "bridge_secret_unavailable",
+    "bridge_project_invalid",
+    "bridge_location_invalid",
+    "bridge_model_invalid",
+    "bridge_json_invalid",
+    "bridge_body_invalid",
+    "bridge_signature_invalid",
+    "bridge_signature_expired",
+    "bridge_replay_rejected",
+    "bridge_request_id_invalid",
+    "bridge_vertex_request_invalid",
+    "bridge_contents_required",
+}
 
 
 class VertexBridgeClientError(Exception):
-    """A safe, classified bridge failure that contains no provider response body."""
+    """A safe, classified bridge failure without provider response content."""
 
-    def __init__(self, code, http_status):
+    def __init__(self, code, http_status, *, upstream_status=None, retryable=False, request_id=None):
         super().__init__(code)
         self.code = code
         self.http_status = http_status
+        self.upstream_status = upstream_status
+        self.retryable = bool(retryable)
+        self.request_id = request_id
 
 
 def _bridge_config():
@@ -71,6 +89,65 @@ def _signature(secret, timestamp, nonce, raw_body):
     return f"v1={digest}"
 
 
+def _safe_int(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 100 <= parsed <= 599 else None
+
+
+def _http_error_details(exc):
+    """Read only the bridge's safe envelope; never retain provider detail."""
+
+    body_error = None
+    upstream_status = _safe_int(getattr(exc, "code", None))
+    try:
+        raw_error = exc.read(MAX_RESPONSE_BYTES)
+        payload = json.loads(raw_error.decode("utf-8"))
+        if isinstance(payload, dict):
+            body_error = payload.get("error") if isinstance(payload.get("error"), str) else None
+            upstream_status = _safe_int(payload.get("upstream_status")) or upstream_status
+    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError, OSError):
+        pass
+    return body_error, upstream_status
+
+
+def _classified_http_error(exc, request_id):
+    body_error, upstream_status = _http_error_details(exc)
+    if body_error in NON_RETRYABLE_BRIDGE_ERRORS:
+        return VertexBridgeClientError(
+            "vertex_bridge_rejected",
+            502,
+            upstream_status=upstream_status,
+            retryable=False,
+            request_id=request_id,
+        )
+    if body_error == "bridge_vertex_upstream_error" and upstream_status == 429:
+        return VertexBridgeClientError(
+            "vertex_bridge_rate_limited",
+            502,
+            upstream_status=upstream_status,
+            retryable=True,
+            request_id=request_id,
+        )
+    if upstream_status in TRANSIENT_UPSTREAM_STATUSES:
+        return VertexBridgeClientError(
+            "vertex_bridge_upstream_unavailable",
+            502,
+            upstream_status=upstream_status,
+            retryable=True,
+            request_id=request_id,
+        )
+    return VertexBridgeClientError(
+        "vertex_bridge_rejected",
+        502,
+        upstream_status=upstream_status,
+        retryable=False,
+        request_id=request_id,
+    )
+
+
 def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, nonce=None):
     """Sign one Vertex request and send it through the configured Vedik bridge."""
 
@@ -96,10 +173,16 @@ def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, non
         response = (opener or urlopen)(bridge_request, timeout=timeout_seconds)
         raw_response = response.read(MAX_RESPONSE_BYTES + 1)
     except HTTPError as exc:
+        classified = _classified_http_error(exc, normalized_request_id)
         exc.close()
-        raise VertexBridgeClientError("vertex_bridge_rejected", 502) from exc
+        raise classified from exc
     except (TimeoutError, URLError, OSError) as exc:
-        raise VertexBridgeClientError("vertex_bridge_unreachable", 504) from exc
+        raise VertexBridgeClientError(
+            "vertex_bridge_unreachable",
+            504,
+            retryable=True,
+            request_id=normalized_request_id,
+        ) from exc
     finally:
         if response is not None:
             response.close()

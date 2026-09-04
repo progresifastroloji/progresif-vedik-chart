@@ -84,6 +84,11 @@ RETRYABLE_NARRATIVE_ERRORS = {
     "methodology_narrative_language_invalid",
     "methodology_narrative_safety_invalid",
 }
+RETRYABLE_PROVIDER_ERRORS = {
+    "vertex_bridge_rate_limited",
+    "vertex_bridge_upstream_unavailable",
+    "vertex_bridge_unreachable",
+}
 
 
 def normalize_response_language(value):
@@ -91,6 +96,14 @@ def normalize_response_language(value):
 
     normalized = str(value or "tr").strip().lower()
     return normalized if normalized in SUPPORTED_RESPONSE_LANGUAGES else "tr"
+
+
+def _is_retryable_provider_error(error, code):
+    """Retry only explicitly transient provider/bridge failures."""
+
+    return bool(getattr(error, "retryable", False)) or code in RETRYABLE_PROVIDER_ERRORS
+
+
 EVIDENCE_PATH_PATTERN = re.compile(r"^evidence(?:\.[a-zA-Z0-9_\-]+)+$")
 
 CANDIDATE_MANIFEST = (
@@ -1507,6 +1520,9 @@ def _run_candidate(
     technical_analysis = None
     technical_request_id = None
     technical_attempt_count = 0
+    provider_error_code = None
+    provider_request_id = None
+    provider_upstream_status = None
     for attempt_index in range(2):
         request_id = (
             f"{base_request_id}-analysis"
@@ -1536,8 +1552,21 @@ def _run_candidate(
                 if isinstance(exc, MethodologyOrchestrationError)
                 else getattr(exc, "code", "methodology_model_failed")
             )
-            if attempt_index == 0 and code in RETRYABLE_RESPONSE_ERRORS:
+            if attempt_index == 0 and (
+                code in RETRYABLE_RESPONSE_ERRORS
+                or _is_retryable_provider_error(exc, code)
+            ):
                 continue
+            if validation_mode == "strict" and str(code).startswith("vertex_"):
+                provider_error_code = code
+                provider_request_id = getattr(exc, "request_id", None) or request_id
+                provider_upstream_status = getattr(exc, "upstream_status", None)
+                technical_analysis = _fallback_methodology_analysis(evidence, code)
+                technical_analysis["provider_fallback"] = True
+                technical_payload = payload if isinstance(payload, dict) else {}
+                technical_request_id = request_id
+                technical_attempt_count = attempt_index + 1
+                break
             if validation_mode == "strict" and code in RETRYABLE_RESPONSE_ERRORS:
                 technical_analysis = _fallback_methodology_analysis(evidence, code)
                 technical_payload = payload if isinstance(payload, dict) else {}
@@ -1610,7 +1639,15 @@ def _run_candidate(
             },
             "validation_mode": validation_mode,
             "narrative_fallback": True,
-            "narrative_fallback_reason": "technical_analysis_incomplete",
+            "narrative_fallback_reason": (
+                "provider_error" if technical_analysis.get("provider_fallback")
+                else "technical_analysis_incomplete"
+            ),
+            **({
+                "provider_error_code": provider_error_code,
+                "provider_request_id": provider_request_id,
+                "provider_upstream_status": provider_upstream_status,
+            } if provider_error_code else {}),
         }
 
     narrative_request, narrative_prompt_sha256 = _narrative_request(
@@ -1677,9 +1714,62 @@ def _run_candidate(
                 if isinstance(exc, MethodologyOrchestrationError)
                 else getattr(exc, "code", "methodology_narrative_failed")
             )
-            if attempt_index == 0 and code in RETRYABLE_NARRATIVE_ERRORS:
+            if attempt_index == 0 and (
+                code in RETRYABLE_NARRATIVE_ERRORS
+                or _is_retryable_provider_error(exc, code)
+            ):
                 current_narrative_request = _narrative_repair_request(narrative_request)
                 continue
+            if validation_mode == "strict" and str(code).startswith("vertex_"):
+                fallback_payload = {
+                    "candidates": [{
+                        "content": {
+                            "parts": [{
+                                "text": json.dumps(
+                                    _fallback_narrative_response(
+                                        {**evidence, "response_language": response_language}
+                                    ),
+                                    ensure_ascii=False,
+                                )
+                            }]
+                        }
+                    }]
+                }
+                narrative = validate_narrative_response(
+                    fallback_payload,
+                    technical_analysis,
+                    evidence,
+                )
+                analysis = {
+                    **technical_analysis,
+                    "technical_summary": technical_analysis["summary"],
+                    "opening_summary": narrative["opening_summary"],
+                    "summary": narrative["answer"],
+                }
+                return {
+                    "status": "completed",
+                    "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
+                    "guidance_methodology": {key: guidance[key] for key in ("id", "title", "version", "status", "sha256")},
+                    "request_id": narrative_request_id,
+                    "technical_request_id": technical_request_id,
+                    "narrative_request_id": narrative_request_id,
+                    "attempt_count": technical_attempt_count + attempt_index + 1,
+                    "technical_attempt_count": technical_attempt_count,
+                    "narrative_attempt_count": attempt_index + 1,
+                    "evidence_sha256": evidence_sha256,
+                    "prompt_sha256": narrative_prompt_sha256,
+                    "technical_prompt_sha256": technical_prompt_sha256,
+                    "narrative_prompt_sha256": narrative_prompt_sha256,
+                    "latency_ms": max(round((clock() - started) * 1000), 0),
+                    "usage": _combined_usage(technical_payload or {}, {}),
+                    "analysis": analysis,
+                    "validation_mode": validation_mode,
+                    "narrative_fallback": True,
+                    "narrative_fallback_reason": "provider_error",
+                    "provider_error_code": code,
+                    "provider_request_id": getattr(exc, "request_id", None) or narrative_request_id,
+                    "provider_upstream_status": getattr(exc, "upstream_status", None),
+                }
             if (
                 validation_mode == "strict"
                 and technical_analysis is not None
@@ -1777,7 +1867,17 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         ))
 
     completed = sum(result["status"] == "completed" for result in results)
-    comparison_status = "comparison_ready" if completed == len(results) else "partial" if completed else "failed"
+    degraded = sum(
+        result.get("narrative_fallback_reason") == "provider_error"
+        for result in results
+        if isinstance(result, dict)
+    )
+    comparison_status = (
+        "partial" if degraded
+        else "comparison_ready" if completed == len(results)
+        else "partial" if completed
+        else "failed"
+    )
     return {
         "contract_version": CONTRACT_VERSION,
         "validation_mode": methodology_validation_mode(),
@@ -1801,6 +1901,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "selection_status": "system_methodology_active",
         "completed_count": completed,
         "candidate_count": len(results),
+        "degraded_count": degraded,
     }
 
 

@@ -20,6 +20,7 @@ from methodology_orchestrator import (
     validate_methodology_response,
     validate_narrative_response,
 )
+from vertex_bridge_client import VertexBridgeClientError
 from question_classifier import ALLOWED_TOPICS
 
 
@@ -748,6 +749,69 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             [item["status"] for item in result["methodology_results"]],
             ["failed"],
         )
+
+    def test_transient_provider_failure_is_retried_and_then_safe_fallback_is_returned(self):
+        calls = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            raise VertexBridgeClientError(
+                "vertex_bridge_rate_limited",
+                502,
+                upstream_status=429,
+                retryable=True,
+                request_id=request_id,
+            )
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-provider-fallback",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["completed_count"], 1)
+        self.assertEqual(result["degraded_count"], 1)
+        self.assertEqual(len(calls), 2)
+        system_result = result["methodology_results"][0]
+        self.assertTrue(system_result["narrative_fallback"])
+        self.assertEqual(system_result["narrative_fallback_reason"], "provider_error")
+        self.assertEqual(system_result["provider_error_code"], "vertex_bridge_rate_limited")
+        self.assertEqual(system_result["provider_request_id"], calls[-1])
+        self.assertEqual(system_result["provider_upstream_status"], 429)
+        self.assertIn("Teknik model doğrulaması tamamlanamadı", system_result["analysis"]["technical_summary"])
+
+    def test_provider_failure_on_narrative_call_uses_safe_fallback(self):
+        calls = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            if request_id.endswith("-analysis"):
+                return request_id, _payload()
+            raise VertexBridgeClientError(
+                "vertex_bridge_upstream_unavailable",
+                502,
+                upstream_status=503,
+                retryable=True,
+                request_id=request_id,
+            )
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-narrative-provider-fallback",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["completed_count"], 1)
+        self.assertEqual(result["degraded_count"], 1)
+        self.assertEqual(len(calls), 3)
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["technical_attempt_count"], 1)
+        self.assertEqual(system_result["narrative_attempt_count"], 2)
+        self.assertEqual(system_result["narrative_fallback_reason"], "provider_error")
+        self.assertEqual(system_result["provider_error_code"], "vertex_bridge_upstream_unavailable")
+        self.assertEqual(system_result["provider_upstream_status"], 503)
 
     def test_schema_invalid_response_is_retried_once_without_relaxing_validation(self):
         calls = []
