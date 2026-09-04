@@ -1116,10 +1116,13 @@ def _validate_sensitive_narrative_language(text, evidence):
     if topic == "career":
         patterns.extend([
             r"\b(?:yüksek|oldukça güçlü|güçlü bir)\s+(?:bir\s+)?(?:ihtimal|olasılık|potansiyel)\b",
+            r"\b(?:ihtimaliniz|olasılığınız|potansiyeliniz)\s+(?:son derece|oldukça|çok)?\s*yüksek\b",
             r"\b(?:işe gireceksiniz|iş bulacaksınız|yeni bir işe gireceksiniz)\b",
             r"\b(?:kariyer|iş|sözleşme|kazanç|statü)[^.!?\n]{0,100}"
             r"(?:güçlü bir şekilde|yüksek bir ihtimal|güçlü bir kapı|somut bir kazanç|"
-            r"güçlendirecek|aralayacak|getirecektir|gerçekleşecektir|olacaktır)\b",
+            r"güçlü bir başlangıç|güçlü bir adım|kalıcı ve verimli|en verimli zaman|"
+            r"güçlendirecek|aralayacak|getirecektir|gerçekleşecektir|olacaktır|müjdeliyor|"
+            r"kapınızı çalacak|sağlayacaktır)\b",
         ])
     if topic in {"wealth", "legal", "health"}:
         patterns.extend([

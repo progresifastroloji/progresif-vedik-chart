@@ -742,8 +742,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             validate_narrative_response(
                 _narrative_payload(
                     answer=(
-                        "Önümüzdeki üç ayda yeni bir işe girmeniz yüksek bir ihtimaldir; "
-                        "Ekim ayında resmî sözleşme gerçekleşecektir. " * 10
+                        "Önümüzdeki üç ayda yeni bir işe girme olasılığınız son derece yüksektir; "
+                        "Ekim ayında güçlü fırsatlar kapınızı çalacak ve sözleşme gerçekleşecektir. " * 10
                     ),
                 ),
                 analysis,
