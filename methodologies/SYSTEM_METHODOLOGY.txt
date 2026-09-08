@@ -1,7 +1,7 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.7.0
-date: 2026-08-29
+version: 1.8.0
+date: 2026-09-08
 language: tr
 transliteration: IAST
 runtime_profile: compact_natal_v1
@@ -36,6 +36,7 @@ API'nin konu paketi üreticileri kariyer, sağlık, aile/ebeveynlik, eğitim/uzm
 - `strength_summary`: oran temelli güç özeti;
 - `natal_sections`: `natal-interpretation.md` içinden seçilmiş bölümler;
 - `topic_packet`: kanonik chart JSON'undan soruya göre üretilmiş çalışma zamanı kesiti;
+- `selected_varga`: kullanıcı harita ekranından bir varga seçtiğinde, yalnız sunucunun doğruladığı D1 ve seçili varga konumları ile yorum güveni;
 - `transits`: yalnız zaman sorularında `transit-three-month.md` içinden seçilmiş günler ve gerekiyorsa tek anlık görüntü.
 
 `topic_packet` fiziksel bir dosya değildir. Eski konu Markdown dosyalarının adı veya devamı değildir.
@@ -143,6 +144,7 @@ Değişmez ilkeler:
 
 - D1 natal vaadi önce gelir.
 - Varga D1'i teyit eder veya sınırlar; D1'de olmayan vaadi yaratmaz.
+- Kullanıcı belirli bir vargayı seçtiğinde başka varga onun yerine kullanılmaz. Seçili varganın güveni `low` veya `very_low` ise kişisel yorum yapılmaz; yalnız doğum saati sınırı açıklanır.
 - Daśā natal vaade erişim sağlar.
 - Transit var olan vaadi tetikler; tek başına kader veya olay garantisi üretmez.
 - Tek göstergeyle nihai hüküm kurulmaz.

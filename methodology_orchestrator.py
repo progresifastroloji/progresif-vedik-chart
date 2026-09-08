@@ -110,10 +110,10 @@ CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.7.0",
+        "version": "1.8.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "d96c3d888f4ce8a0d792d7fd98f5f71a4184bd8db3e5aa15f3d4be2d88376082",
+        "sha256": "c330409f22dc4cb171a6cfb73e80ebcc81629387ad700d3bb45ff5d302d7cbf1",
     },
 )
 
@@ -307,6 +307,7 @@ def compact_evidence(draft):
         "active_dasha": active_dasha,
         "strength_summary": source.get("strength_summary"),
         "topic_packet": source.get("topic_packet"),
+        "selected_varga": source.get("selected_varga"),
         "natal_sections": source.get("natal_sections") or [],
         "data_quality": source.get("data_quality"),
         "context_strategy": draft.get("context_strategy"),
@@ -409,6 +410,9 @@ def _model_request(candidate, evidence, conversation_context=None, response_lang
         "Sorunun sunucu tarafından doğrulanmış sınıflandırmasını evidence.question_route içinden oku; "
         "onu yeniden adlandırma veya başka konuya taşıma. Sonra doğru konu, veri kapısı ve zorunlu "
         "analiz sırasını uygula. "
+        "evidence.selected_varga varsa, yalnız seçili vargayı ve onun yanındaki D1 kanıtını kullan; "
+        "eksik veya başka bir vargayı onun yerine koyma. D1 ana vaattir, seçili varga yalnız teyit veya sınırdır. "
+        "Seçili varga finans kapsamındaysa yatırım tavsiyesi, kesin gelir/servet tutarı veya garanti sonuç üretme. "
         "SOHBET BAĞLAMI aynı açık sayfadaki önceki soru-cevaplarıdır; devam ifadelerini çözmek için "
         "kullan fakat astrolojik kanıt sayma. Geçmiş cevaptaki teknik iddiaları yalnız KANIT PAKETİ "
         "doğruluyorsa kullan. Yalnız güncel soruyu yanıtla. "

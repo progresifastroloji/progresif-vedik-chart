@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import swisseph as swe
 from flask import Flask, render_template, request, jsonify, send_file
 from methodology_orchestrator import (
+    CANDIDATE_MANIFEST,
     MethodologyOrchestrationError,
     full_source_context_mode,
     ordered_full_markdown_mode,
@@ -9218,6 +9219,68 @@ def _topic_varga_evidence(vargas, divisions):
         for division in divisions
         if division in vargas
     }
+
+
+VARGA_CHAT_TOPICS = {
+    "D1": "general", "D2": "wealth", "D3": "character", "D4": "relocation",
+    "D6": "health", "D7": "family", "D9": "marriage", "D10": "career",
+    "D11": "wealth", "D12": "family", "D16": "general", "D20": "spiritual",
+    "D24": "education", "D30": "wellbeing", "D60": "spiritual",
+}
+
+
+def _beta_requested_varga_evidence(chart, value):
+    """Return only the owned, server-calculated D1 + selected varga context."""
+
+    if value is None or value == "":
+        return None
+    code = str(value).strip().upper()
+    if code not in VARGA_NAMES:
+        raise ValueError("Geçerli varga kodu gerekli")
+    varga = (chart.get("vargas") or {}).get(code)
+    d1 = (chart.get("vargas") or {}).get("D1")
+    if not isinstance(varga, dict) or not isinstance(d1, dict):
+        raise ValueError("İstenen varga için doğrulanmış harita verisi bulunamadı")
+
+    def compact(division, source):
+        return {
+            "code": division,
+            "name": source.get("name") or VARGA_NAMES[division],
+            "confidence": source.get("confidence"),
+            "reference_frame": source.get("reference_frame"),
+            "lagna": source.get("lagna"),
+            "planets": [
+                {
+                    key: planet.get(key)
+                    for key in ("id", "name", "name_tr", "abbr", "sign", "sign_tr", "degree_str")
+                }
+                for planet in source.get("planets") or []
+                if isinstance(planet, dict)
+            ],
+        }
+
+    return {
+        "selected": compact(code, varga),
+        "d1": compact("D1", d1),
+        "interpretation_rule": "D1 natal promise remains primary; the selected varga may only confirm or qualify it.",
+    }
+
+
+def _beta_apply_selected_varga_route(selected_route, selected_varga):
+    """Make a chart-button request explicit without trusting browser text."""
+
+    if not selected_varga:
+        return selected_route
+    selected = dict(selected_route)
+    code = selected_varga["selected"]["code"]
+    selected["primary_topic"] = VARGA_CHAT_TOPICS[code]
+    selected["selected_varga_code"] = code
+    selected["required_evidence"] = sorted(set(
+        list(selected.get("required_evidence") or []) + ["relevant_vargas"]
+    ))
+    if code in {"D2", "D11"}:
+        selected["sensitivity"] = "financial"
+    return selected
 
 
 def _topic_active_dasha_evidence(dashas):
@@ -29718,6 +29781,85 @@ def _beta_public_methodology_response(comparison):
     return public
 
 
+def _beta_limited_varga_comparison(question, response_language, routing, selected_varga):
+    """Return a clear no-model limit when birth-time policy closes a varga."""
+
+    selected = selected_varga["selected"]
+    code = selected["code"]
+    name = selected["name"]
+    topic = routing["selected"]["primary_topic"]
+    if response_language == "en":
+        opening = (
+            f"{code} {name} depends heavily on an exact birth time. "
+            "Your current birth-time declaration does not support a reliable personal interpretation at this level. "
+            "The app therefore keeps this response limited instead of making a definite claim."
+        )
+        summary = (
+            f"I cannot give a personal {code} interpretation from the available birth-time confidence. "
+            "A later reading can use this chart only after the time information supports it. "
+            "No financial, medical, legal, relationship, or outcome claim is being made from this chart."
+        )
+        limitation = f"{code} confidence is {selected.get('confidence') or 'unavailable'} for this birth-time declaration."
+    else:
+        opening = (
+            f"{code} {name} haritası doğum saatine yüksek duyarlılık taşır. "
+            "Mevcut doğum saati beyanı bu düzeyde güvenilir kişisel yorum yapmayı desteklemiyor. "
+            "Bu nedenle uygulama kesin bir hüküm kurmak yerine yanıtı sınırlı tutuyor."
+        )
+        summary = (
+            f"Mevcut doğum saati güveniyle {code} için kişisel yorum veremiyorum. "
+            "Saat bilgisi bu haritayı desteklediğinde D1 ile birlikte yeniden ele alınabilir. "
+            "Bu haritadan finansal, sağlık, hukuk, ilişki veya sonuç garantisi çıkarılmıyor."
+        )
+        limitation = f"{code} yorum güveni bu doğum saati beyanı için {selected.get('confidence') or 'belirsiz'} düzeyinde."
+    return {
+        "contract_version": "vedic-system-analysis-v5",
+        "comparison_id": routing.get("comparison_id"),
+        "status": "comparison_ready",
+        "question": question,
+        "topic": topic,
+        "subject_topic": topic,
+        "question_route": routing["selected"],
+        "response_language": response_language,
+        "routing_comparison": {
+            "mode": routing.get("mode"), "status": routing.get("status"),
+            "agreement": routing.get("agreement"), "legacy": routing.get("legacy"),
+            "model": routing.get("model"), "error_code": routing.get("error_code"),
+        },
+        "context_trace": {
+            "primary_topic": topic,
+            "time_scope": routing["selected"].get("time_scope"),
+            "selected_varga_code": code,
+            "limited_by_varga_confidence": True,
+        },
+        "methodology_order": [item["id"] for item in CANDIDATE_MANIFEST],
+        "methodology_results": [{
+            "status": "completed",
+            "methodology": {"title": "Vedik AI"},
+            "analysis": {
+                "question_intent": {
+                    "interpreted_question": question,
+                    "primary_topic": topic,
+                    "timing_required": False,
+                },
+                "analysis_status": "INCOMPLETE",
+                "opening_summary": opening,
+                "summary": summary,
+                "supporting_evidence": [],
+                "challenging_evidence": [],
+                "missing_layers": [limitation],
+                "limitations": [limitation],
+                "confidence": "low",
+            },
+        }],
+        "selection": CANDIDATE_MANIFEST[0]["id"],
+        "selection_status": "system_methodology_active",
+        "completed_count": 1,
+        "candidate_count": 1,
+        "degraded_count": 0,
+    }
+
+
 def _beta_load_json(text):
     return json.loads(text)
 
@@ -31984,6 +32126,7 @@ def _beta_build_chat_draft(
     include_full_markdown_sources=False,
     response_language="tr",
     require_mandatory_evidence=False,
+    selected_varga=None,
 ):
     response_language = normalize_response_language(response_language)
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
@@ -32101,6 +32244,7 @@ def _beta_build_chat_draft(
         ),
         "transits": transits,
         "data_quality": chart.get("data_quality"),
+        "selected_varga": selected_varga,
     }
     full_markdown_test = (
         _pwa_full_markdown_documents(
@@ -32178,6 +32322,7 @@ def _beta_build_chat_draft(
             "primary_topic": subject_topic,
             "time_scope": selected_route.get("time_scope"),
             "required_evidence": selected_route.get("required_evidence") or [],
+            "selected_varga_code": (selected_varga or {}).get("selected", {}).get("code"),
             "conversation_turn_count": len(conversation_context or []),
             "transit": transit_trace,
             "full_markdown_test": (
@@ -33110,6 +33255,10 @@ def api_v2_beta_chat_compare():
                         "error_code": "beta_chart_ownership_mismatch",
                     }), 403
             owner_user_id = stored_owner_user_id
+            selected_varga = _beta_requested_varga_evidence(
+                chart,
+                data.get("varga_code"),
+            )
             existing = _beta_existing_comparison(
                 conn,
                 comparison_id,
@@ -33127,6 +33276,18 @@ def api_v2_beta_chat_compare():
                         "usage": usage,
                     }), 409
                 stored = _beta_load_json(existing["response_json"])
+                stored_varga_code = (
+                    (stored.get("context_trace") or {}).get("selected_varga_code")
+                )
+                requested_varga_code = (
+                    (selected_varga or {}).get("selected", {}).get("code")
+                )
+                if stored_varga_code != requested_varga_code:
+                    return jsonify({
+                        "ok": False,
+                        "status": "invalid_request",
+                        "error_code": "comparison_varga_collision",
+                    }), 400
                 if normalize_response_language(stored.get("response_language")) != response_language:
                     return jsonify({
                         "ok": False,
@@ -33181,6 +33342,10 @@ def api_v2_beta_chat_compare():
             owner_user_id,
             conversation_context=conversation_context,
         )
+        routing["selected"] = _beta_apply_selected_varga_route(
+            routing["selected"],
+            selected_varga,
+        )
         if full_source_context_mode() and not app.config.get("TESTING"):
             # The classifier may label timing, but it never controls source
             # inclusion. Both owned Markdown sources are always required.
@@ -33230,6 +33395,41 @@ def api_v2_beta_chat_compare():
                 "usage": usage,
                 **clarification,
             }), 422
+        if (
+            selected_varga
+            and selected_varga["selected"].get("confidence") in {"low", "very_low"}
+        ):
+            routing["comparison_id"] = comparison_id
+            comparison = _beta_limited_varga_comparison(
+                question,
+                response_language,
+                routing,
+                selected_varga,
+            )
+            with closing(_beta_db()) as conn:
+                updated_at = _beta_now()
+                conn.execute(
+                    """
+                    UPDATE beta_methodology_comparisons
+                    SET status = ?, response_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (comparison["status"], _beta_json(comparison), updated_at, comparison_id),
+                )
+                conn.execute(
+                    "INSERT INTO beta_usage_events (day, action, profile_id, created_at) VALUES (?, 'heavy', ?, ?)",
+                    (_beta_day(), profile_id, updated_at),
+                )
+                conn.commit()
+                usage = _beta_usage_status(conn, profile_id)
+            return jsonify({
+                "ok": True,
+                "replayed": False,
+                "profile_id": profile_id,
+                "chart_id": chart_id,
+                "usage": usage,
+                **_beta_public_methodology_response(comparison),
+            })
         draft = _beta_build_chat_draft(
             question,
             chart,
@@ -33243,6 +33443,7 @@ def api_v2_beta_chat_compare():
             ),
             response_language=response_language,
             require_mandatory_evidence=True,
+            selected_varga=selected_varga,
         )
         comparison = run_methodology_comparison(
             draft,

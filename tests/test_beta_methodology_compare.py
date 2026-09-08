@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from contextlib import closing
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from app import (
@@ -10,6 +11,7 @@ from app import (
     TOPIC_PACKET_CONFIG,
     app,
     _beta_build_chat_draft,
+    _beta_requested_varga_evidence,
     _beta_build_chart,
     _beta_db,
     _beta_detect_subject_topic,
@@ -487,8 +489,10 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(data["context_trace"]["time_scope"], "none")
         self.assertEqual(data["context_trace"]["conversation_turn_count"], 2)
         self.assertIsNotNone(data["context_trace"]["transit"])
-        self.assertEqual(data["context_trace"]["transit"]["range_start"], "2026-09-02")
-        self.assertEqual(data["context_trace"]["transit"]["range_end"], "2026-12-02")
+        expected_start = date.today().isoformat()
+        expected_end = (date.today() + timedelta(days=91)).isoformat()
+        self.assertEqual(data["context_trace"]["transit"]["range_start"], expected_start)
+        self.assertEqual(data["context_trace"]["transit"]["range_end"], expected_end)
         public_analysis = data["methodology_results"][0]["analysis"]
         self.assertEqual(public_analysis["opening_summary"], (
             "Kariyeriniz, tek bir uzmanlık alanında derinleştiğinizde daha sağlam biçimde gelişebilir. "
@@ -521,6 +525,75 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertIn("technical_summary", stored_analysis)
         usage = self.client.get(f"/api/v2/beta/usage?profile_id={PROFILE_ID}").get_json()
         self.assertEqual(usage["counts"]["methodology_comparisons"], 1)
+
+    @patch("app.call_vertex_bridge")
+    def test_selected_varga_uses_server_data_with_d1_and_the_selected_code(self, bridge_call):
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            _analysis_or_narrative_payload(request_id),
+        )
+        response = self.client.post(
+            "/api/v2/beta/chat/compare",
+            json={
+                "comparison_id": "selected-varga-high-1",
+                "profile_id": PROFILE_ID,
+                "chart_id": CHART_ID,
+                "question": "D9 Navamsha haritamı yorumla",
+                "varga_code": "D9",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["context_trace"]["selected_varga_code"], "D9")
+        technical_prompt = bridge_call.call_args_list[0].args[1]["contents"][0]["parts"][0]["text"]
+        self.assertIn('"selected_varga"', technical_prompt)
+        self.assertIn('"code":"D1"', technical_prompt)
+        self.assertIn('"code":"D9"', technical_prompt)
+
+    @patch("app.call_vertex_bridge")
+    def test_low_confidence_selected_varga_returns_a_limited_response_without_model(self, bridge_call):
+        with closing(_beta_db()) as conn:
+            row = conn.execute(
+                "SELECT chart_json FROM beta_charts WHERE id = ?",
+                (CHART_ID,),
+            ).fetchone()
+            chart = _beta_load_json(row["chart_json"])
+            chart["vargas"]["D2"]["confidence"] = "low"
+            conn.execute(
+                "UPDATE beta_charts SET chart_json = ? WHERE id = ?",
+                (_beta_json(chart), CHART_ID),
+            )
+            conn.commit()
+
+        response = self.client.post(
+            "/api/v2/beta/chat/compare",
+            json={
+                "comparison_id": "selected-varga-low-1",
+                "profile_id": PROFILE_ID,
+                "chart_id": CHART_ID,
+                "question": "D2 Hora haritamı yorumla",
+                "varga_code": "D2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["context_trace"]["limited_by_varga_confidence"])
+        self.assertIn("garantisi çıkarılmıyor", data["methodology_results"][0]["analysis"]["summary"])
+        bridge_call.assert_not_called()
+
+    def test_selected_varga_requires_a_known_owned_varga(self):
+        with closing(_beta_db()) as conn:
+            chart = _beta_load_json(conn.execute(
+                "SELECT chart_json FROM beta_charts WHERE id = ?",
+                (CHART_ID,),
+            ).fetchone()["chart_json"])
+        selected = _beta_requested_varga_evidence(chart, "D10")
+        self.assertEqual(selected["selected"]["code"], "D10")
+        self.assertEqual(selected["d1"]["code"], "D1")
+        with self.assertRaises(ValueError):
+            _beta_requested_varga_evidence(chart, "D99")
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_rejects_comparison_id_collision(self, bridge_call):
