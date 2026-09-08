@@ -251,12 +251,17 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(len(candidates), 1)
         self.assertTrue(all(candidate["status"] == "active" for candidate in candidates))
         self.assertTrue(all(candidate["document"].startswith("---\n") for candidate in candidates))
+        document = candidates[0]["document"]
+        self.assertIn("rektifikasyonla doğrulanmış saat demektir", document)
+        self.assertIn("D1 ile varga okuma sırası", document)
+        self.assertIn("D11 finans kanıtına eklenmez", document)
+        self.assertIn("tam Ṣoḍaśavarga veya tam Vimśopaka tamamlandı denmez", document)
 
     def test_guidance_methodology_is_versioned_and_narrative_only(self):
         guidance = load_guidance_methodology()
 
         self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
-        self.assertEqual(guidance["version"], "1.3.0")
+        self.assertEqual(guidance["version"], "1.4.0")
         self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("runtime_stage: narrative_only", guidance["document"])
         self.assertIn("en fazla tek kısa", guidance["document"])
@@ -265,6 +270,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("SAV/BAV", guidance["document"])
         self.assertIn("Uygulanabilir Rehberlik", guidance["document"])
         self.assertIn("başlık, alt başlık, numaralı liste", guidance["document"])
+        self.assertIn("genel tavsiyeyi kişisel varga yorumu gibi sunma", guidance["document"])
+        self.assertIn("D11 seçildiğinde kazanç/servet anlatısı üretme", guidance["document"])
 
     def test_analysis_runs_single_active_methodology_and_selects_it(self):
         calls = []
@@ -303,7 +310,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
         technical_request = calls[0][1]
         system_text = technical_request["systemInstruction"]["parts"][0]["text"]
-        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.8.0", system_text)
+        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.9.0", system_text)
         self.assertNotIn("vedic-guidance-skill-v1", system_text)
         user_text = technical_request["contents"][0]["parts"][0]["text"]
         self.assertIn("must_not_be_sent_for_natal_topic", user_text)
@@ -315,7 +322,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.3.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.4.0", narrative_system)
         self.assertIn("en fazla tek kısa ve sade dayanak cümlesini", narrative_system)
         self.assertIn("SAV/BAV", narrative_system)
         self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
@@ -378,7 +385,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Hiç bilmiyorum** / `unknown`", document)
         self.assertNotIn("`rectified` (olay dosyası ile)", document)
         self.assertNotIn("Kayıtlı olay yoksa `data: medium`", document)
-        self.assertIn("Ana müşteri analizinin veri güvenini", document)
+        self.assertIn("ana sohbet aynı olayları yeniden kanıt olarak istemez", document)
 
     def test_methodology_matches_current_artifacts_and_runtime_schema(self):
         document = load_methodology_candidates()[0]["document"]

@@ -2350,6 +2350,7 @@ class ChartApiV2Test(unittest.TestCase):
         timing = response.get_json()["finance_timing_evidence_v1"]
         self.assertEqual(len(timing["rankings"]), 6)
         self.assertFalse(timing["known_life_events_used"])
+        self.assertNotIn("D11", timing["supporting_vargas"])
         for event_type, rows in timing["rankings"].items():
             self.assertGreater(len(rows), 0, event_type)
             self.assertLessEqual(len(rows), 8)
@@ -3026,9 +3027,12 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertIn("not_medical_advice", health["safety_notes"])
         self.assertNotIn("limited_by_low_confidence_or_pending_varga", health["safety_notes"])
 
-        self.assertIn("D11", modules["finance"]["available_data"])
+        self.assertIn("D2", modules["finance"]["available_data"])
+        self.assertIn("D4", modules["finance"]["available_data"])
+        self.assertIn("D10", modules["finance"]["available_data"])
         self.assertEqual(modules["finance"]["status"], "ready")
-        self.assertNotIn("vargas.D11", modules["finance"]["missing_data"])
+        self.assertNotIn("D11", modules["finance"]["available_data"])
+        self.assertNotIn("vargas.D2", modules["finance"]["missing_data"])
         self.assertIn("not_financial_advice", modules["finance"]["safety_notes"])
         self.assertIn("D24", modules["children_education"]["available_data"])
         self.assertNotIn("vargas.D24", modules["children_education"]["missing_data"])
@@ -5711,9 +5715,18 @@ class ChartApiV2Test(unittest.TestCase):
         approximate = approximate_response.get_json()
         self.assertEqual(approximate["birth"]["time_confidence"], "approximate")
         self.assertFalse(approximate["data_quality"]["accepted_as_rectified"])
-        for division, value in approximate["data_quality"]["varga_interpretation_confidence"].items():
-            self.assertEqual(value, "low" if division in {"D30", "D60"} else "high")
-        self.assertEqual(approximate["data_quality"]["house_interpretation_confidence"], "high")
+        self.assertEqual(
+            approximate["data_quality"]["varga_interpretation_confidence"],
+            {
+                "D1": "medium", "D2": "medium", "D3": "medium",
+                "D4": "medium", "D6": "low", "D7": "medium",
+                "D9": "medium", "D10": "medium", "D11": "low",
+                "D12": "medium", "D16": "low", "D20": "low",
+                "D24": "low", "D30": "very_low", "D60": "very_low",
+            },
+        )
+        self.assertEqual(approximate["data_quality"]["house_interpretation_confidence"], "medium")
+        self.assertEqual(approximate["data_quality"]["lagna_interpretation_confidence"], "medium")
 
         unknown_response = post_for_time(12, 0, "unknown")
         self.assertEqual(unknown_response.status_code, 200)
@@ -5726,7 +5739,9 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertAlmostEqual(unknown["lagna"]["longitude"], moon["longitude"])
         self.assertEqual(unknown["bhava_chalit"]["status"], "not_applicable_unknown_birth_time")
         for division, value in unknown["data_quality"]["varga_interpretation_confidence"].items():
-            self.assertEqual(value, "medium" if division == "D9" else "very_low")
+            self.assertEqual(value, "medium" if division == "D1" else "very_low")
+        self.assertEqual(unknown["data_quality"]["house_interpretation_confidence"], "medium")
+        self.assertEqual(unknown["data_quality"]["planet_sign_interpretation_confidence"], "medium")
         self.assertNotIn("rectification", unknown)
         self.assertIn("birth_time_policy", unknown)
 
@@ -7612,6 +7627,7 @@ class ChartApiV2Test(unittest.TestCase):
                     finance_package_text,
                 )
                 self.assertIn("### D2 Hora Full Tablo", finance_package_text)
+                self.assertNotIn("D11 Rudramsa Kazanç", finance_package_text)
                 self.assertIn(
                     "## Finans Olay Zamanlama Kanıtı v1",
                     finance_package_text,

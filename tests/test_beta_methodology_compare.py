@@ -11,6 +11,7 @@ from app import (
     TOPIC_PACKET_CONFIG,
     app,
     _beta_build_chat_draft,
+    _beta_apply_selected_varga_route,
     _beta_requested_varga_evidence,
     _beta_build_chart,
     _beta_db,
@@ -594,6 +595,20 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(selected["d1"]["code"], "D1")
         with self.assertRaises(ValueError):
             _beta_requested_varga_evidence(chart, "D99")
+
+    def test_d11_selected_varga_is_not_routed_as_finance(self):
+        selected_varga = {
+            "selected": {"code": "D11"},
+            "d1": {"code": "D1"},
+        }
+        route = _beta_apply_selected_varga_route(
+            {"primary_topic": "wealth", "required_evidence": []},
+            selected_varga,
+        )
+
+        self.assertEqual(route["primary_topic"], "general")
+        self.assertEqual(route["selected_varga_code"], "D11")
+        self.assertNotIn("sensitivity", route)
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_rejects_comparison_id_collision(self, bridge_call):

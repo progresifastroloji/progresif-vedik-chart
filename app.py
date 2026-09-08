@@ -839,11 +839,24 @@ VARGA_RECTIFIED_HIGH_DIVISIONS = set(VARGA_NAMES.keys())
 BIRTH_TIME_VARGA_CONFIDENCE = {
     "exact": {division: "high" for division in VARGA_NAMES},
     "approximate": {
-        division: "low" if division in {"D30", "D60"} else "high"
-        for division in VARGA_NAMES
+        "D1": "medium",
+        "D2": "medium",
+        "D3": "medium",
+        "D4": "medium",
+        "D6": "low",
+        "D7": "medium",
+        "D9": "medium",
+        "D10": "medium",
+        "D11": "low",
+        "D12": "medium",
+        "D16": "low",
+        "D20": "low",
+        "D24": "low",
+        "D30": "very_low",
+        "D60": "very_low",
     },
     "unknown": {
-        division: "medium" if division == "D9" else "very_low"
+        division: "medium" if division == "D1" else "very_low"
         for division in VARGA_NAMES
     },
 }
@@ -1000,7 +1013,7 @@ ANALYSIS_MODULE_CONFIG = {
         "lordships": ["2", "5", "8", "9", "11"],
         "planets": ["Jupiter", "Venus", "Mercury", "Rahu (True)", "Ketu"],
         "required_vargas": ["D1", "D2"],
-        "supporting_vargas": ["D11", "D9", "D10"],
+        "supporting_vargas": ["D10", "D4"],
         "helper_layers": ["houses", "lordships", "dashas", "yogas", "ashtakavarga"],
         "safety_notes": [
             "technical_evidence_only",
@@ -9224,7 +9237,7 @@ def _topic_varga_evidence(vargas, divisions):
 VARGA_CHAT_TOPICS = {
     "D1": "general", "D2": "wealth", "D3": "character", "D4": "relocation",
     "D6": "health", "D7": "family", "D9": "marriage", "D10": "career",
-    "D11": "wealth", "D12": "family", "D16": "general", "D20": "spiritual",
+    "D11": "general", "D12": "family", "D16": "general", "D20": "spiritual",
     "D24": "education", "D30": "wellbeing", "D60": "spiritual",
 }
 
@@ -9278,7 +9291,7 @@ def _beta_apply_selected_varga_route(selected_route, selected_varga):
     selected["required_evidence"] = sorted(set(
         list(selected.get("required_evidence") or []) + ["relevant_vargas"]
     ))
-    if code in {"D2", "D11"}:
+    if code == "D2":
         selected["sensitivity"] = "financial"
     return selected
 
@@ -11253,7 +11266,24 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
     panchanga = _build_panchanga_for_options(chart, birth_input, options, tz_offset, timezone_id)
     special_lagnas = _build_special_lagnas(chart, birth_input, tz_offset, birth_jd)
     sensitive_points = _build_sensitive_points(chart, birth_input, tz_offset, birth_jd)
-    time_sensitive_confidence = "very_low" if unknown_birth_time else "high"
+    birth_time_declaration = birth_time_quality["declaration"]
+    birth_lagna_confidence = (
+        "none" if unknown_birth_time
+        else "high" if birth_time_declaration == "exact"
+        else "medium"
+    )
+    reference_lagna_confidence = (
+        "high" if birth_time_declaration == "exact" else "medium"
+    )
+    house_interpretation_confidence = reference_lagna_confidence
+    planet_sign_interpretation_confidence = (
+        "medium" if unknown_birth_time else "high"
+    )
+    time_sensitive_confidence = (
+        "very_low" if unknown_birth_time
+        else "high" if birth_time_declaration == "exact"
+        else "low"
+    )
     analysis_layers = {
         "planets": planets,
         "houses": houses,
@@ -11307,10 +11337,10 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
             "calculation_reference_only": unknown_birth_time,
             "d9_sensitivity_minutes": None,
             "d10_sensitivity_minutes": None,
-            "lagna_interpretation_confidence": "none" if unknown_birth_time else "high",
-            "reference_lagna_interpretation_confidence": "high",
-            "house_interpretation_confidence": "high",
-            "planet_sign_interpretation_confidence": "high",
+            "lagna_interpretation_confidence": birth_lagna_confidence,
+            "reference_lagna_interpretation_confidence": reference_lagna_confidence,
+            "house_interpretation_confidence": house_interpretation_confidence,
+            "planet_sign_interpretation_confidence": planet_sign_interpretation_confidence,
             "interpretation_policy": (
                 "unknown_time_noon_calculation_chandra_lagna_interpretation"
                 if unknown_birth_time
@@ -11324,10 +11354,10 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
                 if confidence in {"high", "medium"}
             ],
             "layer_interpretation_confidence": {
-                "birth_lagna": "none" if unknown_birth_time else "high",
-                "chandra_lagna": "high",
-                "houses": "high",
-                "bhava_chalit": "none" if unknown_birth_time else "high",
+                "birth_lagna": birth_lagna_confidence,
+                "chandra_lagna": reference_lagna_confidence,
+                "houses": house_interpretation_confidence,
+                "bhava_chalit": birth_lagna_confidence,
                 "upapada": time_sensitive_confidence,
                 "kp": time_sensitive_confidence,
                 "special_lagnas": time_sensitive_confidence,
@@ -11338,7 +11368,7 @@ def _build_v2_chart(chart, request_data, birth_input, tz_offset, timezone_id):
             **_v2_lagna(analysis_chart["lagna"]),
             "reference_frame": "chandra_lagna" if unknown_birth_time else "birth_lagna",
             "is_birth_ascendant": not unknown_birth_time,
-            "interpretation_confidence": "high",
+            "interpretation_confidence": reference_lagna_confidence,
         },
         "angles": angles,
         "planets": planets,
@@ -19568,7 +19598,6 @@ def _finance_planet_rows(chart):
             _topic_value(shadbala.get("total_score")),
             _topic_value((shadbala.get("professional_total") or {}).get("grade")),
             _topic_planet_varga_text(chart, "D2", name),
-            _topic_planet_varga_text(chart, "D11", name),
             _topic_planet_varga_text(chart, "D10", name),
         ])
     return rows
@@ -19658,13 +19687,10 @@ def _build_finance_analysis_data_package_markdown(
         _markdown_table(["Ev", "Burç", "Lord", "Gezegenler", "SAV", "Jupiter BAV", "Venus BAV"], _finance_house_rows(chart)),
         "",
         "## Finans Göstergesi Gezegenler", "",
-        _markdown_table(["Gezegen", "D1 Konum", "Derece", "Dignity", "Shadbala", "Seviye", "D2", "D11", "D10"], _finance_planet_rows(chart)),
+        _markdown_table(["Gezegen", "D1 Konum", "Derece", "Dignity", "Shadbala", "Seviye", "D2", "D10"], _finance_planet_rows(chart)),
         "",
         "### D2 Hora Full Tablo", "",
         _markdown_table(["Nokta", "Burç", "Derece"], _expert_varga_rows(chart, "D2")),
-        "",
-        "### D11 Rudramsa Kazanç Destek Tablosu", "",
-        _markdown_table(["Nokta", "Burç", "Derece"], _expert_varga_rows(chart, "D11")),
         "",
         "### D4 Mülk Destek Tablosu", "",
         _markdown_table(["Nokta", "Burç", "Derece"], _expert_varga_rows(chart, "D4")),
@@ -25265,7 +25291,7 @@ FINANCE_EVENT_TYPE_CONFIG = {
         "meaning": "gain_growth_or_resource_expansion_context",
         "houses": [2, 5, 9, 11],
         "planets": ["Jupiter", "Venus", "Mercury"],
-        "vargas": ["D2", "D11"],
+        "vargas": ["D2"],
         "interpretation_limit": "does_not_establish_profit_wealth_growth_or_investment_return",
     },
     "financial_contraction": {
@@ -25293,7 +25319,7 @@ FINANCE_EVENT_TYPE_CONFIG = {
         "meaning": "financial_model_or_resource_restructuring_context",
         "houses": [2, 6, 8, 10, 11],
         "planets": ["Saturn", "Mercury", "Jupiter", "Rahu"],
-        "vargas": ["D2", "D11"],
+        "vargas": ["D2", "D10"],
         "interpretation_limit": "does_not_establish_business_change_refinancing_or_recovery",
     },
 }
@@ -27336,7 +27362,7 @@ def _life_relocation_timing_evidence(
 
 def _life_finance_context(chart):
     context = _life_family_context(chart)
-    for division in ["D2", "D10", "D11", "D30"]:
+    for division in ["D2", "D4", "D10", "D30"]:
         lagna = _varga_lagna(chart, division)
         context["varga_planets"][division] = {
             planet["name"]: {
@@ -27360,7 +27386,7 @@ def _life_finance_path_evidence(context, path_lords, event_type):
     indicators = set(config["planets"])
     weights = [0.35, 0.7, 1.1]
     varga_weights = {
-        "D2": 0.65, "D10": 0.35, "D11": 0.4, "D30": 0.12, "D4": 0.25
+        "D2": 0.65, "D10": 0.35, "D30": 0.12, "D4": 0.25
     }
     evidence = {}
     for index, lord in enumerate(path_lords[:3]):
@@ -27484,14 +27510,14 @@ def _life_finance_timing_evidence(
         "rankings_limit_per_type": FINANCE_EVENT_RANKING_LIMIT,
         "precision": "pratyantar",
         "primary_vargas": ["D1", "D2"],
-        "supporting_vargas": ["D11", "D10", "D4", "D30"],
+        "supporting_vargas": ["D10", "D4", "D30"],
         "rankings": rankings,
         "safety_notes": [
             "activation_score_is_not_probability_or_money_amount",
             "technical_window_is_not_a_confirmed_financial_event",
             "not_financial_investment_tax_or_legal_advice",
             "no_profit_loss_debt_property_or_investment_outcome_prediction_is_generated",
-            "d11_and_d4_are_low_confidence_supporting_evidence",
+            "d4_is_low_confidence_supporting_evidence",
             "d30_is_very_low_confidence_supporting_evidence",
             "rahu_ketu_varga_placements_are_excluded",
             "known_life_events_are_not_used",

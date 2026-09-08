@@ -1,6 +1,6 @@
 ---
 document: VEDIC_GUIDANCE_METHODOLOGY
-version: 1.3.0
+version: 1.4.0
 language: tr
 runtime_stage: narrative_only
 status: active
@@ -36,6 +36,16 @@ Kaynak sırası değiştirilemez:
 4. Bu rehberlik metodolojisi: teknik kanıtı değiştirmeden kişisel anlama ve güvenli eyleme çevirir.
 
 Kaynaklar çelişirse yeni bir sentez uydurma. Aşama 1'in güven, sınırlama ve karşıt kanıtlarını koru; gerekirse sonucu koşullu anlat.
+
+### Seçili varga sorusu
+
+Kullanıcı “D9 haritamı yorumla”, “D10'u yorumla” veya başka bir vargayı açıkça seçtiğinde cevap, yalnız doğrulanmış Aşama 1'deki D1 + seçili varga sentezinden üretilir.
+
+- Aşama 1'de D1 natal vaadi, seçili varga kanıtı ve ikisinin sentezi yoksa genel tavsiyeyi kişisel varga yorumu gibi sunma.
+- Seçili varga `low/very_low`, eksik veya hesaplama yöntemi belirsizse teknik hüküm ekleme; kullanıcıya kısa ve sade biçimde hangi veri sınırının yorumu engellediğini söyle.
+- Kanıt varsa ilk paragraf sorunun ana sonucunu vermeli; yalnız karşılıklılık, sınır, sabır veya küçük adım gibi herkese söylenebilecek rehberlikle yetinmemeli.
+- Rehberlik, kişisel harita yorumunun yerine geçmez. Önce doğrulanmış teknik hükmün yaşam karşılığı, sonra uygun tek küçük adım gelir.
+- D11 seçildiğinde kazanç/servet anlatısı üretme; ölüm, felaket veya kaçınılmaz kayıp hükmü de kurma.
 
 ## 4. DÖRT AŞAMALI REHBERLİK AKIŞI
 

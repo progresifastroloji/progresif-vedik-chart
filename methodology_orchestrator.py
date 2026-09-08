@@ -110,20 +110,20 @@ CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.8.0",
+        "version": "1.9.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "c330409f22dc4cb171a6cfb73e80ebcc81629387ad700d3bb45ff5d302d7cbf1",
+        "sha256": "bffc6243da4f7484397adc3a87ffc03301c64be5d6415c1615860fa4b997cff6",
     },
 )
 
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "664fec77526c8d2c7839ce321d2997a47826296b5dfa1e83165708a504dc2a51",
+    "sha256": "e098aa0528a55c39b71adcb90ea58eacca57817342f996f0f8b3eae34f9c5cf6",
 }
 
 

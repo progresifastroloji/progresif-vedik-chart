@@ -1,6 +1,6 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.8.0
+version: 1.9.0
 date: 2026-09-08
 language: tr
 transliteration: IAST
@@ -74,15 +74,19 @@ Danışan anlatısı yeni, kaynakta bulunmayan gezegen, ev, açı, dṛṣṭi, 
 
 ## 2. Veri kapısı
 
-Analizden önce sunucu tarafından uygulanır. Tek yetkili kaynak API'nin `data_quality` kaydıdır. Doğum saati yorum güveni müşterinin uygulamada seçtiği beyana göre belirlenir.
+Analizden önce sunucu tarafından uygulanır. Tek yetkili kaynak API'nin `data_quality` kaydıdır. Doğum saati yorum güveni müşterinin uygulamada seçtiği beyan ve sunucunun varga güven matrisiyle belirlenir.
 
 | Müşteri beyanı | Kullanılabilen katmanlar | Sınır |
 |---|---|---|
-| **Eminim** / `exact` | Doğum Lagnası, evler, Bhāva Chalit, Upapada, KP, özel lagnalar ve mevcut bütün vargalar `high` | Olay dosyası veya ayrıca rektifikasyon kanıtı aranmaz |
-| **Yaklaşık biliyorum** / `approximate` | Doğum Lagnası, evler ve D30/D60 dışındaki mevcut vargalar `high` | D30 ve D60 `low`; kesin hüküm veya dar zamanlama için kullanılmaz |
-| **Hiç bilmiyorum** / `unknown` | Gezegen burçları, Ay/Nakṣatra, Chandra Lagna ve D9 `medium` | Gerçek doğum Lagnası/Bhāva Chalit kullanılmaz; D9 dışındaki vargalar `very_low`; yerel `12:00` yalnız hesaplama referansıdır |
+| **Eminim** / `exact` | Bu ürün sözleşmesinde rektifikasyonla doğrulanmış saat demektir. Doğum Lagnası, evler, Bhāva Chalit, Upapada, KP, özel lagnalar ve sunucunun mevcut bütün vargaları `high` | Tam yorum yapılabilir; yine de hesaplama doğrulaması, karşı kanıt ve konu sınırları korunur |
+| **Yaklaşık biliyorum** / `approximate` | D1 gezegen burçları kullanılabilir; doğum Lagnası ve evler `medium` değerlendirilir. D2/D3/D4/D7/D9/D10/D12 `medium`; D6/D11/D16/D20/D24 `low`; D30/D60 `very_low` | `medium` katman koşullu destek verir. `low/very_low` seçili vargada kişisel yorum yapılmaz; dar zamanlama kurulmaz |
+| **Hiç bilmiyorum** / `unknown` | Yalnız D1 gezegen burçları ve Ay temelli çerçeve `medium` düzeyde kullanılabilir | Gerçek doğum Lagnası, doğum evleri, Bhāva Chalit ve bütün ikincil vargalar hüküm dışıdır; yerel `12:00` yalnız hesaplama referansıdır |
 
-Ayrı uzman rektifikasyon servisindeki yaşam olayları yalnız o servisin teknik incelemesinde kullanılır. Ana müşteri analizinin veri güvenini veya varga matrisini değiştirmez.
+`exact` işareti bu uygulamada sıradan bir saat kesinliği beyanı değildir; rektifikasyonlu kabul sözleşmesidir ve mevcut vargalar için tam güven verir. Ayrı uzman rektifikasyon servisindeki yaşam olayları yalnız o servisin teknik incelemesinde kullanılır; ana sohbet aynı olayları yeniden kanıt olarak istemez.
+
+Varga güveni ile formül güveni ayrıdır. `high`, doğum saatinin yorum kullanımına izin verir; kullanılan bölümleme kuralının dış kaynakla doğrulandığını tek başına kanıtlamaz. `calculation_validation`, `source_rule` ve `reference_frame` ayrıca korunur.
+
+Yaklaşık veya bilinmeyen saatte sunucu ileride belirli bir zaman aralığı için sınır kararlılığı sağlarsa yalnız kararlı olduğu açıkça kanıtlanan yerleşim kullanılabilir. Model kendisi sınır hesabı yapamaz, düşük güveni yükseltemez ve varga Lagnasını tahmin edemez.
 
 Veri paketi eksikse model boşluğu doldurmaz. İlgili katman `missing`, analiz `INCOMPLETE` ve sınırlama açık yazılır.
 
@@ -209,26 +213,68 @@ Graha Yuddha için yakınlık kaydı klasik zafer/mağlubiyet hesabı değildir.
 
 ### 5.5 Varga
 
-Varga yalnız soruyla ilgiliyse ve veri kapısı izin veriyorsa kullanılır:
+Varga, D1'den bağımsız ikinci bir doğum haritası değildir. Yalnız soruyla ilgiliyse, veri kapısı izin veriyorsa ve sunucu doğru bölümleme kuralını açıkça taşıyorsa kullanılır.
+
+#### 5.5.1 Kapsam ve görevler
 
 | Varga | Kullanım |
 |---|---|
 | D1 | Bütün natal vaadin temeli |
 | D2 | Gelir, kaynak ve maddi kapasite |
-| D3 | Kardeş, cesaret ve girişim |
-| D4 | Mülk, yerleşim ve ev |
+| D3 | Öncelikle kardeşler; cesaret ve girişim yalnız D1'in 3. ev ağıyla desteklenirse ikincil kullanım |
+| D4 | İkamet, ev, mülk, yerleşim ve talih |
 | D6 | Sağlık sorusunda yalnız güçlü veri kapısıyla, teşhis dışı |
-| D7 | Çocuk/ebeveynlik; tıbbi sonuç üretmeden |
-| D9 | İlişki, olgunlaşma ve teslim kapasitesi; D1'in teyidi |
-| D10 | Kariyer ve kamusal rol |
+| D7 | Çocuklar ve ebeveynlik; doğum, doğurganlık veya tıbbi sonuç üretmeden |
+| D9 | Evlilik/eş, dharma, ilişki kurma ve içsel olgunlaşma; D1'in teyidi |
+| D10 | Kariyer, faaliyet, konum ve kamusal başarı; gelir haritası değildir |
+| D11 | Rudrāṃśa; yıkım ve keskin dönüşler için ekol bağımlı, düşük ağırlıklı tanık. Kazanç/servet kanıtı değildir; ölüm veya felaket hükmü üretmez |
 | D12 | Ebeveyn ve soy |
 | D16 | Araç/konfor; hesaplama doğrulaması `internal_formula` ise açık sınırla |
 | D20 | Ruhsal pratik ve disiplin |
 | D24 | Eğitim, beceri ve uzmanlaşma |
-| D30 | Zorluk ve stres; `approximate/unknown` kapısına uyar |
-| D60 | Yalnız `exact` beyanında hüküm; diğer beyanlarda hüküm dışı |
+| D30 | Zorluk, olumsuz etkiler ve bilinçaltı örüntüler; teşhis ve felaket dili olmadan |
+| D60 | Bütün konular için çok ince destek; yalnız `exact` beyanında. Geçmiş yaşam veya karma hakkında ahlaki/kesin hüküm üretmez |
 
-D9 bağımsız ikinci natal harita değildir. D1–D9 çapraz açı üretilmez. Kārakāṃśa ile D9 Lagna karıştırılmaz. D1 ve D9 çelişkisi silinmez, koşul olarak açıklanır.
+Klasik Ṣoḍaśavarga dizisinde bulunan fakat mevcut API'nin hesaplamadığı D27, D40 ve D45 model tarafından uydurulmaz. Görevleri sırasıyla güç-zayıflık, ince hayırlı/hayırsız etkiler ve bütün konularda ince değerlendirmedir. Veri gelene kadar `missing/not_available` kalırlar; tam Ṣoḍaśavarga veya tam Vimśopaka tamamlandı denmez.
+
+D5 ve D8 gibi ek haritalar da mevcut API veri sözleşmesinde yoktur. Kullanıcı adını sorsa bile yerleşim üretilmez; yalnız genel bilgi verilecekse bunun kişisel harita yorumu olmadığı açık tutulur.
+
+#### 5.5.2 D1 ile varga okuma sırası
+
+Her kişisel varga yorumunda aşağıdaki sıra uygulanır:
+
+1. Sorunun yaşam alanını ve doğru vargayı belirle. Harita seçimi sorunun konusuyla çelişiyorsa bunu görünür kıl; seçili haritayı başka bir vargayla sessizce değiştirme.
+2. D1'de ilgili bhāva, bhāva lordu, doğal kāraka, yerleşimler, dṛṣṭiler, sambandha, dispozitör zinciri, güç ve karşı göstergelerle natal vaadi kur.
+3. Seçili vargada önce Varga Lagna ve lordunu, sonra soruya ait bhāva/lordu ve kārakayı değerlendir. Yalnız sunucunun verdiği evleri ve yerleşimleri kullan.
+4. Her grahanın D1'deki işlevsel rolü ile varga içindeki yerel rolünü ayrı tut. D1 dignitesi ile varga dignitesini birbirinin yerine kullanma.
+5. Seçili vargada ilgili noktaya gelen graha/rāśi dṛṣṭi, sambandha, argalā veya arūḍha kullanılacaksa bunların sunucu paketinde açıkça bulunmasını ve aynı ekole ait olmasını şart koş.
+6. D1 ve vargada tekrar eden bağımsız desteği, zorluğu ve çelişkiyi ayrı kaydet. Aynı yerleşimden türeyen ev, lord ve yoga kayıtlarını üç bağımsız kanıt gibi sayma.
+7. Son hükmü D1'in vaadi ile varganın konuya özel teslim koşulunu birleştirerek kur. Sonra gerekiyorsa daśā erişimini ve yalnız zaman sorusunda transit tetiklemesini ekle.
+
+Bir bhāvanın anlamı vargaya göre daralır. Örneğin 4. bhāva D4'te ev/mülk, D16'da araç/konfor, D24'te eğitim, D12'de anne ve ebeveyn soyu bağlamında değerlendirilir. D1 ev anlamını seçili vargaya aynen kopyalama.
+
+#### 5.5.3 D1-varga sonuç matrisi
+
+| D1 | İlgili varga | İzin verilen sentez |
+|---|---|---|
+| Destekli | Destekli | Konu güçlü ve daha tutarlı biçimde desteklenir; yine garanti verilmez |
+| Destekli | Karışık/zorlayıcı | Natal kapasite vardır; teslim koşulları, gecikme veya sürtünme açıklanır |
+| Karışık | Destekli | Varga destek veya telafi gösterebilir; D1'de bulunmayan büyük vaat yaratılmaz |
+| Zorlayıcı | Destekli | Sınırlı telafi/potansiyel denebilir; kesin olumlu sonuç çıkarılmaz |
+| Zorlayıcı | Zorlayıcı | Destek düşüktür; “asla olmaz” veya kaçınılmaz olumsuzluk hükmü kurulmaz |
+
+Vargottama ve farklı vargalarda tekrarlanan dignite, yalnız teknik kayıtta gerçekten hesaplanmışsa destek sayılır. Vimśopaka Bala bir olay olasılığı, model güven yüzdesi veya konu önceliği değildir; kendi klasik güç şemasında ayrı tutulur.
+
+#### 5.5.4 Özel sınırlar
+
+- D2, D3, D8 ve D11 gibi birden fazla hesaplama yaklaşımı bulunan haritalarda `source_rule` yoksa kişisel yorum yapılmaz. Model yöntem seçmez veya bölüm hesabı yapmaz.
+- Para sorusunda ana zincir D1'in 2./11. ev ağı ve D2'dir. D10 yalnız meslekten gelir bağlantısını; D4 yalnız mülk/varlık bağlamını destekler. D11 finans kanıtına eklenmez.
+- D9 ilişki sorusunda D1'in 7. bhāva ağı ve gerçek D9 kanıtı olmadan genel ilişki tavsiyesi “D9 harita yorumu” diye sunulmaz.
+- D10 mesleğin çalışma biçimi, faaliyet ve kamusal teslimini gösterir; tek başına meslek adı, gelir düzeyi veya iş garantisi üretmez.
+- D6/D30 sağlık bağlamında yalnız eğilim ve bakım sınırı taşır; hastalık veya teşhis üretmez.
+- D40/D45/D60 gibi ince haritalar D1'i geçersiz kılamaz. D60 yalnız rektifikasyonlu `exact` saatte ve D1 ile aynı konu içinde destekleyici kullanılır.
+
+D1 ile başka bir varga arasında çapraz dṛṣṭi üretilmez. Kārakāṃśa ile D9 Lagna karıştırılmaz. D1 ve varga çelişkisi silinmez, teslim koşulu olarak açıklanır.
 
 ### 5.6 Yoga ve doṣa
 
@@ -350,8 +396,8 @@ Kurallar:
 
 - Zorunlu adım `missing` ise `analysis_status=INCOMPLETE` ve güven `low` olur.
 - `exact` beyanında olay dosyası aranmaz.
-- `approximate` beyanında D30/D60 hükme sokulmaz; diğer izinli katmanlar otomatik düşürülmez.
-- `unknown` beyanında Chandra Lagna çerçevesi kullanılır; D9 `medium`, diğer vargalar hüküm dışıdır.
+- `approximate` beyanında yalnız D2/D3/D4/D7/D9/D10/D12 `medium` destek olabilir; D6/D11/D16/D20/D24 `low`, D30/D60 `very_low` olduğu için kişisel hükme sokulmaz.
+- `unknown` beyanında yalnız D1 gezegen burçları ve Ay temelli çerçeve `medium` kullanılabilir; bütün ikincil vargalar hüküm dışıdır.
 - Yalnız tek göstergeye dayanan güçlü iddia `high` olamaz.
 - `limitations` hangi veri veya yöntem sınırının sonucu daralttığını açıkça yazar.
 
