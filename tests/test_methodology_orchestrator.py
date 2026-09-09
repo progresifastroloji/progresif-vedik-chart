@@ -624,7 +624,10 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 return request_id, _payload()
             if request_id.endswith("-narrative"):
                 return request_id, _narrative_payload(answer="Kısa cevap.")
-            self.assertIn("ONARIM DENEMESİ", request["contents"][0]["parts"][-1]["text"])
+            repair_text = request["contents"][0]["parts"][-1]["text"]
+            self.assertIn("ONARIM DENEMESİ", repair_text)
+            self.assertIn("methodology_narrative_too_short", repair_text)
+            self.assertIn("Kısa cevap.", repair_text)
             return request_id, _narrative_payload()
 
         result = run_methodology_comparison(

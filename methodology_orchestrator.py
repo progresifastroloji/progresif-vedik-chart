@@ -615,7 +615,7 @@ def _narrative_request(
     return request, _sha256(raw)
 
 
-def _narrative_repair_request(request):
+def _narrative_repair_request(request, payload=None, error_code=None):
     """Make the second narrative attempt a constrained rewrite, not a repeat."""
 
     repaired = json.loads(json.dumps(request))
@@ -625,9 +625,16 @@ def _narrative_repair_request(request):
     parts = contents[0].get("parts") if isinstance(contents[0], dict) else None
     if not isinstance(parts, list):
         return repaired
+    try:
+        previous = _response_text(payload) if isinstance(payload, dict) else "{}"
+        previous_value = json.loads(previous)
+        previous = json.dumps(previous_value, ensure_ascii=False)
+    except (MethodologyOrchestrationError, json.JSONDecodeError):
+        previous = "{}"
     parts.append({
         "text": (
             "\n\nONARIM DENEMESİ: Önceki anlatı yanıtı doğrulama kapısından geçmedi. "
+            f"Doğrulama hata kodu: {error_code or 'methodology_narrative_invalid'}. "
             "Bu kez yalnız DOĞRULANMIŞ AŞAMA 1 içindeki anlamı yeniden yaz. "
             "Sadece JSON döndür ve yalnız opening_summary ile answer alanlarını kullan. "
             "opening_summary 1–3 tamamlanmış cümle olsun. answer en az 300 karakter ve "
@@ -636,9 +643,11 @@ def _narrative_repair_request(request):
             "Teknik terim, kanıt yolu, metodoloji adı, yeni tarih/derece veya kaynakta olmayan "
             "meslek/olay ekleme. Para, sağlık, hukuk ve ilişki konularında garanti, kesin sonuç, "
             "kayıp/kriz hükmü veya teşhis dili kullanma. Doğrulanmış analiz eksikse bunu açıkça "
-            "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time veya highly rewarding "
-            "ifadelerini kullanma. "
-            "söyle ve yalnız küçük, geri alınabilir bir gözlem/plan adımı öner."
+            "söyle ve yalnız küçük, geri alınabilir bir gözlem/plan adımı öner. İngilizce yanıtta "
+            "destined, fated, inevitable, guaranteed, will, ideal/perfect time, highly activated/supported, "
+            "highly rewarding, chart promise, results promise, necessary foundation, crucial veya naturally "
+            "prone kalıplarını kullanma; may, can, could ve appears supportive gibi koşullu dil kullan.\n\n"
+            f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
         ),
     })
     generation_config = repaired.get("generationConfig")
@@ -1761,6 +1770,7 @@ def _run_candidate(
         response_language,
     )
     current_narrative_request = narrative_request
+    narrative_payload = None
     for attempt_index in range(2):
         narrative_request_id = (
             f"{base_request_id}-narrative"
@@ -1820,7 +1830,11 @@ def _run_candidate(
                 code in RETRYABLE_NARRATIVE_ERRORS
                 or _is_retryable_provider_error(exc, code)
             ):
-                current_narrative_request = _narrative_repair_request(narrative_request)
+                current_narrative_request = _narrative_repair_request(
+                    narrative_request,
+                    narrative_payload,
+                    code,
+                )
                 continue
             if validation_mode == "strict" and str(code).startswith("vertex_"):
                 fallback_payload = {
