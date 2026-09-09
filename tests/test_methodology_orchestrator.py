@@ -759,24 +759,33 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
-    def test_narrative_rejects_english_career_certainty_language(self):
+    def test_narrative_softens_english_career_certainty_without_losing_content(self):
         analysis = validate_methodology_response(
             _payload(),
             compact_evidence(_draft()),
         )
         for phrase in ("destined for success", "the ideal time", "highly rewarding"):
             with self.subTest(phrase=phrase):
-                with self.assertRaises(MethodologyOrchestrationError) as raised:
-                    validate_narrative_response(
-                        _narrative_payload(
-                            answer=(
-                                f"Your career direction is {phrase}, so the outcome can be treated as settled. " * 12
-                            ),
+                validated = validate_narrative_response(
+                    _narrative_payload(
+                        opening_summary=(
+                            "Career choices can benefit from careful evaluation. "
+                            "Your evidence points to several workable directions. "
+                            "A measured decision can preserve your options."
                         ),
-                        analysis,
-                        {**compact_evidence(_draft()), "subject_topic": "career"},
-                    )
-                self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+                        answer=(
+                            f"Your career direction is {phrase}, so review the evidence before committing. " * 12
+                        ),
+                    ),
+                    analysis,
+                    {
+                        **compact_evidence(_draft()),
+                        "subject_topic": "career",
+                        "response_language": "en",
+                    },
+                )
+                self.assertNotIn(phrase, validated["answer"].lower())
+                self.assertIn("review the evidence", validated["answer"])
 
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):

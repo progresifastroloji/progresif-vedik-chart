@@ -1145,6 +1145,32 @@ def _validate_sensitive_narrative_language(text, evidence):
             502,
         )
 
+
+def _soften_english_career_certainty(text, evidence):
+    """Keep validated content while replacing a small set of deterministic phrases."""
+
+    if (
+        normalize_response_language(evidence.get("response_language")) != "en"
+        or str(evidence.get("subject_topic") or "").strip().lower() != "career"
+    ):
+        return str(text or "")
+    softened = str(text or "")
+    replacements = (
+        (r"\b(?:is|are)\s+destined\s+to\b", "may"),
+        (r"\bdestined\s+for\s+success\b", "may find success"),
+        (r"\bdestined\s+for\b", "may be suited to"),
+        (r"\bfated\s+to\b", "may"),
+        (r"\b(?:destined|fated|inevitable|guaranteed)\b", "possible"),
+        (r"\bthis\s+is\s+(?:an?\s+|the\s+)?(?:ideal|perfect)\s+(?:time|timing|moment|period)\b", "this may be a supportive period"),
+        (r"\b(?:an?\s+|the\s+)?(?:ideal|perfect)\s+(?:time|timing|moment|period)\b", "a potentially supportive period"),
+        (r"\bhighly\s+rewarding\b", "potentially rewarding"),
+        (r"\bwill\s+eventually\s+deliver\b", "could support"),
+        (r"\bwill\s+naturally\s+align\b", "may align"),
+    )
+    for pattern, replacement in replacements:
+        softened = re.sub(pattern, replacement, softened, flags=re.IGNORECASE)
+    return softened
+
 def _validate_global_transit_absence_claim(text, evidence):
     """Reject a system-wide absence claim when transit evidence is present."""
 
@@ -1348,6 +1374,8 @@ def validate_narrative_response(payload, analysis, evidence):
         raise MethodologyOrchestrationError("methodology_narrative_schema_invalid", 502)
     opening_summary = str(value.get("opening_summary") or "").strip()
     answer = str(value.get("answer") or "").strip()
+    opening_summary = _soften_english_career_certainty(opening_summary, evidence).strip()
+    answer = _soften_english_career_certainty(answer, evidence).strip()
     if not opening_summary or not answer:
         raise MethodologyOrchestrationError("methodology_narrative_response_empty", 502)
     opening_sentences = [
