@@ -1140,6 +1140,10 @@ def _validate_sensitive_narrative_language(text, evidence):
         r"\b(?:kesinlikle|garantili|hayatınız boyunca|muazzam)\b",
         r"\bkesin\s+(?:sonuç|başarı|kazanç|gelir)\b",
         r"\b(?:destined|fated|inevitable|guaranteed)\b",
+        r"\bhighly\s+(?:activated|supported)\b",
+        r"\bthe\s+path\s+to\s+tangible\s+gains\s+lies\b",
+        r"\bwill\s+provide\s+the\s+most\s+supportive\s+environment\b",
+        r"\bdesigned\s+to\s+build\b",
     ]
     if topic == "wealth":
         patterns.extend([
@@ -1188,6 +1192,12 @@ def _soften_english_career_certainty(text, evidence):
         (r"\bhighly\s+rewarding\b", "potentially rewarding"),
         (r"\bwill\s+eventually\s+deliver\b", "could support"),
         (r"\bwill\s+naturally\s+align\b", "may align"),
+        (r"\b(?:is|are)\s+highly\s+activated\s+for\b", "may be supportive of"),
+        (r"\b(?:is|are)\s+highly\s+supported\s+by\b", "may be supported by"),
+        (r"\bthe\s+path\s+to\s+tangible\s+gains\s+lies\s+in\b", "tangible gains may be supported by"),
+        (r"\bwill\s+provide\s+the\s+most\s+supportive\s+environment\b", "may provide a supportive environment"),
+        (r"\bdesigned\s+to\s+build\b", "that can build"),
+        (r"\bto\s+maximize\s+your\s+success\b", "to support your progress"),
     )
     for pattern, replacement in replacements:
         softened = re.sub(pattern, replacement, softened, flags=re.IGNORECASE)

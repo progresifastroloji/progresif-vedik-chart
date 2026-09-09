@@ -792,7 +792,13 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             _payload(),
             compact_evidence(_draft()),
         )
-        for phrase in ("destined for success", "the ideal time", "highly rewarding"):
+        for phrase in (
+            "destined for success",
+            "the ideal time",
+            "highly rewarding",
+            "highly supported by the evidence",
+            "the path to tangible gains lies in teamwork",
+        ):
             with self.subTest(phrase=phrase):
                 validated = validate_narrative_response(
                     _narrative_payload(
