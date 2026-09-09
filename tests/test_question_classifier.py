@@ -95,6 +95,12 @@ class QuestionClassifierTest(unittest.TestCase):
             ),
             "career",
         )
+        self.assertEqual(
+            detect_explicit_topic(
+                "When evaluating a new career opportunity, which indicators should I consider?"
+            ),
+            "career",
+        )
 
     def test_eclipse_question_forces_stored_event_layers_without_calculation(self):
         def model_call(request_id, _request):

@@ -780,7 +780,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                     analysis,
                     {
                         **compact_evidence(_draft()),
-                        "subject_topic": "career",
+                        "subject_topic": "general",
                         "response_language": "en",
                     },
                 )

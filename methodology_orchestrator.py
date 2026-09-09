@@ -1149,10 +1149,7 @@ def _validate_sensitive_narrative_language(text, evidence):
 def _soften_english_career_certainty(text, evidence):
     """Keep validated content while replacing a small set of deterministic phrases."""
 
-    if (
-        normalize_response_language(evidence.get("response_language")) != "en"
-        or str(evidence.get("subject_topic") or "").strip().lower() != "career"
-    ):
+    if normalize_response_language(evidence.get("response_language")) != "en":
         return str(text or "")
     softened = str(text or "")
     replacements = (

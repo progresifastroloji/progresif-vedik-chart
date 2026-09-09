@@ -87,6 +87,9 @@ TOPIC_PATTERNS = {
     ),
     "career": (
         r"(?<!\w)kariyer\w*", r"(?<!\w)mesle\w*",
+        r"(?<!\w)career\w*", r"(?<!\w)job(?:s)?(?!\w)",
+        r"(?<!\w)profession\w*", r"(?<!\w)workplace\w*",
+        r"(?<!\w)promotion\w*",
         r"(?<!\w)iş(?!\w)", r"(?<!\w)işim\w*", r"(?<!\w)işte\w*",
         r"(?<!\w)işe\s+(?:gir\w*|başla\w*|basla\w*)",
         r"(?<!\w)yeni\s+işe\s+(?:başla\w*|basla\w*)",
