@@ -798,6 +798,11 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "highly rewarding",
             "highly supported by the evidence",
             "the path to tangible gains lies in teamwork",
+            "will align best with your skills",
+            "the structural promise of your chart",
+            "a necessary foundation for growth",
+            "it is crucial to wait",
+            "naturally prone to friction",
         ):
             with self.subTest(phrase=phrase):
                 validated = validate_narrative_response(

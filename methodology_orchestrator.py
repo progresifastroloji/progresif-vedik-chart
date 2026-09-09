@@ -1144,6 +1144,12 @@ def _validate_sensitive_narrative_language(text, evidence):
         r"\bthe\s+path\s+to\s+tangible\s+gains\s+lies\b",
         r"\bwill\s+provide\s+the\s+most\s+supportive\s+environment\b",
         r"\bdesigned\s+to\s+build\b",
+        r"\bwill\b",
+        r"\b(?:structural\s+)?promise\s+of\s+your\s+chart\b",
+        r"\b(?:ultimate\s+)?results\s+promise\b",
+        r"\bnecessary\s+foundation\b",
+        r"\bit\s+is\s+crucial\s+to\b",
+        r"\bnaturally\s+prone\s+to\b",
     ]
     if topic == "wealth":
         patterns.extend([
@@ -1198,6 +1204,13 @@ def _soften_english_career_certainty(text, evidence):
         (r"\bwill\s+provide\s+the\s+most\s+supportive\s+environment\b", "may provide a supportive environment"),
         (r"\bdesigned\s+to\s+build\b", "that can build"),
         (r"\bto\s+maximize\s+your\s+success\b", "to support your progress"),
+        (r"\b(?:the\s+)?(?:structural\s+)?promise\s+of\s+your\s+chart\b", "the structural pattern in your chart"),
+        (r"\bthe\s+(?:ultimate\s+)?results\s+promise\b", "the long-term pattern may support"),
+        (r"\bnecessary\s+foundation\b", "possible foundation"),
+        (r"\bit\s+is\s+crucial\s+to\b", "it may help to"),
+        (r"\bnaturally\s+prone\s+to\b", "may involve"),
+        (r"\bwill\s+align\s+best\b", "may align well"),
+        (r"\bwill\b", "may"),
     )
     for pattern, replacement in replacements:
         softened = re.sub(pattern, replacement, softened, flags=re.IGNORECASE)
