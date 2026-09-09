@@ -647,6 +647,31 @@ def _narrative_repair_request(request):
     return repaired
 
 
+def _technical_repair_request(request, payload, error_code):
+    """Give the technical model its rejected JSON and one bounded repair pass."""
+
+    repaired = json.loads(json.dumps(request, ensure_ascii=False))
+    try:
+        previous = _response_text(payload)
+    except MethodologyOrchestrationError:
+        previous = "{}"
+    repaired["contents"][0]["parts"].append({
+        "text": (
+            "\n\nTEKNİK JSON ONARIM DENEMESİ\n"
+            f"Önceki yanıt şu doğrulama hatasını verdi: {error_code}. "
+            "Yalnız geçerli JSON şemasını düzelt. Her supporting_evidence ve "
+            "challenging_evidence evidence_path değerini yukarıdaki GEÇERLİ "
+            "EVIDENCE_PATH KATALOĞU içinden karakter karakter aynen kopyala. "
+            "Belirli alt yol kesin değilse katalogda bulunan en yakın gerçek üst "
+            "yolu kullan; iddiayı destekleyen bir yol yoksa o iddiayı kaldır. "
+            "Kanıt paketinde olmayan teknik gerçek, tarih, derece veya hüküm ekleme. "
+            "methodology_coverage adımlarını ve diğer zorunlu alanları eksiksiz koru.\n\n"
+            f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
+        ),
+    })
+    return repaired
+
+
 def _response_text(payload):
     try:
         parts = payload["candidates"][0]["content"]["parts"]
@@ -1570,6 +1595,7 @@ def _run_candidate(
     provider_error_code = None
     provider_request_id = None
     provider_upstream_status = None
+    current_technical_request = request
     for attempt_index in range(2):
         request_id = (
             f"{base_request_id}-analysis"
@@ -1578,7 +1604,7 @@ def _run_candidate(
         )
         payload = None
         try:
-            returned_request_id, payload = model_call(request_id, request)
+            returned_request_id, payload = model_call(request_id, current_technical_request)
             if returned_request_id != request_id or not isinstance(payload, dict):
                 raise MethodologyOrchestrationError("methodology_model_response_invalid", 502)
             analysis = (
@@ -1603,6 +1629,12 @@ def _run_candidate(
                 code in RETRYABLE_RESPONSE_ERRORS
                 or _is_retryable_provider_error(exc, code)
             ):
+                if code in RETRYABLE_RESPONSE_ERRORS and isinstance(payload, dict):
+                    current_technical_request = _technical_repair_request(
+                        request,
+                        payload,
+                        code,
+                    )
                 continue
             if validation_mode == "strict" and str(code).startswith("vertex_"):
                 provider_error_code = code

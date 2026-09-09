@@ -636,6 +636,34 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(result["status"], "comparison_ready")
         self.assertEqual(result["methodology_results"][0]["narrative_attempt_count"], 2)
 
+    def test_technical_evidence_retry_receives_rejected_json_and_path_repair_rules(self):
+        calls = []
+
+        def model_call(request_id, request):
+            calls.append((request_id, request))
+            if request_id.endswith("-analysis"):
+                invalid = _payload()
+                value = json.loads(invalid["candidates"][0]["content"]["parts"][0]["text"])
+                value["supporting_evidence"][0]["evidence_path"] = "evidence.missing.path"
+                invalid["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+                return request_id, invalid
+            if "-analysis-retry-" in request_id:
+                repair_text = request["contents"][0]["parts"][-1]["text"]
+                self.assertIn("TEKNİK JSON ONARIM DENEMESİ", repair_text)
+                self.assertIn("methodology_model_evidence_invalid", repair_text)
+                self.assertIn("evidence.missing.path", repair_text)
+                return request_id, _payload()
+            return request_id, _narrative_payload()
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-technical-evidence-repair",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        self.assertEqual(result["methodology_results"][0]["technical_attempt_count"], 2)
+
     def test_incomplete_technical_analysis_does_not_call_narrative_model(self):
         calls = []
 
