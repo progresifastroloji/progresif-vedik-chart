@@ -261,7 +261,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         guidance = load_guidance_methodology()
 
         self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
-        self.assertEqual(guidance["version"], "1.4.0")
+        self.assertEqual(guidance["version"], "1.4.1")
         self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("runtime_stage: narrative_only", guidance["document"])
         self.assertIn("en fazla tek kısa", guidance["document"])
@@ -272,6 +272,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("başlık, alt başlık, numaralı liste", guidance["document"])
         self.assertIn("genel tavsiyeyi kişisel varga yorumu gibi sunma", guidance["document"])
         self.assertIn("D11 seçildiğinde kazanç/servet anlatısı üretme", guidance["document"])
+        self.assertIn("highly rewarding", guidance["document"])
 
     def test_analysis_runs_single_active_methodology_and_selects_it(self):
         calls = []
@@ -322,7 +323,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.4.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.4.1", narrative_system)
         self.assertIn("en fazla tek kısa ve sade dayanak cümlesini", narrative_system)
         self.assertIn("SAV/BAV", narrative_system)
         self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
@@ -757,6 +758,25 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 {**compact_evidence(_draft()), "subject_topic": "career"},
             )
         self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
+    def test_narrative_rejects_english_career_certainty_language(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        for phrase in ("destined for success", "the ideal time", "highly rewarding"):
+            with self.subTest(phrase=phrase):
+                with self.assertRaises(MethodologyOrchestrationError) as raised:
+                    validate_narrative_response(
+                        _narrative_payload(
+                            answer=(
+                                f"Your career direction is {phrase}, so the outcome can be treated as settled. " * 12
+                            ),
+                        ),
+                        analysis,
+                        {**compact_evidence(_draft()), "subject_topic": "career"},
+                    )
+                self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):

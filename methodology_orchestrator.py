@@ -120,10 +120,10 @@ CANDIDATE_MANIFEST = (
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "e098aa0528a55c39b71adcb90ea58eacca57817342f996f0f8b3eae34f9c5cf6",
+    "sha256": "e0021dc51f4c12a5f77b7b1eab6b513ff6e392a51f6d095e654b15dae98fbf70",
 }
 
 
@@ -562,6 +562,8 @@ def _narrative_request(
         "Önemli gökyüzü olayı veya tutulma istenmişse yalnız doğrulanmış transit kayıtlarındaki tarih, saat, derece, nakshatra, pada ve natal temasları anlat; "
         "bunlardan herhangi biri kaynakta yoksa hesaplama yapma ve eksik olduğunu açıkça söyle. "
         "false ise tarih veya gelecek garantisi üretme. Teknik kayıt listesini, evidence_path değerlerini, "
+        "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time veya highly rewarding "
+        "ifadelerini kullanma; güçlü kanıtta da koşullu ve kullanıcı iradesini koruyan dil kullan. "
         "kaynakta transit günleri veya Panchanga varsa sistemde haftalık/günlük verinin hiç bulunmadığını "
         "iddia etme; yalnız gerçek tarih kapsamını ve varsa kapsanmayan günleri belirt. "
         "Wellbeing konulu daily veya instant yanıtta doğrulanmış güncel Ay bağlamını ve günün gökyüzü ritmini "
@@ -634,6 +636,8 @@ def _narrative_repair_request(request):
             "Teknik terim, kanıt yolu, metodoloji adı, yeni tarih/derece veya kaynakta olmayan "
             "meslek/olay ekleme. Para, sağlık, hukuk ve ilişki konularında garanti, kesin sonuç, "
             "kayıp/kriz hükmü veya teşhis dili kullanma. Doğrulanmış analiz eksikse bunu açıkça "
+            "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time veya highly rewarding "
+            "ifadelerini kullanma. "
             "söyle ve yalnız küçük, geri alınabilir bir gözlem/plan adımı öner."
         ),
     })
@@ -1110,6 +1114,7 @@ def _validate_sensitive_narrative_language(text, evidence):
     patterns = [
         r"\b(?:kesinlikle|garantili|hayatınız boyunca|muazzam)\b",
         r"\bkesin\s+(?:sonuç|başarı|kazanç|gelir)\b",
+        r"\b(?:destined|fated|inevitable|guaranteed)\b",
     ]
     if topic == "wealth":
         patterns.extend([
@@ -1119,6 +1124,8 @@ def _validate_sensitive_narrative_language(text, evidence):
         ])
     if topic == "career":
         patterns.extend([
+            r"\b(?:ideal|perfect)\s+(?:time|timing|moment|period)\b",
+            r"\bhighly\s+rewarding\b",
             r"\b(?:yüksek|oldukça güçlü|güçlü bir)\s+(?:bir\s+)?(?:ihtimal|olasılık|potansiyel)\b",
             r"\b(?:ihtimaliniz|olasılığınız|potansiyeliniz)\s+(?:son derece|oldukça|çok)?\s*yüksek\b",
             r"\b(?:işe gireceksiniz|iş bulacaksınız|yeni bir işe gireceksiniz)\b",

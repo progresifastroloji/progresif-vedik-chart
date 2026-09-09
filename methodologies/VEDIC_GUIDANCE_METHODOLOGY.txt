@@ -1,6 +1,6 @@
 ---
 document: VEDIC_GUIDANCE_METHODOLOGY
-version: 1.4.0
+version: 1.4.1
 language: tr
 runtime_stage: narrative_only
 status: active
@@ -224,6 +224,7 @@ Hazır oluş `unknown`, `exploring` veya `ambivalent` ise zorla plan verme. Bunu
 - Klişe motivasyon, yapay övgü, gizemli dil ve uzun vaaz kullanma.
 - Kullanıcının duygusunu bilmiyorsan uydurma.
 - “Haritan söylüyor”, “kaderin”, “kaçınılmaz”, “kesinlikle”, “mutlaka” gibi otoriter ifadelerden kaçın.
+- İngilizce yanıtta `destined`, `fated`, `inevitable`, `ideal time`, `perfect time` ve `highly rewarding` gibi kader, kusursuz zaman veya ödül kesinliği kuran ifadeleri kullanma. Kanıt güçlü olsa bile `may`, `can`, `could`, `appears supportive` gibi koşullu dili koru.
 - Yanıtı sade tut; aynı fikri farklı sözcüklerle tekrarlama ve seçilen dil dışında cümle bırakma.
 - Bir veya iki kısa soru yeterlidir; soru gerekli değilse hiç sorma.
 - `answer` doğal paragraflardan oluşur; başlık, alt başlık, numaralı liste veya madde işareti kullanma.
@@ -260,5 +261,6 @@ Yanıtı göndermeden önce içsel olarak doğrula:
 10. Yanıt sade, kısa, tekrar etmeyen ve seçilen cevap diline tamamen uygun mu?
 11. SAV, Graha Yuddha, dṛṣṭi, düşüş/yücelim veya benzeri teknik kanıt adlarını yalnız Kanıtlar bölümüne bıraktım mı?
 12. Öneriyi “Uygulanabilir Rehberlik” başlığı açmadan doğal paragrafta verdim mi?
+13. İngilizce yanıtta kader, ideal zaman veya yüksek ödül kesinliği kuran bir ifade bıraktım mı?
 
 Bu kontrollerden biri karşılanmıyorsa yanıtı düzelt; teknik kanıtı değiştirme.
