@@ -120,10 +120,10 @@ CANDIDATE_MANIFEST = (
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.4.2",
+    "version": "1.4.3",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "db1c6b3a9b470d13a3d0bd160671b4f92b73847db3da959f1f82a5fec67e8d07",
+    "sha256": "0b31b190613fadb2eed30593db61938e655649652c14b502c8d4a21400ee0fe0",
 }
 
 
@@ -563,7 +563,7 @@ def _narrative_request(
         "Önemli gökyüzü olayı veya tutulma istenmişse yalnız doğrulanmış transit kayıtlarındaki tarih, saat, derece, nakshatra, pada ve natal temasları anlat; "
         "bunlardan herhangi biri kaynakta yoksa hesaplama yapma ve eksik olduğunu açıkça söyle. "
         "false ise tarih veya gelecek garantisi üretme. Teknik kayıt listesini, evidence_path değerlerini, "
-        "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time, highly rewarding, "
+        "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time, highly active, highly rewarding, "
         "best suited, natural catalyst veya highly recommended "
         "ifadelerini kullanma; güçlü kanıtta da koşullu ve kullanıcı iradesini koruyan dil kullan. "
         "kaynakta transit günleri veya Panchanga varsa sistemde haftalık/günlük verinin hiç bulunmadığını "
@@ -649,7 +649,7 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "gezegen, ev, burç, nakshatra, dasha veya transit adı hiç kullanma. answer içinde bu tür "
             "görünür astrolojik dayanak içeren en fazla bir cümle kullan; diğer teknik kanıtları tekrarlama. "
             "İngilizce yanıtta "
-            "destined, fated, inevitable, guaranteed, will, ideal/perfect time, highly activated/supported, "
+            "destined, fated, inevitable, guaranteed, will, ideal/perfect time, highly active/activated/supported, "
             "highly rewarding, best suited, natural catalyst, highly recommended, chart promise, results promise, "
             "necessary foundation, crucial veya naturally "
             "prone kalıplarını kullanma; may, can, could ve appears supportive gibi koşullu dil kullan.\n\n"
@@ -1155,7 +1155,7 @@ def _validate_sensitive_narrative_language(text, evidence):
         r"\b(?:kesinlikle|garantili|hayatınız boyunca|muazzam)\b",
         r"\bkesin\s+(?:sonuç|başarı|kazanç|gelir)\b",
         r"\b(?:destined|fated|inevitable|guaranteed)\b",
-        r"\bhighly\s+(?:activated|supported)\b",
+        r"\bhighly\s+(?:active|activated|supported)\b",
         r"\bthe\s+path\s+to\s+tangible\s+gains\s+lies\b",
         r"\bwill\s+provide\s+the\s+most\s+supportive\s+environment\b",
         r"\bdesigned\s+to\s+build\b",
@@ -1214,6 +1214,9 @@ def _soften_english_career_certainty(text, evidence):
         (r"\b(?:destined|fated|inevitable|guaranteed)\b", "possible"),
         (r"\bthis\s+is\s+(?:an?\s+|the\s+)?(?:ideal|perfect)\s+(?:time|timing|moment|period)\b", "this may be a supportive period"),
         (r"\b(?:an?\s+|the\s+)?(?:ideal|perfect)\s+(?:time|timing|moment|period)\b", "a potentially supportive period"),
+        (r"\byour\s+career\s+path\s+is\s+entering\s+a\s+highly\s+active\s+phase\b", "You may be entering an active phase"),
+        (r"\ba\s+highly\s+active\b", "an active"),
+        (r"\bhighly\s+active\b", "active"),
         (r"\bhighly\s+rewarding\b", "potentially rewarding"),
         (r"\bwill\s+eventually\s+deliver\b", "could support"),
         (r"\bwill\s+naturally\s+align\b", "may align"),
