@@ -1532,7 +1532,7 @@ def validate_narrative_response(payload, analysis, evidence):
         r"(?:\b(?:güneş|mars|merkür|jüpiter|venüs|satürn|rahu|ketu)\b|"
         r"\bay(?:['’](?:ın|in)|\s+(?:yerleşimi|konumu|transiti))|"
         r"\b\d{1,2}\.\s*ev\w*\b|"
-        r"\b(?:nakshatra|nakşatra|nakṣatra|pada|dasha|daşa|transit|panchanga|tithi|vara|karana)\w*\b|"
+        r"\b(?:(?:nakshatra|nakşatra|nakṣatra|pada|dasha|daşa|panchanga|tithi|vara|karana)\w*|transit(?!ion)\w*)\b|"
         r"\b(?:koç|boğa|ikizler|yengeç|aslan|başak|terazi|akrep|yay|oğlak|kova|balık)\s+burc\w*\b)",
         re.IGNORECASE,
     )

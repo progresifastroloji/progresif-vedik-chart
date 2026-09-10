@@ -493,6 +493,34 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         self.assertEqual(validated["answer"], answer)
 
+    def test_narrative_does_not_treat_english_transition_as_astrological_transit(self):
+        answer = (
+            "A career transition may fit when the role gives you a clear scope, useful feedback, and room to build "
+            "skill without demanding an irreversible commitment. Compare the actual responsibilities, decision "
+            "authority, support structure, and learning path with what you need at this stage.\n\n"
+            "Treat the transition as a practical test: ask for one concrete example of a normal working week, clarify "
+            "how success is reviewed, and identify one condition that would make you step back. Then choose a small "
+            "reversible step, such as a second conversation or a written role outline, and review what you learn before "
+            "making the larger decision."
+        )
+        draft = _draft()
+        draft["response_language"] = "en"
+        evidence = compact_evidence(draft)
+        analysis = validate_methodology_response(_payload(), evidence)
+
+        validated = validate_narrative_response(
+            _narrative_payload(
+                answer=answer,
+                opening_summary=(
+                    "A new role may be worth exploring when its real conditions support steady growth and clear boundaries."
+                ),
+            ),
+            analysis,
+            evidence,
+        )
+
+        self.assertEqual(validated["answer"], answer)
+
     def test_narrative_rejects_more_than_one_visible_astrological_anchor_sentence(self):
         answer = (
             "İlişkilerde hızlı yakınlaşma isteğiniz ile güveni zamana yayma ihtiyacınız birlikte çalışabilir. "
