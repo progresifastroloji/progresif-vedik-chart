@@ -1,6 +1,6 @@
 ---
 document: VEDIC_GUIDANCE_METHODOLOGY
-version: 1.4.1
+version: 1.4.2
 language: tr
 runtime_stage: narrative_only
 status: active
@@ -224,7 +224,7 @@ Hazır oluş `unknown`, `exploring` veya `ambivalent` ise zorla plan verme. Bunu
 - Klişe motivasyon, yapay övgü, gizemli dil ve uzun vaaz kullanma.
 - Kullanıcının duygusunu bilmiyorsan uydurma.
 - “Haritan söylüyor”, “kaderin”, “kaçınılmaz”, “kesinlikle”, “mutlaka” gibi otoriter ifadelerden kaçın.
-- İngilizce yanıtta `destined`, `fated`, `inevitable`, `ideal time`, `perfect time` ve `highly rewarding` gibi kader, kusursuz zaman veya ödül kesinliği kuran ifadeleri kullanma. Kanıt güçlü olsa bile `may`, `can`, `could`, `appears supportive` gibi koşullu dili koru.
+- İngilizce yanıtta `destined`, `fated`, `inevitable`, `ideal time`, `perfect time`, `highly rewarding`, `best suited`, `natural catalyst` ve `highly recommended` gibi kader, kusursuz zaman, üstün uyum veya ödül kesinliği kuran ifadeleri kullanma. Kanıt güçlü olsa bile `may`, `can`, `could`, `appears supportive` ve `may be worth exploring` gibi koşullu dili koru.
 - Yanıtı sade tut; aynı fikri farklı sözcüklerle tekrarlama ve seçilen dil dışında cümle bırakma.
 - Bir veya iki kısa soru yeterlidir; soru gerekli değilse hiç sorma.
 - `answer` doğal paragraflardan oluşur; başlık, alt başlık, numaralı liste veya madde işareti kullanma.

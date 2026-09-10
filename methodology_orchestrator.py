@@ -120,10 +120,10 @@ CANDIDATE_MANIFEST = (
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.4.1",
+    "version": "1.4.2",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "e0021dc51f4c12a5f77b7b1eab6b513ff6e392a51f6d095e654b15dae98fbf70",
+    "sha256": "db1c6b3a9b470d13a3d0bd160671b4f92b73847db3da959f1f82a5fec67e8d07",
 }
 
 
@@ -563,7 +563,8 @@ def _narrative_request(
         "Önemli gökyüzü olayı veya tutulma istenmişse yalnız doğrulanmış transit kayıtlarındaki tarih, saat, derece, nakshatra, pada ve natal temasları anlat; "
         "bunlardan herhangi biri kaynakta yoksa hesaplama yapma ve eksik olduğunu açıkça söyle. "
         "false ise tarih veya gelecek garantisi üretme. Teknik kayıt listesini, evidence_path değerlerini, "
-        "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time veya highly rewarding "
+        "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time, highly rewarding, "
+        "best suited, natural catalyst veya highly recommended "
         "ifadelerini kullanma; güçlü kanıtta da koşullu ve kullanıcı iradesini koruyan dil kullan. "
         "kaynakta transit günleri veya Panchanga varsa sistemde haftalık/günlük verinin hiç bulunmadığını "
         "iddia etme; yalnız gerçek tarih kapsamını ve varsa kapsanmayan günleri belirt. "
@@ -649,7 +650,8 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "görünür astrolojik dayanak içeren en fazla bir cümle kullan; diğer teknik kanıtları tekrarlama. "
             "İngilizce yanıtta "
             "destined, fated, inevitable, guaranteed, will, ideal/perfect time, highly activated/supported, "
-            "highly rewarding, chart promise, results promise, necessary foundation, crucial veya naturally "
+            "highly rewarding, best suited, natural catalyst, highly recommended, chart promise, results promise, "
+            "necessary foundation, crucial veya naturally "
             "prone kalıplarını kullanma; may, can, could ve appears supportive gibi koşullu dil kullan.\n\n"
             f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
         ),
@@ -1163,6 +1165,10 @@ def _validate_sensitive_narrative_language(text, evidence):
         r"\bnecessary\s+foundation\b",
         r"\bit\s+is\s+crucial\s+to\b",
         r"\bnaturally\s+prone\s+to\b",
+        r"\byou\s+are\s+best\s+suited\s+for\b",
+        r"\b(?:is|are)\s+natural\s+catalysts?\s+for\b",
+        r"\bit\s+is\s+highly\s+recommended\s+to\b",
+        r"\bhave\s+a\s+strong\s+capacity\s+to\s+gain\s+through\b",
     ]
     if topic == "wealth":
         patterns.extend([
@@ -1222,6 +1228,10 @@ def _soften_english_career_certainty(text, evidence):
         (r"\bnecessary\s+foundation\b", "possible foundation"),
         (r"\bit\s+is\s+crucial\s+to\b", "it may help to"),
         (r"\bnaturally\s+prone\s+to\b", "may involve"),
+        (r"\byou\s+are\s+best\s+suited\s+for\b", "you may benefit from exploring"),
+        (r"\b(?:is|are)\s+natural\s+catalysts?\s+for\b", "may create opportunities for"),
+        (r"\bit\s+is\s+highly\s+recommended\s+to\b", "it may help to"),
+        (r"\bhave\s+a\s+strong\s+capacity\s+to\s+gain\s+through\b", "may gain support through"),
         (r"\bwill\s+align\s+best\b", "may align well"),
         (r"\bwill\b", "may"),
     )
