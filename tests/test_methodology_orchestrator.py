@@ -628,6 +628,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             self.assertIn("ONARIM DENEMESİ", repair_text)
             self.assertIn("methodology_narrative_too_short", repair_text)
             self.assertIn("Kısa cevap.", repair_text)
+            self.assertIn("en fazla bir cümle", repair_text)
+            self.assertIn("opening_summary içinde", repair_text)
             return request_id, _narrative_payload()
 
         result = run_methodology_comparison(
