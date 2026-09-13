@@ -849,7 +849,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 _narrative_payload(
                     answer=(
                         "Bu dönem zihinsel kapasitenizi en üst seviyeye taşıyacaktır. "
-                        "Analitik çalışmanız size büyük bir verim sağlayacaktır. " * 12
+                        "Analitik çalışmanız size büyük bir verim sağlayacaktır. "
+                        "Kişisel gelişiminiz açısından oldukça verimli bir dönemdesiniz. " * 12
                     ),
                 ),
                 analysis,

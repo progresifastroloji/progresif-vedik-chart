@@ -1219,6 +1219,9 @@ def _validate_sensitive_narrative_language(text, evidence):
         patterns.extend([
             r"\b(?:en\s+üst\s+seviyeye|zirveye|en\s+yüksek\s+(?:seviyeye|düzeye))\b",
             r"\b(?:oldukça|son\s+derece|çok)\s+(?:güçlü|yüksek)\s+(?:bir\s+)?(?:dönem|kapasite|potansiyel|yetenek|verim)\b",
+            r"\b(?:oldukça|son\s+derece|çok)\s+(?:verimli|güçlü|yüksek|canlandırıcı)\b",
+            r"\b(?:güçlü\s+bir\s+şekilde|doğrudan)\s+destekliyor\b",
+            r"\b(?:en\s+büyük\s+avantajınız|güçlü\s+potansiyel(?:inizi)?|en\s+yüksek\s+verim|kalıcı\s+başarılara)\b",
             r"\b(?:zihinsel\s+kapasitenizi|entelektüel\s+kapasitenizi)[^.!?\n]{0,100}"
             r"(?:taşıyacak|taşımaktadır|taşıyacaktır|göstermektedir|gösterecektir)\b",
             r"\b(?:büyük\s+bir\s+verim|en\s+önemli\s+araç|kaçınılmaz\s+sonuç)[^.!?\n]{0,80}"
