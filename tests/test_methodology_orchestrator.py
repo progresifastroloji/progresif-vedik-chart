@@ -933,6 +933,32 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 self.assertNotIn(phrase, validated["answer"].lower())
                 self.assertIn("review the evidence", validated["answer"])
 
+    def test_narrative_rejects_english_career_overconfident_fit_language(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(
+                _narrative_payload(
+                    opening_summary=(
+                        "A careful review can help you compare a new role with your practical priorities."
+                    ),
+                    answer=(
+                        "The most natural alignment for your career comes from a strong connection to analytical work. "
+                        "Your career indicators suggest a path that is likely to feel more fulfilling and sustainable. "
+                        "It is essential to accept the opportunity quickly. " * 12
+                    ),
+                ),
+                analysis,
+                {
+                    **compact_evidence(_draft()),
+                    "subject_topic": "career",
+                    "response_language": "en",
+                },
+            )
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
     def test_invalid_model_response_fails_closed_after_one_retry(self):
         def model_call(request_id, _request):
             return request_id, {"candidates": []}

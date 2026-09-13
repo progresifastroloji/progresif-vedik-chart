@@ -655,7 +655,10 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "prone kalıplarını kullanma; may, can, could ve appears supportive gibi koşullu dil kullan. "
             "İlişki veya evlilik yanıtında tarihleri kesin olay, kaçınılmaz sonuç ya da çatışma zirvesi gibi kurma; "
             "meydana getirecektir, gerçekleşecektir, kaçınılmaz ve en üst seviyeye çıkacaktır/çıkabilir gibi ifadeleri "
-            "kullanma. Olasılık dilini, karşılıklılığı ve kullanıcının kontrol edebileceği iletişim adımlarını koru.\n\n"
+            "kullanma. Olasılık dilini, karşılıklılığı ve kullanıcının kontrol edebileceği iletişim adımlarını koru. "
+            "İngilizce kariyer yanıtında natural alignment, strong connection, career indicators suggest, strong capacity, "
+            "fulfilling, sustainable, essential veya necessary gibi ifadelerle sonucu ya da uyumu kesinleştirme; "
+            "may fit, could be worth considering ve the decision remains yours gibi ölçülü ifadeler kullan.\n\n"
             f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
         ),
     })
@@ -1183,6 +1186,12 @@ def _validate_sensitive_narrative_language(text, evidence):
         patterns.extend([
             r"\b(?:ideal|perfect)\s+(?:time|timing|moment|period)\b",
             r"\bhighly\s+rewarding\b",
+            r"\b(?:most\s+)?natural\s+alignment\b",
+            r"\b(?:career\s+indicators\s+suggest|strong\s+connection\s+to)\b",
+            r"\b(?:likely|certain|expected)\s+to\s+feel\s+(?:more\s+)?(?:fulfilling|sustainable)\b",
+            r"\b(?:it\s+is|making\s+it)\s+(?:essential|necessary)\s+to\b",
+            r"\b(?:your\s+)?(?:career|professional)\s+(?:direction|path)\s+is\s+supported\s+by\b",
+            r"\bstrong\s+capacity\s+for\b",
             r"\b(?:yüksek|oldukça güçlü|güçlü bir)\s+(?:bir\s+)?(?:ihtimal|olasılık|potansiyel)\b",
             r"\b(?:ihtimaliniz|olasılığınız|potansiyeliniz)\s+(?:son derece|oldukça|çok)?\s*yüksek\b",
             r"\b(?:işe gireceksiniz|iş bulacaksınız|yeni bir işe gireceksiniz)\b",
