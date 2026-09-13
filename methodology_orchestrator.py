@@ -1199,6 +1199,9 @@ def _validate_sensitive_narrative_language(text, evidence):
             r"kaçınılmaz|en üst seviyeye çık(?:abilir|acaktır))\b",
             r"\b(?:çatışma|gerilim|kriz|ayrılık)\s+risk(?:i|leri)\s+"
             r"(?:en üst seviyeye|zirveye)\s+çık(?:abilir|acaktır)\b",
+            r"\b(?:ilişki|ilişkiler|evlilik|partner|eş|iletişim|dönem|süreç|adım|etki|öneri)[^.!?\n]{0,140}"
+            r"(?:olacaktır|kılacaktır|artıracaktır|güçlendirecektir|gerekecektir|"
+            r"belirleyicidir|adım(?:lar)?dır|zorunludur)\b",
         ])
     if topic in {"wealth", "legal", "health"}:
         patterns.extend([

@@ -830,7 +830,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 _narrative_payload(
                     answer=(
                         "Önümüzdeki süreçte ilişkiler alanınızda önemli tetiklenmeler meydana getirecektir. "
-                        "Çatışma riskleri en üst seviyeye çıkabilir. " * 12
+                        "Çatışma riskleri en üst seviyeye çıkabilir. İletişimde sakin kalmak ilişkiniz için belirleyicidir. "
+                        "Bu yaklaşım bağınızı güçlendirecektir. " * 12
                     ),
                 ),
                 analysis,
