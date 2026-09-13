@@ -659,6 +659,9 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "İngilizce kariyer yanıtında natural alignment, strong connection, career indicators suggest, strong capacity, "
             "fulfilling, sustainable, essential veya necessary gibi ifadelerle sonucu ya da uyumu kesinleştirme; "
             "may fit, could be worth considering ve the decision remains yours gibi ölçülü ifadeler kullan.\n\n"
+            "Eğitim, öğrenme veya kişisel gelişim yanıtında zihinsel kapasiteyi, başarıyı veya verimi zirveye/en üst seviyeye "
+            "taşıyan kesin ifadeler kullanma; güçlü dönem, yüksek kapasite, büyük verim ve kaçınılmaz sonuç hükmü kurma. "
+            "Bunun yerine olasılık dilini, çalışma yöntemini ve kullanıcının gözlemleyebileceği küçük adımları koru.\n\n"
             f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
         ),
     })
@@ -1211,6 +1214,15 @@ def _validate_sensitive_narrative_language(text, evidence):
             r"\b(?:ilişki|ilişkiler|evlilik|partner|eş|iletişim|dönem|süreç|adım|etki|öneri)[^.!?\n]{0,140}"
             r"(?:olacaktır|kılacaktır|artıracaktır|güçlendirecektir|gerekecektir|"
             r"belirleyicidir|adım(?:lar)?dır|zorunludur)\b",
+        ])
+    if topic == "education":
+        patterns.extend([
+            r"\b(?:en\s+üst\s+seviyeye|zirveye|en\s+yüksek\s+(?:seviyeye|düzeye))\b",
+            r"\b(?:oldukça|son\s+derece|çok)\s+(?:güçlü|yüksek)\s+(?:bir\s+)?(?:dönem|kapasite|potansiyel|yetenek|verim)\b",
+            r"\b(?:zihinsel\s+kapasitenizi|entelektüel\s+kapasitenizi)[^.!?\n]{0,100}"
+            r"(?:taşıyacak|taşımaktadır|taşıyacaktır|göstermektedir|gösterecektir)\b",
+            r"\b(?:büyük\s+bir\s+verim|en\s+önemli\s+araç|kaçınılmaz\s+sonuç)[^.!?\n]{0,80}"
+            r"(?:sağlayacak|sağlayacaktır|yaratacak|yaratacaktır|olmaktadır|arasında\s+yer\s+alıyor)\b",
         ])
     if topic in {"wealth", "legal", "health"}:
         patterns.extend([

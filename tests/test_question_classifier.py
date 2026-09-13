@@ -71,6 +71,7 @@ class QuestionClassifierTest(unittest.TestCase):
             "Sağlık ve enerji düzenimde neye dikkat etmeliyim?": "health",
             "Aile içinde sorumlulukları nasıl dengelemeliyim?": "family",
             "Eğitim ve uzmanlaşma yönüm nasıl görünüyor?": "education",
+            "Öğrenme ve kişisel gelişimimde bu dönemi daha verimli kullanmak için nelere odaklanabilirim?": "education",
             "Yurtdışına taşınma kararını nasıl değerlendirmeliyim?": "relocation",
             "Hukuki sözleşme sürecinde neye dikkat etmeliyim?": "legal",
             "Ruhsal yönüm ve yaşam amacım hakkında ne görünüyor?": "spiritual",

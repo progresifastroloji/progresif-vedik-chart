@@ -126,6 +126,8 @@ TOPIC_PATTERNS = {
         r"(?<!\w)eğitim\w*", r"(?<!\w)egitim\w*", r"(?<!\w)okul\w*",
         r"(?<!\w)sınav\w*", r"(?<!\w)sinav\w*", r"(?<!\w)üniversite\w*",
         r"(?<!\w)universite\w*", r"(?<!\w)öğrenim\w*", r"(?<!\w)ogrenim\w*",
+        r"(?<!\w)öğrenme\w*", r"(?<!\w)ogrenme\w*",
+        r"(?<!\w)kişisel\s+gelişim\w*", r"(?<!\w)kisisel\s+gelisim\w*",
         r"(?<!\w)akademi\w*", r"(?<!\w)uzmanlaş\w*", r"(?<!\w)uzmanlas\w*",
     ),
     "relocation": (
@@ -583,7 +585,7 @@ def build_request(question, now_iso, conversation_context=None):
         "degildir. Ruh hali, duygu, gerginlik, motivasyon veya iyi hissetmeme sorularini "
         "wellbeing olarak siniflandir; career yalniz is, meslek veya kariyer baglami acikca "
         "varsa secilir. Ana konu listesi kariyerle sinirli degildir: aile ve ebeveynlik family; "
-        "egitim, sinav ve uzmanlasma education; tasinma, yurtdisi, yerlesim ve mulk relocation; "
+        "egitim, ogrenme, kisisel gelisim, sinav ve uzmanlasma education; tasinma, yurtdisi, yerlesim ve mulk relocation; "
         "hukuk, sozlesme ve uyusmazlik legal; yillik harita/dongu varshaphala olur. Birden fazla "
         "yasam alani ayni soruda acikca soruluyorsa general sec. 'Simdi/tam su anda' instant; present-state wellbeing questions such as "
         "'neden sinirliyim?' also use instant; 'bugun' daily, tarih veya donem isteyen "

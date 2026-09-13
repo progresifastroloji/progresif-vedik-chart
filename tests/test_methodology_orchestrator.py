@@ -839,6 +839,24 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
+    def test_narrative_rejects_overconfident_education_guidance(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(
+                _narrative_payload(
+                    answer=(
+                        "Bu dönem zihinsel kapasitenizi en üst seviyeye taşıyacaktır. "
+                        "Analitik çalışmanız size büyük bir verim sağlayacaktır. " * 12
+                    ),
+                ),
+                analysis,
+                {**compact_evidence(_draft()), "subject_topic": "education"},
+            )
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
     def test_relationship_safety_failure_retries_with_repair_prompt(self):
         calls = []
 
