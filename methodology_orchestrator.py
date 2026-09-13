@@ -652,7 +652,10 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "destined, fated, inevitable, guaranteed, will, ideal/perfect time, highly active/activated/supported, "
             "highly rewarding, best suited, natural catalyst, highly recommended, chart promise, results promise, "
             "necessary foundation, crucial veya naturally "
-            "prone kalıplarını kullanma; may, can, could ve appears supportive gibi koşullu dil kullan.\n\n"
+            "prone kalıplarını kullanma; may, can, could ve appears supportive gibi koşullu dil kullan. "
+            "İlişki veya evlilik yanıtında tarihleri kesin olay, kaçınılmaz sonuç ya da çatışma zirvesi gibi kurma; "
+            "meydana getirecektir, gerçekleşecektir, kaçınılmaz ve en üst seviyeye çıkacaktır/çıkabilir gibi ifadeleri "
+            "kullanma. Olasılık dilini, karşılıklılığı ve kullanıcının kontrol edebileceği iletişim adımlarını koru.\n\n"
             f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
         ),
     })
@@ -1188,6 +1191,14 @@ def _validate_sensitive_narrative_language(text, evidence):
             r"güçlü bir başlangıç|güçlü bir adım|kalıcı ve verimli|en verimli zaman|"
             r"güçlendirecek|aralayacak|getirecektir|gerçekleşecektir|olacaktır|müjdeliyor|"
             r"kapınızı çalacak|sağlayacaktır)\b",
+        ])
+    if topic == "marriage":
+        patterns.extend([
+            r"\b(?:ilişki|ilişkiler|evlilik|partner|eş|iletişim|süreç|dönem)[^.!?\n]{0,140}"
+            r"(?:meydana getirecek|meydana getirecektir|gerçekleşecek|gerçekleşecektir|"
+            r"kaçınılmaz|en üst seviyeye çık(?:abilir|acaktır))\b",
+            r"\b(?:çatışma|gerilim|kriz|ayrılık)\s+risk(?:i|leri)\s+"
+            r"(?:en üst seviyeye|zirveye)\s+çık(?:abilir|acaktır)\b",
         ])
     if topic in {"wealth", "legal", "health"}:
         patterns.extend([

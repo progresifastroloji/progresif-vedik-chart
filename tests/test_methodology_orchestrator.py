@@ -820,6 +820,73 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
+    def test_narrative_rejects_deterministic_relationship_timing_language(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(
+                _narrative_payload(
+                    answer=(
+                        "Önümüzdeki süreçte ilişkiler alanınızda önemli tetiklenmeler meydana getirecektir. "
+                        "Çatışma riskleri en üst seviyeye çıkabilir. " * 12
+                    ),
+                ),
+                analysis,
+                {**compact_evidence(_draft()), "subject_topic": "marriage"},
+            )
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
+    def test_relationship_safety_failure_retries_with_repair_prompt(self):
+        calls = []
+
+        def model_call(request_id, request):
+            calls.append((request_id, request))
+            if request_id.endswith("-analysis"):
+                return request_id, _payload()
+            if request_id.endswith("-narrative"):
+                return request_id, _narrative_payload(
+                    answer=(
+                        "Önümüzdeki süreçte ilişkiler alanınızda önemli tetiklenmeler meydana getirecektir. "
+                        "Çatışma riskleri en üst seviyeye çıkabilir. " * 12
+                    ),
+                )
+            self.assertIn(
+                "İlişki veya evlilik yanıtında",
+                request["contents"][0]["parts"][-1]["text"],
+            )
+            return request_id, _narrative_payload(
+                opening_summary=(
+                    "İlişkilerde açık iletişim ve karşılıklılık, önümüzdeki dönemi daha sağlıklı yönetmenize yardımcı olabilir."
+                ),
+                answer=(
+                    "Önümüzdeki dönemde iletişimde aceleyle sonuç çıkarmak yerine, beklentilerinizi açıkça ifade etmek "
+                    "ve karşınızdaki kişinin davranışlarının sürekliliğini gözlemlemek daha yararlı olabilir. " * 5
+                    + "\n\n"
+                    "Gerilim hissedildiğinde konuşmayı kısa süreliğine durdurup neye ihtiyaç duyduğunuzu somutlaştırın. "
+                    "Böylece tek bir tarihe veya varsayıma dayanmak yerine, ilişkinizde gerçekten gözlemlediğiniz verilerle ilerleyebilirsiniz."
+                ),
+            )
+
+        draft = {**_draft(), "subject_topic": "marriage", "topic": "marriage"}
+        result = run_methodology_comparison(
+            draft,
+            "methodology-marriage-safety-retry",
+            model_call,
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        self.assertEqual(result["methodology_results"][0]["narrative_attempt_count"], 2)
+        self.assertNotIn(
+            "meydana getirecektir",
+            result["methodology_results"][0]["analysis"]["summary"],
+        )
+        self.assertNotIn(
+            "en üst seviyeye",
+            result["methodology_results"][0]["analysis"]["summary"],
+        )
+
     def test_narrative_softens_english_career_certainty_without_losing_content(self):
         analysis = validate_methodology_response(
             _payload(),
