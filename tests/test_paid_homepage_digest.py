@@ -109,6 +109,27 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         imperative["gunluk"] = {"metin": "Bugün başla ve kendine daha geniş bir alan aç.", "odak": "kendin"}
         self.assertEqual(paid_writer.validate(imperative)[1], "emir_kipi")
 
+    def test_writer_accepts_english_output_with_translated_focus_contract(self):
+        english = {
+            "motto": "A clear pace can help you protect your energy.",
+            "gunluk": {
+                "metin": "Today, organizing your work routine and responsibilities can help you build steadier structure.",
+                "odak": "structure",
+            },
+            "haftalik": {
+                "metin": "This week, making room for rest while reviewing your schedule may support a calmer rhythm.",
+                "odak": "rest",
+            },
+        }
+        expected = {
+            "gunluk": {"odak": "düzen"},
+            "haftalik": {"odak": "dinlenme"},
+        }
+        cleaned, error = paid_writer.validate(english, expected, "en")
+        self.assertIsNotNone(cleaned)
+        self.assertIsNone(error)
+        self.assertIn('"output_language": "English"', paid_writer._user_text({}, {}, language="en"))
+
     def test_writer_rejects_generic_or_context_mismatched_layers(self):
         expected = {
             "gunluk": {"odak": "dinlenme"},

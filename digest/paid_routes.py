@@ -142,6 +142,9 @@ def api_v2_pwa_digest_personal():
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             raise ValueError("Geçerli istek gövdesi gerekli")
+        language = str(data.get("language") or "tr").strip().lower()
+        if language not in {"tr", "en"}:
+            raise ValueError("Geçerli çıktı dili gerekli")
 
         sonuc, hata = _load_owned_chart(data)
         if hata:
@@ -177,6 +180,7 @@ def api_v2_pwa_digest_personal():
         context_hash = _sha256({
             "chart_hash": chart_hash,
             "context": context,
+            "language": language,
             "snapshot_hash": _sha256({
                 "current": current_snapshot,
                 "weekly": weekly_snapshots,
@@ -230,6 +234,7 @@ def api_v2_pwa_digest_personal():
             sonuc_llm, hata_llm = paid_writer.generate(
                 paketler["daily"], paketler["weekly"],
                 context=context,
+                language=language,
             )
 
             if sonuc_llm is None:
