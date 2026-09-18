@@ -38,8 +38,19 @@ from .situation import build_situation
 _STRONG_DIGNITY = ("uccha", "moolatrikona", "swakshetra")
 _WEAK_DIGNITY_ESSENTIAL = ("enemy",)
 
-HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v2"
-HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v4"
+HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v3"
+HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v5"
+WEEK_CARD_EVIDENCE_VERSION = "personal-week-day-evidence-v1"
+
+# Kullanıcıya ancak harita ve dönem kanıtı aynı anda yeterliyse gösterilecek
+# yaşam alanı rozetleri. Kodlar yalnız model sözleşmesindedir; kullanıcıya
+# dönen metinlerde teknik gerekçe asla gösterilmez.
+DOMAIN_BY_FOCUS = {
+    "ilişki": "love",
+    "iş": "work",
+    "huzur": "family",
+    "çevre": "friends",
+}
 
 FOCUS_BY_HOUSE = {
     1: "kendin",
@@ -217,6 +228,166 @@ def build_paid_situation(chart, katman, snaps, *, reference_jd=None):
             paket["guc"] = _guc(lord_planet)
 
     return paket
+
+
+def _birth_time_declaration(chart):
+    """Kanonik v2 alanından güven politikasını, eski kayıtlar için de oku."""
+    birth = chart.get("birth", {}) or {}
+    quality = chart.get("data_quality", {}) or {}
+    value = (
+        birth.get("time_declaration")
+        or quality.get("birth_time_declaration")
+        or quality.get("birth_time_confidence")
+        or "exact"
+    )
+    value = str(value).strip().lower()
+    return value if value in {"exact", "approximate", "unknown"} else "unknown"
+
+
+def _period_evidence(chart, reference_jd):
+    """Dönem yöneticisini teknik adını sızdırmadan tematik kanıta indirger."""
+    lord = _current_dasha_lord(chart, "weekly", reference_jd=reference_jd)
+    if not lord:
+        return {"available": False}
+
+    planet = _find_planet(chart, lord)
+    fields = {"available": True}
+    ruled = _ruled_houses(chart, lord)
+    theme = _theme_join(ruled)
+    if theme:
+        fields["emphasis"] = theme
+    if planet is not None:
+        house = planet.get("house")
+        if house in HOUSE_THEME:
+            fields["current_area"] = HOUSE_THEME[house]
+        fields["strength"] = _guc(planet)
+    return fields
+
+
+def _compact_panchanga(snapshot):
+    """Ham isimleri değil, yalnız yazıcının kullanabileceği günlük ritmi taşı."""
+    raw = snapshot.get("panchanga") or {}
+    if raw.get("status") != "available":
+        return {"available": False}
+    return {
+        "available": True,
+        "lunar_phase": raw.get("paksha"),
+        "weekday": raw.get("vara_weekday"),
+        "lunar_day_index": raw.get("tithi_number"),
+        "moon_star_index": raw.get("moon_nakshatra_index"),
+    }
+
+
+def build_week_day_evidence(chart, snapshot, *, reference_jd):
+    """Bir takvim günü için kimliksiz, sürümlü ve daraltılmış kanıt paketi.
+
+    ``unknown`` doğum saati durumunda ev, yükselen, ev yöneticiliği ve dönem
+    çıkarımı tamamen kapatılır. Sadece Ay ve gün ritmi mevcuttur; yaşam alanı
+    rozeti de üretilemez.
+    """
+    day = str(snapshot.get("date") or "")
+    if not day or not snapshot.get("planets") or not _compact_panchanga(snapshot).get("available"):
+        return None
+
+    time_declaration = _birth_time_declaration(chart)
+    moon_sign = _natal_moon_sign_index(chart)
+    transit_moon = (snapshot.get("planets") or {}).get("Moon")
+    if moon_sign is None or transit_moon is None:
+        return None
+
+    evidence = {
+        "evidence_version": WEEK_CARD_EVIDENCE_VERSION,
+        "date": day,
+        "data_quality": {
+            "birth_time": time_declaration,
+            "confidence": (
+                "high" if time_declaration == "exact"
+                else "medium" if time_declaration == "approximate"
+                else "moon_and_day_only"
+            ),
+            "house_or_lagna_interpretation": time_declaration != "unknown",
+        },
+        "transit": {
+            "moon_available": True,
+            "snapshot_local_datetime": snapshot.get("local_datetime"),
+            "day_sky_available": True,
+        },
+        "panchanga": _compact_panchanga(snapshot),
+        "eligible_domains": [],
+    }
+
+    if time_declaration == "unknown":
+        # Bu odak, doğum saati hassas alanlar yerine yalnız günün ritmini
+        # anlatır. Ay konumu kişisel bağlam olarak kalır, ev hesabına dönmez.
+        evidence.update({
+            "focus": "düzen",
+            "focus_basis": "moon_and_day_context_only",
+            "period": {"available": False, "withheld_by_birth_time_policy": True},
+        })
+        return evidence
+
+    situation = build_paid_situation(
+        chart, "daily", [snapshot], reference_jd=reference_jd,
+    )
+    if not situation or not situation.get("odak"):
+        return None
+    period = _period_evidence(chart, reference_jd)
+    focus = situation["odak"]
+    eligible_domains = []
+    # Alan rozetleri iki ayrı kişisel kaynak (günlük odak + dönem) varsa
+    # görünür. Yaklaşık saat için kaynak, kullanıcıya kesinlik iddiası
+    # taşımayan orta güvenle kullanılır; bilinmeyende buraya hiç girilmez.
+    if period.get("available") and DOMAIN_BY_FOCUS.get(focus):
+        eligible_domains.append(DOMAIN_BY_FOCUS[focus])
+
+    evidence.update({
+        "focus": focus,
+        "focus_basis": "verified_natal_moon_and_day_sky",
+        "period": period,
+        "eligible_domains": eligible_domains,
+    })
+    return evidence
+
+
+def build_personal_week_context(chart, week_start, snapshots, *, julian_day_for_date):
+    """Pazartesi–pazar için tek Gemini çağrısına girecek kanıt dizisi."""
+    if len(snapshots or []) != 7:
+        return None
+    cards = []
+    expected_dates = []
+    for offset, snapshot in enumerate(snapshots):
+        target_date = week_start.fromordinal(week_start.toordinal() + offset)
+        expected_dates.append(target_date.isoformat())
+        if str(snapshot.get("date") or "") != target_date.isoformat():
+            return None
+        card = build_week_day_evidence(
+            chart,
+            snapshot,
+            reference_jd=julian_day_for_date(target_date),
+        )
+        if card is None:
+            return None
+        cards.append(card)
+    if [card["date"] for card in cards] != expected_dates:
+        return None
+
+    time_declaration = _birth_time_declaration(chart)
+    return {
+        "schema_version": HOMEPAGE_CONTEXT_VERSION,
+        "methodology_version": HOMEPAGE_METHODOLOGY_VERSION,
+        "week_start": week_start.isoformat(),
+        "week_end": expected_dates[-1],
+        "calculation": {
+            "generator_version": (chart.get("meta", {}) or {}).get("engine_version") or GENERATOR_VERSION,
+            "snapshot_hour_istanbul": SNAPSHOT_HOUR,
+            "source": "verified_chart_and_cached_daily_sky_evidence",
+        },
+        "data_quality": {
+            "birth_time": time_declaration,
+            "unknown_time_blocks_house_and_lagna": time_declaration == "unknown",
+        },
+        "days": cards,
+    }
 
 
 def build_homepage_context(chart, d, paketler):

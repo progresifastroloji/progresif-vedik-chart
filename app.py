@@ -33681,6 +33681,10 @@ def api_v2_account_delete_data():
 
         with closing(_beta_db()) as conn:
             deleted_rows = _delete_beta_user_records(conn, user_id)
+        # Kişisel ana sayfa yorumları ayrı SQLite önbelleğinde tutulur; hesap
+        # silme akışı bu metinleri de aynı kullanıcı kapsamıyla temizlemelidir.
+        from digest import paid_store
+        deleted_rows["homepage_week_digest"] = paid_store.delete_user(user_id)
         directory_deleted = _delete_user_data_directory(user_id)
 
         return jsonify({

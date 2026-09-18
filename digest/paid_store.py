@@ -17,8 +17,8 @@ from datetime import date, datetime, timedelta, timezone
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "digest_data", "paid_digest.sqlite3")
 
-GENERATOR_VERSION = "homepage-gemini-v3"
-METHODOLOGY_VERSION = "digest-methodology-v4"
+GENERATOR_VERSION = "homepage-gemini-v4"
+METHODOLOGY_VERSION = "digest-methodology-v5"
 LOCK_TIMEOUT_MIN = 10
 
 
@@ -59,6 +59,27 @@ def _conn():
             expires_at TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS homepage_week_digest (
+            owner_user_id TEXT NOT NULL,
+            chart_id TEXT NOT NULL,
+            week_start TEXT NOT NULL,
+            evidence_hash TEXT NOT NULL,
+            language TEXT NOT NULL,
+            generator_version TEXT NOT NULL,
+            methodology_version TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (
+                owner_user_id, chart_id, week_start, evidence_hash, language,
+                generator_version, methodology_version
+            )
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS homepage_week_digest_owner_idx
+        ON homepage_week_digest(owner_user_id)
+    """)
     return conn
 
 
@@ -95,6 +116,52 @@ def set_homepage(owner_user_id, chart_id, payload, d, context_hash,
              json.dumps(payload, ensure_ascii=False)),
         )
         conn.commit()
+
+
+def get_homepage_week(owner_user_id, chart_id, week_start, evidence_hash, language,
+                      generator_version=GENERATOR_VERSION,
+                      methodology_version=METHODOLOGY_VERSION):
+    """Yedi günlük çıktı yalnız aynı kanıt ve dil için tekrar kullanılır."""
+    with closing(_conn()) as conn:
+        row = conn.execute(
+            """SELECT payload_json FROM homepage_week_digest
+               WHERE owner_user_id = ? AND chart_id = ? AND week_start = ?
+                 AND evidence_hash = ? AND language = ?
+                 AND generator_version = ? AND methodology_version = ?""",
+            (owner_user_id, chart_id, week_start.isoformat(), evidence_hash, language,
+             generator_version, methodology_version),
+        ).fetchone()
+    return json.loads(row["payload_json"]) if row else None
+
+
+def set_homepage_week(owner_user_id, chart_id, payload, week_start, evidence_hash, language,
+                      generator_version=GENERATOR_VERSION,
+                      methodology_version=METHODOLOGY_VERSION):
+    with closing(_conn()) as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO homepage_week_digest
+               (owner_user_id, chart_id, week_start, evidence_hash, language,
+                generator_version, methodology_version, payload_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (owner_user_id, chart_id, week_start.isoformat(), evidence_hash, language,
+             generator_version, methodology_version,
+             json.dumps(payload, ensure_ascii=False)),
+        )
+        conn.commit()
+
+
+def delete_user(owner_user_id):
+    """Hesap silme akışında bu ayrı önbellekte kalan kişisel çıktıları temizle."""
+    with closing(_conn()) as conn:
+        cursor = conn.execute(
+            "DELETE FROM homepage_week_digest WHERE owner_user_id = ?", (owner_user_id,)
+        )
+        # Önceki sürüm cache'i de aynı kullanıcıya ait kişisel metin taşır.
+        legacy = conn.execute(
+            "DELETE FROM homepage_digest WHERE owner_user_id = ?", (owner_user_id,)
+        )
+        conn.commit()
+    return max(int(cursor.rowcount), 0) + max(int(legacy.rowcount), 0)
 
 
 def acquire_lock(lock_key, dakika=LOCK_TIMEOUT_MIN):

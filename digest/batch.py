@@ -19,6 +19,7 @@ from .keys import (
     build_key,
     month_start,
     rotation_seed,
+    SNAPSHOT_EVIDENCE_VERSION,
     today_ist,
     week_start,
 )
@@ -35,7 +36,10 @@ def ensure_snapshots(gunler):
     uretilen = 0
     for g in gunler:
         iso = g.isoformat()
-        if store.get_snapshot(iso) is not None:
+        existing = store.get_snapshot(iso)
+        # Older snapshots lack the bounded Panchanga evidence required by the
+        # seven-day personal card. Regenerate only those records once.
+        if existing is not None and existing.get("evidence_version") == SNAPSHOT_EVIDENCE_VERSION:
             continue
         try:
             snap = planet_signs(g)

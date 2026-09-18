@@ -1,22 +1,8 @@
-"""Ucretli katman LLM yazicisi — vedic-vertex-bridge uzerinden.
+"""Yedi günlük kişisel ana sayfa yorumu için tek çağrılık yazıcı.
 
-writer.py'den fark: iki katmani (gunluk/haftalik) + motto'yu TEK
-cagrida uretir; METODOLOJI_DIGEST.md'yi sistem talimati olarak yukler
-(digest-methodology-v4, ~1.8 KB — writer.py'nin "8000 sabit token
-savunulamaz" gerekcesi burada gecerli degil, cunku her saatlik sonuç
-iki katman icin tek cagrida uretilir).
-
-Donus sozlesmesi writer.py ile ayni: (sonuc, hata_bilgisi).
-    sonuc is None      -> caller kullaniciya guncel yorumun o anda
-                           hazirlanamadigini bildirir; sabit yoruma dusmez
-    hata_bilgisi        -> None veya {"asama","exc","fallback_nedeni","sure_ms"}
-
-TEKNIK TERIM SIZINTISI: rules.has_banned() bunu kontrol ETMEZ (yalniz
-klise + kesinlik dili). Urunun sabit kurali "hicbir teknik terim
-kullanici ciktisina sizmaz" oldugu icin bu dosyada ayri bir tarama var
-(_TECHNICAL_LEAK_RE). Bu, mevcut writer.py'de de yok; oradaki tasarim
-sabit cumle havuzundan sectigi icin risksiz, burada model serbest
-yazdigi icin risk var.
+Chart API gün bazlı kanıtı seçer; bu modül yalnız kullanıcıya gösterilecek
+kısa anlatıyı üretir ve sıkı biçimde denetler. Model hesap yapmaz, teknik
+terim veya kanıt paketinde olmayan yaşam alanı ekleyemez.
 """
 
 import json
@@ -25,8 +11,8 @@ import re
 import time
 import uuid
 
-MAX_WORDS = {"motto": 20, "gunluk": 50, "haftalik": 50}
-MIN_LAYER_WORDS = 7
+MAX_WORDS = {"motto": 20, "ana_mesaj": 30, "neden": 36, "yon": 20, "dikkat": 20}
+MIN_WORDS = {"ana_mesaj": 4, "neden": 5, "yon": 2, "dikkat": 2}
 ALLOWED_FOCUS = {
     "kendin", "kaynak", "girişim", "huzur", "yaratıcılık", "düzen",
     "ilişki", "derinlik", "anlam", "iş", "çevre", "dinlenme",
@@ -42,123 +28,55 @@ FOCUS_TRANSLATIONS = {
     "iş": "work", "çevre": "community", "dinlenme": "rest",
 }
 FOCUS_TERMS = {
-    "kendin": ("kendin", "istek", "yön", "görünür", "ifade", "duruş"),
-    "kaynak": ("kaynak", "birikim", "maddi", "para", "aile", "söz", "güven"),
-    "girişim": ("giriş", "adım", "cesaret", "iletişim", "yakın çevre", "hareket"),
-    "huzur": ("huzur", "iç dünya", "iç ses", "yuva", "evde", "yerleş", "sakin"),
-    "yaratıcılık": ("yarat", "keyif", "gönül", "fikir", "zihin", "ifade"),
-    "düzen": ("düzen", "rutin", "iş yük", "dayanıkl", "alışkanlık", "program"),
-    "ilişki": ("ilişki", "ortak", "karşı taraf", "anlaş", "yakınlık", "bağlar"),
-    "derinlik": ("derin", "gizli", "paylaşılan", "belirsiz", "dönüş", "mahrem"),
-    "anlam": ("anlam", "inanç", "öğren", "uzak", "bakış", "ufuk"),
-    "iş": ("iş ", "işin", "işte", "çalış", "kariyer", "meslek", "sorumluluk", "görev", "statü", "emek"),
-    "çevre": ("kazanç", "hedef", "çevre", "bağlantı", "destek", "arkadaş", "topluluk"),
-    "dinlenme": ("dinlen", "yavaş", "geri çekil", "sessiz", "toparlan", "mola"),
+    "kendin": ("kendin", "sınır", "duruş", "istek", "ifade"),
+    "kaynak": ("kaynak", "para", "birikim", "güven", "söz"),
+    "girişim": ("adım", "iletişim", "yakın çevre", "hareket", "başlat"),
+    "huzur": ("ev", "iç dünya", "sakin", "yuva", "huzur"),
+    "yaratıcılık": ("fikir", "keyif", "yarat", "ifade", "gönül"),
+    "düzen": ("rutin", "iş yük", "program", "düzen", "sorumluluk"),
+    "ilişki": ("ilişki", "karşı taraf", "ortak", "bağ", "yakınlık"),
+    "derinlik": ("gizli", "paylaş", "belirsiz", "derin", "mahrem"),
+    "anlam": ("öğren", "inanç", "bakış", "ufuk", "anlam"),
+    "iş": ("iş", "çalış", "kariyer", "görev", "sorumluluk"),
+    "çevre": ("arkadaş", "çevre", "bağlantı", "topluluk", "destek"),
+    "dinlenme": ("dinlen", "mola", "yavaş", "sessiz", "toparlan"),
 }
 ENGLISH_FOCUS_TERMS = {
-    "self": ("yourself", "identity", "expression", "boundaries", "confidence"),
-    "resources": ("resources", "money", "savings", "family", "security"),
-    "initiative": ("initiative", "step", "courage", "communication", "movement"),
-    "peace": ("peace", "inner life", "home", "settle", "calm"),
-    "creativity": ("creative", "joy", "ideas", "expression", "pleasure"),
-    "structure": ("structure", "routine", "workload", "resilience", "schedule"),
-    "relationships": ("relationship", "partner", "agreement", "closeness", "bond"),
-    "depth": ("depth", "hidden", "shared", "uncertainty", "transformation"),
-    "meaning": ("meaning", "belief", "learning", "distant", "horizon"),
-    "work": ("work", "career", "profession", "responsibility", "task", "status"),
-    "community": ("gains", "goals", "connections", "support", "friends", "community"),
-    "rest": ("rest", "slow", "step back", "quiet", "recover", "break"),
+    "self": ("yourself", "boundary", "identity", "voice"),
+    "resources": ("resources", "money", "security", "savings"),
+    "initiative": ("step", "communication", "movement", "start"),
+    "peace": ("home", "calm", "inner life", "settle"),
+    "creativity": ("idea", "creative", "joy", "expression"),
+    "structure": ("routine", "schedule", "workload", "structure"),
+    "relationships": ("relationship", "partner", "other person", "bond"),
+    "depth": ("private", "shared", "uncertainty", "depth"),
+    "meaning": ("learning", "belief", "meaning", "horizon"),
+    "work": ("work", "career", "task", "responsibility"),
+    "community": ("friend", "community", "connection", "support"),
+    "rest": ("rest", "pause", "quiet", "recover"),
 }
+ALLOWED_DOMAINS = {"love", "work", "family", "friends"}
 _ID_SAFE = re.compile(r"[^0-9a-zA-Z._:-]")
-
 _METODOLOJI_PATH = os.path.join(os.path.dirname(__file__), "METODOLOJI_DIGEST.md")
+
+_BANNED_PHRASES = ("evren sana", "kozmik enerji", "enerjini yükselt", "şanslı gün", "büyük değişim", "hayatın değişecek", "dikkat!", "kaderinde")
+_BANNED_WORDS = ("mutlaka", "kesinlikle", "asla", "tehlike", "uyarı", "garanti")
+_ENGLISH_BANNED_PHRASES = ("the universe", "cosmic energy", "raise your energy", "lucky day", "big change", "your life will change", "it is destined")
+_ENGLISH_BANNED_WORDS = ("must", "definitely", "never", "danger", "warning", "guarantee")
+_FUTURE_CLAIM_RE = re.compile(r"\b(?:olacak(?:sın|tır)?|gelecek|gerçekleşecek|kesinleşecek|evleneceksin|ayrılacaksın|kazanacaksın|kaybedeceksin)\b", re.IGNORECASE)
+_ENGLISH_FUTURE_CLAIM_RE = re.compile(r"\b(?:will happen|will definitely|is guaranteed|you will marry|you will lose|you will gain)\b", re.IGNORECASE)
+_PLANETS = ("güneş", "gunes", "ay burcu", "mars", "merkür", "merkur", "jüpiter", "jupiter", "venüs", "venus", "satürn", "saturn", "rahu", "ketu", "sun", "moon", "mercury")
+_SIGNS = ("koç", "koc burcu", "boğa", "boga", "i̇kizler", "ikizler", "yengeç", "yengec", "aslan burcu", "başak", "basak", "terazi", "akrep", "yay burcu", "oğlak", "oglak", "kova burcu", "balık burcu", "balik burcu", "aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra", "scorpio", "sagittarius", "capricorn", "aquarius", "pisces")
+_TERMS = ("nakshatra", "varga", "dasha", "dasa", "yükselen", "yukselen", "lagna", "transit", "retro", "gochara", "bhava", "rashi", "burç haritası", "burc haritasi", "panchanga", "tithi")
+_HOUSE_PATTERN = re.compile(r"\b(?:\d{1,2}\.?\s*(?:ev|house)|birinci ev|ikinci ev|üçüncü ev|ucuncu ev|dördüncü ev|dorduncu ev|beşinci ev|besinci ev|altıncı ev|altinci ev|yedinci ev|sekizinci ev|dokuzuncu ev|onuncu ev|on birinci ev|on ikinci ev)\b", re.IGNORECASE)
 
 
 def _load_methodology():
-    with open(_METODOLOJI_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+    with open(_METODOLOJI_PATH, "r", encoding="utf-8") as file:
+        return file.read()
 
 
-# Modul yuklenirken bir kez okunur; dosya degismedikce tekrar diske
-# gidilmez. Deploy sirasinda surec yeniden baslar, guncel icerik gelir.
 _METHODOLOGY_TEXT = _load_methodology()
-
-_BANNED_PHRASES = [
-    "evren sana", "kozmik enerji", "enerjini yükselt", "şanslı gün",
-    "büyük değişim", "hayatın değişecek", "dikkat!",
-]
-_BANNED_WORDS = [
-    "kaçırma", "mutlaka", "kesinlikle", "asla", "tehlike", "uyarı",
-]
-_ENGLISH_BANNED_PHRASES = [
-    "the universe", "cosmic energy", "raise your energy", "lucky day",
-    "big change", "your life will change", "watch out",
-]
-_ENGLISH_BANNED_WORDS = [
-    "must", "definitely", "never", "danger", "warning",
-]
-
-# Teknik terim sizintisi taramasi. Gezegen/burc adlari hem Turkce hem
-# Ingilizce olarak, "N. ev" / "N ev" kalibi, ve genel Vedik terimler.
-_PLANETS = [
-    "güneş", "gunes", "ay burcu", "mars", "merkür", "merkur", "jüpiter",
-    "jupiter", "venüs", "venus", "satürn", "saturn", "rahu", "ketu",
-    "sun", "moon", "mercury", "mars ",
-]
-_SIGNS = [
-    "koç", "koc burcu", "boğa", "boga", "i̇kizler", "ikizler", "yengeç",
-    "yengec", "aslan burcu", "başak", "basak", "terazi", "akrep",
-    "yay burcu", "oğlak", "oglak", "kova burcu", "balık burcu", "balik burcu",
-    "aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra",
-    "scorpio", "sagittarius", "capricorn", "aquarius", "pisces",
-]
-_TERMS = [
-    "nakshatra", "nakshat", "varga", "dasha", "dasa", "yükselen",
-    "yukselen", "lagna", "transit", "retro", "gochara", "bhava",
-    "rashi", "burç haritası", "burc haritasi",
-]
-_HOUSE_PATTERN = re.compile(
-    r"\b(\d{1,2}\.?\s*(ev|house)|birinci ev|ikinci ev|üçüncü ev|ucuncu ev|"
-    r"dördüncü ev|dorduncu ev|beşinci ev|besinci ev|altıncı ev|altinci ev|"
-    r"yedinci ev|sekizinci ev|dokuzuncu ev|onuncu ev|on birinci ev|"
-    r"on ikinci ev)\b",
-    re.IGNORECASE,
-)
-_IMPERATIVE_RE = re.compile(
-    r"\b(?:yap|başla|basla|unutma|bekle|kaçın|kacin|koru|seç|sec|sürdür|surdur|bırak|birak|odaklan|açıl|acil)\b",
-    re.IGNORECASE,
-)
-
-
-def _leaks_technical_terms(text):
-    low = (text or "").lower()
-    for grup in (_PLANETS, _SIGNS, _TERMS):
-        for kelime in grup:
-            if kelime in low:
-                return True
-    return bool(_HOUSE_PATTERN.search(low))
-
-
-def _has_banned(text, language="tr"):
-    low = (text or "").lower()
-    phrases = _ENGLISH_BANNED_PHRASES if language == "en" else _BANNED_PHRASES
-    words = _ENGLISH_BANNED_WORDS if language == "en" else _BANNED_WORDS
-    if any(p in low for p in phrases):
-        return True
-    return any(
-        re.search(r"(?<![0-9A-Za-zÇĞİıÖŞÜçğöşü])%s(?![0-9A-Za-zÇĞİıÖŞÜçğöşü])" % re.escape(w), low)
-        for w in words
-    )
-
-
-def _has_imperative(text):
-    return bool(_IMPERATIVE_RE.search(text or ""))
-
-
-def _reflects_focus(text, focus, language="tr"):
-    low = (text or "").casefold()
-    terms = ENGLISH_FOCUS_TERMS if language == "en" else FOCUS_TERMS
-    return any(term.casefold() in low for term in terms.get(focus.casefold(), ()))
 
 
 def llm_enabled():
@@ -166,162 +84,142 @@ def llm_enabled():
 
 
 def _safe_request_id():
-    raw = "digest-paid-%s" % uuid.uuid4().hex
-    return _ID_SAFE.sub("-", raw)[:200]
+    return _ID_SAFE.sub("-", "digest-week-%s" % uuid.uuid4().hex)[:200]
 
 
-def _user_text(daily_paket, weekly_paket, context=None, language="tr"):
-    """İki katmanı model için okunur JSON'a çevirir. Alan yoksa hiç
-    yazilmaz (paketlerde zaten yok)."""
-    gövde = {
-        "context_schema": "homepage_digest_context_v2",
-        "gunluk": daily_paket or {},
-        "haftalik": weekly_paket or {},
-    }
-    if context:
-        gövde["context"] = context
-    gövde["output_language"] = "English" if language == "en" else "Turkish"
-    gövde["output_instruction"] = (
-        "Write every user-facing value in English. Use one English focus label: "
-        "self, resources, initiative, peace, creativity, structure, relationships, "
-        "depth, meaning, work, community or rest. Do not use Turkish words or suffixes."
-        if language == "en" else
-        "Write every user-facing value in Turkish. Use the Turkish focus labels from the methodology."
-    )
-    return json.dumps(gövde, ensure_ascii=False, indent=2)
+def _word_count(text):
+    return len([word for word in str(text).split() if word.strip()])
 
 
-def _call_bridge(user_text, language="tr"):
-    from vertex_bridge_client import call_vertex_bridge
+def _leaks_technical_terms(text):
+    lowered = (text or "").lower()
+    return any(term in lowered for term in (*_PLANETS, *_SIGNS, *_TERMS)) or bool(_HOUSE_PATTERN.search(lowered))
 
-    request = {
-        "systemInstruction": {"parts": [{"text": _METHODOLOGY_TEXT + "\n\n" + (
-            "The output language is English. Every user-facing string must be natural English; "
-            "do not copy Turkish words, suffixes or grammar from the context. Return only the "
-            "same JSON shape and use an English focus label."
-            if language == "en" else
-            "The output language is Turkish. Keep every user-facing string in Turkish."
-        )}]},
-        "contents": [{"role": "user", "parts": [{"text": user_text}]}],
-        "generationConfig": {
-            "temperature": 0.8,
-            "maxOutputTokens": 1024,
-            "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingLevel": "MINIMAL"},
-        },
-    }
-    _, payload = call_vertex_bridge(_safe_request_id(), request)
-    return payload
+
+def _has_banned(text, language):
+    lowered = (text or "").lower()
+    phrases = _ENGLISH_BANNED_PHRASES if language == "en" else _BANNED_PHRASES
+    words = _ENGLISH_BANNED_WORDS if language == "en" else _BANNED_WORDS
+    return any(phrase in lowered for phrase in phrases) or any(re.search(r"(?<![0-9A-Za-zÇĞİıÖŞÜçğöşü])%s(?![0-9A-Za-zÇĞİıÖŞÜçğöşü])" % re.escape(word), lowered) for word in words)
+
+
+def _has_future_claim(text, language):
+    return bool((_ENGLISH_FUTURE_CLAIM_RE if language == "en" else _FUTURE_CLAIM_RE).search(text or ""))
+
+
+def _reflects_focus(text, focus, language):
+    terms = ENGLISH_FOCUS_TERMS if language == "en" else FOCUS_TERMS
+    return any(term.casefold() in (text or "").casefold() for term in terms.get(focus.casefold(), ()))
 
 
 def _response_text(payload):
     parts = payload["candidates"][0]["content"]["parts"]
-    text = "".join(
-        str(p.get("text") or "") for p in parts if isinstance(p, dict)
-    ).strip()
+    text = "".join(str(part.get("text") or "") for part in parts if isinstance(part, dict)).strip()
     if text.startswith("```json") and text.endswith("```"):
-        text = text[7:-3].strip()
-    elif text.startswith("```") and text.endswith("```"):
-        text = text[3:-3].strip()
+        return text[7:-3].strip()
+    if text.startswith("```") and text.endswith("```"):
+        return text[3:-3].strip()
     return text
 
 
-def _word_count(text):
-    return len([w for w in str(text).split() if w.strip()])
+def _user_text(context, language):
+    return json.dumps({"context_schema": "homepage_digest_context_v3", "week": context, "output_language": "English" if language == "en" else "Turkish", "output_instruction": "Write every user-facing value in natural English. Use only the English focus labels." if language == "en" else "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz."}, ensure_ascii=False, indent=2)
 
 
-def validate(payload, expected_layers=None, language="tr"):
-    """Gecerliyse temiz dict, degilse (None, neden)."""
+def _call_bridge(user_text, language):
+    from vertex_bridge_client import call_vertex_bridge
+    language_instruction = "Return natural English only. Do not use Turkish words or suffixes." if language == "en" else "Yalnız doğal Türkiye Türkçesi kullan."
+    request = {"systemInstruction": {"parts": [{"text": _METHODOLOGY_TEXT + "\n\n" + language_instruction}]}, "contents": [{"role": "user", "parts": [{"text": user_text}]}], "generationConfig": {"temperature": 0.65, "maxOutputTokens": 3072, "responseMimeType": "application/json", "thinkingConfig": {"thinkingLevel": "MINIMAL"}}}
+    _, payload = call_vertex_bridge(_safe_request_id(), request)
+    return payload
+
+
+def validate(payload, context, language="tr"):
+    """Yalnız yedi beklenen gün ve kanıtla izinli alanları kabul eder."""
     if not isinstance(payload, dict):
         return None, "json_sozluk_degil"
-
-    motto = payload.get("motto")
+    motto, days = payload.get("motto"), payload.get("days")
     if not isinstance(motto, str) or not motto.strip():
         return None, "motto_bos"
-    motto = motto.strip()
     if _word_count(motto) > MAX_WORDS["motto"]:
         return None, "motto_kelime_siniri_asildi"
-
-    temiz = {"motto": motto}
+    if not isinstance(days, list) or len(days) != 7:
+        return None, "yedi_gun_gerekli"
+    expected = context.get("days") if isinstance(context, dict) else None
+    if not isinstance(expected, list) or len(expected) != 7:
+        return None, "kanit_yedi_gun_degil"
+    expected_by_date = {str(day.get("date")): day for day in expected if isinstance(day, dict)}
+    if len(expected_by_date) != 7:
+        return None, "kanit_tarihleri_gecersiz"
     allowed_focus = ENGLISH_ALLOWED_FOCUS if language == "en" else ALLOWED_FOCUS
-
-    for katman in ("gunluk", "haftalik"):
-        blok = payload.get(katman)
-        if not isinstance(blok, dict):
-            return None, "%s_eksik" % katman
-        metin = blok.get("metin")
-        odak = blok.get("odak")
-        if not isinstance(metin, str) or not metin.strip():
-            return None, "%s_metin_bos" % katman
-        if not isinstance(odak, str) or not odak.strip():
-            return None, "%s_odak_bos" % katman
-        metin = metin.strip()
-        odak = odak.strip()
-        if len(odak.split()) > 1:
-            return None, "%s_odak_tek_kelime_degil" % katman
-        if odak.casefold() not in {v.casefold() for v in allowed_focus}:
-            return None, "%s_odak_allowlist_disi" % katman
-        if _word_count(metin) < MIN_LAYER_WORDS:
-            return None, "%s_metin_cok_genel" % katman
-        if _word_count(metin) > MAX_WORDS[katman]:
-            return None, "%s_kelime_siniri_asildi" % katman
-        if expected_layers is not None:
-            expected_focus = str((expected_layers.get(katman) or {}).get("odak") or "").strip()
-            if not expected_focus:
-                return None, "%s_baglam_odagi_eksik" % katman
-            if language == "en":
-                expected_focus = FOCUS_TRANSLATIONS.get(expected_focus.casefold(), expected_focus)
-            if odak.casefold() != expected_focus.casefold():
-                return None, "%s_odak_baglamla_uyusmuyor" % katman
-            if not _reflects_focus(metin, expected_focus, language):
-                return None, "%s_metin_baglamla_uyusmuyor" % katman
-        temiz[katman] = {"metin": metin, "odak": odak}
-
-    tum_metin = " ".join([temiz["motto"]] + [temiz[k]["metin"] for k in ("gunluk", "haftalik")])
-    if _has_banned(tum_metin, language):
+    cleaned_days, seen_dates, seen_messages = [], set(), set()
+    for card in days:
+        if not isinstance(card, dict):
+            return None, "gun_karti_sozluk_degil"
+        date = str(card.get("date") or "").strip()
+        evidence = expected_by_date.get(date)
+        if not evidence or date in seen_dates:
+            return None, "gun_tarihi_kanitla_uyusmuyor"
+        seen_dates.add(date)
+        focus = str(card.get("odak") or "").strip()
+        expected_focus = str(evidence.get("focus") or "").strip()
+        if language == "en":
+            expected_focus = FOCUS_TRANSLATIONS.get(expected_focus.casefold(), expected_focus)
+        if focus.casefold() not in {value.casefold() for value in allowed_focus} or focus.casefold() != expected_focus.casefold():
+            return None, "gun_odagi_kanitla_uyusmuyor"
+        cleaned = {"date": date, "odak": focus}
+        for field in ("ana_mesaj", "neden", "yon", "dikkat"):
+            value = card.get(field)
+            if not isinstance(value, str) or not value.strip():
+                return None, "%s_bos" % field
+            value = value.strip()
+            if _word_count(value) < MIN_WORDS[field] or _word_count(value) > MAX_WORDS[field]:
+                return None, "%s_kelime_siniri" % field
+            cleaned[field] = value
+        domains = card.get("alanlar", [])
+        if not isinstance(domains, list) or any(not isinstance(item, str) for item in domains):
+            return None, "alanlar_gecersiz"
+        domains = [item.strip().lower() for item in domains if item.strip()]
+        if len(domains) != len(set(domains)) or any(item not in ALLOWED_DOMAINS for item in domains):
+            return None, "alanlar_gecersiz"
+        if not set(domains).issubset(set(evidence.get("eligible_domains") or [])):
+            return None, "alan_kanitla_uyusmuyor"
+        cleaned["alanlar"] = domains
+        combined = " ".join(cleaned[field] for field in ("ana_mesaj", "neden", "yon", "dikkat"))
+        if not _reflects_focus(combined, focus, language):
+            return None, "gun_metni_odakla_uyusmuyor"
+        marker = cleaned["ana_mesaj"].casefold()
+        if marker in seen_messages:
+            return None, "tekrarli_ana_mesaj"
+        seen_messages.add(marker)
+        cleaned_days.append(cleaned)
+    if set(seen_dates) != set(expected_by_date):
+        return None, "gun_tarihleri_eksik"
+    all_text = " ".join([motto.strip()] + [" ".join(card[field] for field in ("ana_mesaj", "neden", "yon", "dikkat")) for card in cleaned_days])
+    if _has_banned(all_text, language):
         return None, "yasakli_ifade"
-    if _leaks_technical_terms(tum_metin):
+    if _has_future_claim(all_text, language):
+        return None, "kesin_gelecek_iddiasi"
+    if _leaks_technical_terms(all_text):
         return None, "teknik_terim_sizintisi"
-    if _has_imperative(tum_metin):
-        return None, "emir_kipi"
-    metinler = [temiz[k]["metin"].casefold() for k in ("gunluk", "haftalik")]
-    if len(set(metinler)) != len(metinler):
-        return None, "tekrarli_katman_metni"
-
-    return temiz, None
+    return {"motto": motto.strip(), "days": cleaned_days}, None
 
 
-def generate(daily_paket, weekly_paket, context=None, language="tr"):
-    """Doner: (sonuc, hata_bilgisi). sonuc None ise caller guncel
-    yorumun hazirlanamadigini gostermeli; sabit yoruma dusmemeli."""
+def generate(context, language="tr"):
     if not llm_enabled():
-        return None, {"asama": "kapali", "exc": None,
-                      "fallback_nedeni": "DIGEST_LLM_ENABLED=0", "sure_ms": 0}
-
-    t0 = time.time()
-    user_text = _user_text(daily_paket, weekly_paket, context, language)
-
+        return None, {"asama": "kapali", "fallback_nedeni": "DIGEST_LLM_ENABLED=0", "sure_ms": 0}
+    started = time.time()
     try:
-        payload = _call_bridge(user_text, language)
+        payload = _call_bridge(_user_text(context, language), language)
     except Exception as exc:
-        return None, {"asama": "bridge", "exc": exc,
-                      "fallback_nedeni": "bridge_cagrisi_basarisiz",
-                      "sure_ms": int((time.time() - t0) * 1000)}
-
+        return None, {"asama": "bridge", "exc": exc, "fallback_nedeni": "bridge_cagrisi_basarisiz", "sure_ms": int((time.time() - started) * 1000)}
     try:
         raw = json.loads(_response_text(payload))
     except Exception as exc:
-        return None, {"asama": "parse", "exc": exc,
-                      "fallback_nedeni": "yanit_ayristirilamadi",
-                      "sure_ms": int((time.time() - t0) * 1000)}
-
-    sonuc, neden = validate(raw, {
-        "gunluk": daily_paket or {},
-        "haftalik": weekly_paket or {},
-    }, language)
-    sure = int((time.time() - t0) * 1000)
-    if sonuc is None:
-        return None, {"asama": "validate", "exc": None,
-                      "fallback_nedeni": neden, "sure_ms": sure}
-    sonuc["sure_ms"] = sure
-    return sonuc, None
+        return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
+    result, reason = validate(raw, context, language)
+    elapsed = int((time.time() - started) * 1000)
+    if result is None:
+        return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": elapsed}
+    result["sure_ms"] = elapsed
+    return result, None

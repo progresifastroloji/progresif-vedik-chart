@@ -20,6 +20,7 @@ SCHEMA_VERSION = 2
 GENERATOR_VERSION = "digest_rules_v2"
 
 SNAPSHOT_HOUR = 12  # o gune ait gezegen goruntusunun ornekleme saati
+SNAPSHOT_EVIDENCE_VERSION = "daily-sky-evidence-v2"
 
 SIGN_TR = [
     "Koc", "Boga", "Ikizler", "Yengec", "Aslan", "Basak",

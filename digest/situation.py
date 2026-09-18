@@ -18,6 +18,7 @@ from .keys import (
     house_from,
     IST,
     month_days,
+    SNAPSHOT_EVIDENCE_VERSION,
     quality,
     week_days,
 )
@@ -68,19 +69,42 @@ def planet_signs_at(local_dt):
     )
 
     planets = {}
+    longitudes = {}
     for p in chart.get("planets", []):
         name = ABBR.get(p.get("abbr"))
         if name is None:
             continue
         planets[name] = int(p["sign_index"])
+        try:
+            longitudes[name] = float(p["longitude"])
+        except (KeyError, TypeError, ValueError):
+            pass
 
     if "Moon" not in planets:
         raise RuntimeError("transit Ay hesaplanamadi")
 
+    # Panchanga is calculated here, from the same verified sidereal positions
+    # as the transit snapshot.  It remains internal evidence: the writer gets
+    # only its bounded day-context values and may never expose these terms.
+    sun_longitude = longitudes.get("Sun")
+    moon_longitude = longitudes.get("Moon")
+    panchanga = {"status": "not_available"}
+    if sun_longitude is not None and moon_longitude is not None:
+        lunar_angle = (moon_longitude - sun_longitude) % 360.0
+        panchanga = {
+            "status": "available",
+            "tithi_number": min(30, int(lunar_angle / 12.0) + 1),
+            "paksha": "waxing" if lunar_angle < 180.0 else "waning",
+            "vara_weekday": local_dt.weekday(),
+            "moon_nakshatra_index": min(26, int((moon_longitude % 360.0) / (360.0 / 27.0))),
+        }
+
     return {
+        "evidence_version": SNAPSHOT_EVIDENCE_VERSION,
         "date": local_dt.date().isoformat(),
         "local_datetime": local_dt.isoformat(),
         "planets": planets,
+        "panchanga": panchanga,
     }
 
 
