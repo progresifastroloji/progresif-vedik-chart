@@ -78,6 +78,11 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         )
         self.assertEqual(context["days"][0]["focus"], "ilişki")
         self.assertIn("Copy each given focus exactly", prompt["output_instruction"])
+        self.assertEqual(
+            prompt["week"]["days"][0]["focus_anchors"],
+            list(paid_writer.ENGLISH_FOCUS_TERMS["relationships"]),
+        )
+        self.assertNotIn("focus_anchors", context["days"][0])
 
     def test_writer_rejects_unproven_domain_future_claim_and_technical_leak(self):
         context = week_context()

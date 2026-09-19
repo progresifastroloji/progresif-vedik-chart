@@ -126,12 +126,14 @@ def _user_text(context, language):
     week = context
     if language == "en":
         # The methodology requires copying each supplied focus exactly. Give
-        # the writer the same canonical English labels that validate() expects.
-        week = {**context, "days": [
-            {**day, "focus": FOCUS_TRANSLATIONS.get(str(day.get("focus") or "").casefold(), day.get("focus"))}
-            for day in context.get("days", [])
-        ]}
-    return json.dumps({"context_schema": "homepage_digest_context_v3", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": "Write every user-facing value in natural English. Copy each given focus exactly into odak." if language == "en" else "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz."}, ensure_ascii=False, indent=2)
+        # the writer the same canonical English labels and text anchors that
+        # validate() expects. These guide phrasing; they add no chart evidence.
+        def english_day(day):
+            focus = FOCUS_TRANSLATIONS.get(str(day.get("focus") or "").casefold(), day.get("focus"))
+            return {**day, "focus": focus, "focus_anchors": ENGLISH_FOCUS_TERMS.get(focus, ())}
+
+        week = {**context, "days": [english_day(day) for day in context.get("days", [])]}
+    return json.dumps({"context_schema": "homepage_digest_context_v3", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": "Write every user-facing value in natural English. Copy each given focus exactly into odak. For each day, include at least one of its focus_anchors verbatim in ana_mesaj, neden, yon, or dikkat; do not output focus_anchors." if language == "en" else "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz."}, ensure_ascii=False, indent=2)
 
 
 def _call_bridge(user_text, language):
