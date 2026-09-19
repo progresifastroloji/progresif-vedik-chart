@@ -93,7 +93,10 @@ def _word_count(text):
 
 def _leaks_technical_terms(text):
     lowered = (text or "").lower()
-    return any(term in lowered for term in (*_PLANETS, *_SIGNS, *_TERMS)) or bool(_HOUSE_PATTERN.search(lowered))
+    return any(
+        re.search(r"(?<!\w)%s(?!\w)" % re.escape(term), lowered)
+        for term in (*_PLANETS, *_SIGNS, *_TERMS)
+    ) or bool(_HOUSE_PATTERN.search(lowered))
 
 
 def _has_banned(text, language):
@@ -152,7 +155,8 @@ def _user_text(context, language):
             "yon ve dikkat alanlarının her biri 4-12 kelime olsun. "
             "Gelecekteki olayı kesin bildiren olacak, gelecek, gerçekleşecek, "
             "kesinleşecek, evleneceksin, ayrılacaksın, kazanacaksın, "
-            "kaybedeceksin sözcüklerini kullanma; bugünkü durumu ve öneriyi anlat."
+            "kaybedeceksin sözcüklerini kullanma; bugünkü durumu ve öneriyi anlat. "
+            "Gezegen, burç, ev, nakshatra, dasha ve transit adlarını hiçbir metin alanında anma."
         )
     return json.dumps({
         "context_schema": "homepage_digest_context_v3",

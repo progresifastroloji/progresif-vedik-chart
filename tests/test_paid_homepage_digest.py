@@ -105,6 +105,11 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         output["days"][2]["neden"] = "Transit bilgisi evdeki düzenini açıklıyor."
         self.assertEqual(paid_writer.validate(output, context)[1], "teknik_terim_sizintisi")
 
+    def test_technical_guard_matches_whole_terms_not_ordinary_word_fragments(self):
+        self.assertFalse(paid_writer._leaks_technical_terms("Kısa bir sunum için sakin hazırlık yap."))
+        self.assertTrue(paid_writer._leaks_technical_terms("Sun bugün ilişkinizi yönetiyor."))
+        self.assertTrue(paid_writer._leaks_technical_terms("Transit bilgisi sekizinci ev için konuşuyor."))
+
     def test_unknown_birth_time_has_no_house_or_domain_evidence(self):
         chart = {
             "birth": {"time_declaration": "unknown"},
