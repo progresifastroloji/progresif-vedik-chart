@@ -15,15 +15,22 @@ import uuid
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 
-_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "digest_data", "paid_digest.sqlite3")
+_LOCAL_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "digest_data", "paid_digest.sqlite3")
 
 GENERATOR_VERSION = "homepage-gemini-v4"
 METHODOLOGY_VERSION = "digest-methodology-v5"
 LOCK_TIMEOUT_MIN = 10
 
 
+def _default_db_path():
+    # Railway replaces the application container on each deploy. The attached
+    # volume is the only durable place for the weekly cache table.
+    volume_root = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    return os.path.join(volume_root, "digest", "paid_digest.sqlite3") if volume_root else _LOCAL_DB_PATH
+
+
 def _conn():
-    path = os.getenv("PAID_DIGEST_DB_PATH", _DB_PATH)
+    path = os.getenv("PAID_DIGEST_DB_PATH") or _default_db_path()
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row

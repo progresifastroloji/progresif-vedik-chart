@@ -146,6 +146,20 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
                 else:
                     os.environ["PAID_DIGEST_DB_PATH"] = previous
 
+    def test_week_cache_uses_railway_volume_when_no_explicit_db_path(self):
+        with tempfile.TemporaryDirectory() as volume_root, patch.dict(
+            os.environ, {"RAILWAY_VOLUME_MOUNT_PATH": volume_root}
+        ):
+            os.environ.pop("PAID_DIGEST_DB_PATH", None)
+            monday = date(2026, 9, 14)
+            payload = valid_output()
+            paid_store.set_homepage_week("user-a", "chart-a", payload, monday, "hash-a", "tr")
+            self.assertTrue(os.path.isfile(os.path.join(volume_root, "digest", "paid_digest.sqlite3")))
+            self.assertEqual(
+                paid_store.get_homepage_week("user-a", "chart-a", monday, "hash-a", "tr"),
+                payload,
+            )
+
     def test_route_generates_once_then_reuses_same_week_cache(self):
         app = Flask(__name__)
         app.register_blueprint(paid_routes.paid_digest_bp)
