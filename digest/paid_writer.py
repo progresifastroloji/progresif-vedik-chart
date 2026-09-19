@@ -140,9 +140,15 @@ def _user_text(context, language):
             "and 4-12 each in yon and dikkat."
         )
     else:
+        week = {**context, "days": [
+            {**day, "focus_anchors": FOCUS_TERMS.get(str(day.get("focus") or "").casefold(), ())}
+            for day in context.get("days", [])
+        ]}
         instruction = (
             "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz. "
-            "Her odak değerini kanıttan aynen kopyala. ana_mesaj 8-20, neden 8-24, "
+            "Her odak değerini kanıttan aynen kopyala. Her gün için focus_anchors listesindeki "
+            "en az bir ifadeyi ana_mesaj, neden, yon veya dikkat içinde aynen kullan; "
+            "focus_anchors listesini çıktıya koyma. ana_mesaj 8-20, neden 8-24, "
             "yon ve dikkat alanlarının her biri 4-12 kelime olsun."
         )
     return json.dumps({

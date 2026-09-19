@@ -85,7 +85,11 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertNotIn("focus_anchors", context["days"][0])
         self.assertIn("8-20 words in ana_mesaj", prompt["output_instruction"])
         turkish_prompt = json.loads(paid_writer._user_text(context, "tr"))
-        self.assertEqual(turkish_prompt["week"]["days"], context["days"])
+        self.assertEqual(
+            turkish_prompt["week"]["days"][0]["focus_anchors"],
+            list(paid_writer.FOCUS_TERMS["ilişki"]),
+        )
+        self.assertNotIn("focus_anchors", context["days"][0])
         self.assertIn("ana_mesaj 8-20", turkish_prompt["output_instruction"])
 
     def test_writer_rejects_unproven_domain_future_claim_and_technical_leak(self):
