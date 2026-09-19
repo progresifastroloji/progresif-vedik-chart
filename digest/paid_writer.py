@@ -133,7 +133,24 @@ def _user_text(context, language):
             return {**day, "focus": focus, "focus_anchors": ENGLISH_FOCUS_TERMS.get(focus, ())}
 
         week = {**context, "days": [english_day(day) for day in context.get("days", [])]}
-    return json.dumps({"context_schema": "homepage_digest_context_v3", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": "Write every user-facing value in natural English. Copy each given focus exactly into odak. For each day, include at least one of its focus_anchors verbatim in ana_mesaj, neden, yon, or dikkat; do not output focus_anchors." if language == "en" else "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz."}, ensure_ascii=False, indent=2)
+        instruction = (
+            "Write every user-facing value in natural English. Copy each given focus exactly into odak. "
+            "For each day, include at least one of its focus_anchors verbatim in ana_mesaj, neden, yon, or dikkat; "
+            "do not output focus_anchors. Use 8-20 words in ana_mesaj, 8-24 in neden, "
+            "and 4-12 each in yon and dikkat."
+        )
+    else:
+        instruction = (
+            "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz. "
+            "Her odak değerini kanıttan aynen kopyala. ana_mesaj 8-20, neden 8-24, "
+            "yon ve dikkat alanlarının her biri 4-12 kelime olsun."
+        )
+    return json.dumps({
+        "context_schema": "homepage_digest_context_v3",
+        "week": week,
+        "output_language": "English" if language == "en" else "Turkish",
+        "output_instruction": instruction,
+    }, ensure_ascii=False, indent=2)
 
 
 def _call_bridge(user_text, language):
