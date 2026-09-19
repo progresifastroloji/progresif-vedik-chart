@@ -156,7 +156,10 @@ def _user_text(context, language):
             "Gelecekteki olayı kesin bildiren olacak, gelecek, gerçekleşecek, "
             "kesinleşecek, evleneceksin, ayrılacaksın, kazanacaksın, "
             "kaybedeceksin sözcüklerini kullanma; bugünkü durumu ve öneriyi anlat. "
-            "Gezegen, burç, ev, nakshatra, dasha ve transit adlarını hiçbir metin alanında anma."
+            "Gezegen, burç, ev, nakshatra, dasha ve transit adlarını hiçbir metin alanında anma. "
+            "Evren sana, kozmik enerji, enerjini yükselt, şanslı gün, büyük değişim, "
+            "hayatın değişecek, kaderinde, dikkat! kalıplarını ve mutlaka, kesinlikle, "
+            "asla, tehlike, uyarı, garanti sözcüklerini kullanma."
         )
     return json.dumps({
         "context_schema": "homepage_digest_context_v3",
@@ -169,7 +172,7 @@ def _user_text(context, language):
 def _call_bridge(user_text, language):
     from vertex_bridge_client import call_vertex_bridge
     language_instruction = "Return natural English only. Do not use Turkish words or suffixes." if language == "en" else "Yalnız doğal Türkiye Türkçesi kullan."
-    request = {"systemInstruction": {"parts": [{"text": _METHODOLOGY_TEXT + "\n\n" + language_instruction}]}, "contents": [{"role": "user", "parts": [{"text": user_text}]}], "generationConfig": {"temperature": 0.65, "maxOutputTokens": 3072, "responseMimeType": "application/json", "thinkingConfig": {"thinkingLevel": "MINIMAL"}}}
+    request = {"systemInstruction": {"parts": [{"text": _METHODOLOGY_TEXT + "\n\n" + language_instruction}]}, "contents": [{"role": "user", "parts": [{"text": user_text}]}], "generationConfig": {"temperature": 0.4 if language == "tr" else 0.65, "maxOutputTokens": 3072, "responseMimeType": "application/json", "thinkingConfig": {"thinkingLevel": "MINIMAL"}}}
     _, payload = call_vertex_bridge(_safe_request_id(), request)
     return payload
 

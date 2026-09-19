@@ -92,6 +92,7 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertNotIn("focus_anchors", context["days"][0])
         self.assertIn("ana_mesaj 8-20", turkish_prompt["output_instruction"])
         self.assertIn("kesin bildiren olacak, gelecek", turkish_prompt["output_instruction"])
+        self.assertIn("asla, tehlike, uyarı, garanti", turkish_prompt["output_instruction"])
 
     def test_writer_rejects_unproven_domain_future_claim_and_technical_leak(self):
         context = week_context()
