@@ -123,7 +123,15 @@ def _response_text(payload):
 
 
 def _user_text(context, language):
-    return json.dumps({"context_schema": "homepage_digest_context_v3", "week": context, "output_language": "English" if language == "en" else "Turkish", "output_instruction": "Write every user-facing value in natural English. Use only the English focus labels." if language == "en" else "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz."}, ensure_ascii=False, indent=2)
+    week = context
+    if language == "en":
+        # The methodology requires copying each supplied focus exactly. Give
+        # the writer the same canonical English labels that validate() expects.
+        week = {**context, "days": [
+            {**day, "focus": FOCUS_TRANSLATIONS.get(str(day.get("focus") or "").casefold(), day.get("focus"))}
+            for day in context.get("days", [])
+        ]}
+    return json.dumps({"context_schema": "homepage_digest_context_v3", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": "Write every user-facing value in natural English. Copy each given focus exactly into odak." if language == "en" else "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz."}, ensure_ascii=False, indent=2)
 
 
 def _call_bridge(user_text, language):

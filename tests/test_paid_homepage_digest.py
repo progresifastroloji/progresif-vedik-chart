@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import unittest
 from datetime import date, datetime
@@ -67,6 +68,16 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(len(cleaned["days"]), 7)
         self.assertEqual(cleaned["days"][0]["yon"], "Söylenene değil yapılanlara bak.")
+
+    def test_english_writer_receives_exact_labels_expected_by_validator(self):
+        context = week_context()
+        prompt = json.loads(paid_writer._user_text(context, "en"))
+        self.assertEqual(
+            [day["focus"] for day in prompt["week"]["days"]],
+            [paid_writer.FOCUS_TRANSLATIONS[day["focus"]] for day in context["days"]],
+        )
+        self.assertEqual(context["days"][0]["focus"], "ilişki")
+        self.assertIn("Copy each given focus exactly", prompt["output_instruction"])
 
     def test_writer_rejects_unproven_domain_future_claim_and_technical_leak(self):
         context = week_context()
