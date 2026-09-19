@@ -149,7 +149,10 @@ def _user_text(context, language):
             "Her odak değerini kanıttan aynen kopyala. Her gün için focus_anchors listesindeki "
             "en az bir ifadeyi ana_mesaj, neden, yon veya dikkat içinde aynen kullan; "
             "focus_anchors listesini çıktıya koyma. ana_mesaj 8-20, neden 8-24, "
-            "yon ve dikkat alanlarının her biri 4-12 kelime olsun."
+            "yon ve dikkat alanlarının her biri 4-12 kelime olsun. "
+            "Gelecekteki olayı kesin bildiren olacak, gelecek, gerçekleşecek, "
+            "kesinleşecek, evleneceksin, ayrılacaksın, kazanacaksın, "
+            "kaybedeceksin sözcüklerini kullanma; bugünkü durumu ve öneriyi anlat."
         )
     return json.dumps({
         "context_schema": "homepage_digest_context_v3",
