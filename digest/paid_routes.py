@@ -23,7 +23,7 @@ import time
 from contextlib import closing
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from . import batch, paid_store, paid_writer, store
 from .keys import IST, SNAPSHOT_HOUR, current_hour_ist, week_start
@@ -222,6 +222,10 @@ def api_v2_pwa_digest_personal():
             sonuc_llm, hata_llm = paid_writer.generate(context, language=language)
 
             if sonuc_llm is None:
+                current_app.logger.warning(
+                    "homepage_week_generation_unavailable reason=%s language=%s",
+                    (hata_llm or {}).get("fallback_nedeni"), language,
+                )
                 return jsonify({
                     "ok": False,
                     "status": "generation_unavailable",
