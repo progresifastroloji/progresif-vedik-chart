@@ -97,6 +97,8 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
 
     def test_deep_writer_accepts_only_evidence_bound_safe_paragraph(self):
         day = week_context()["days"][1]
+        deep_prompt = json.loads(paid_writer._deep_user_text(day, "tr"))
+        self.assertIn("\"yorum\"", deep_prompt["output_instruction"])
         text, error = paid_writer.validate_deep({"yorum": "İş yükünün içindeki ana öncelik bugün daha görünür hale gelebilir. Sorumlulukların arasından gerçekten sonuç getirecek işi seçtiğinde, günün temposunu daha sakin taşırsın. Her talebe aynı anda yetişmeye çalışmak yerine yapılabilir bir sıraya bağlı kal. Bu yaklaşım, hem emeğini korumana hem de gün sonunda zihnini daha açık tutmana yardım eder. Küçük bir işi tamamlamak, yeni bir sözü aceleyle vermekten daha değerli olabilir. Gün içinde bir konu tekrar önüne geldiğinde, ilk tepkiyle karar vermek yerine elindeki işi ve sınırını yeniden hatırla. Böylece emeğinin nereye aktığını daha bilinçli seçebilir, akşam saatlerinde kendine daha az dağınık bir alan bırakabilirsin."}, day)
         self.assertIsNone(error)
         self.assertIn("İş yükünün", text)

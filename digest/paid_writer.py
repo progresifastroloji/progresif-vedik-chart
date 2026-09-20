@@ -161,11 +161,13 @@ def _deep_user_text(day, language):
     instruction = (
         "Return natural English only. Write one deeper, coherent paragraph of 90 to 180 words for this day. "
         "Develop the supplied focus into a more nuanced personal interpretation and practical guidance. Do not introduce facts outside the supplied evidence. "
-        "Never state a future outcome as certain or guaranteed; use conditional, choice-preserving language instead."
+        "Never state a future outcome as certain or guaranteed; use conditional, choice-preserving language instead. "
+        "Return only a JSON object with exactly one key: {\"yorum\": \"your paragraph\"}."
         if language == "en" else
         "Yalnız doğal Türkiye Türkçesi kullan. Bu gün için 90 ile 180 kelime arasında tek, daha derin ve akıcı bir paragraf yaz. "
         "Verilen odağı daha incelikli kişisel yorum ve uygulanabilir rehberlikle geliştir. Sağlanan kanıtın dışına çıkma. "
-        "Gelecek hakkında kesinlik, garanti veya vaat kurma; koşullu, seçimi kullanıcıda bırakan bir dil kullan."
+        "Gelecek hakkında kesinlik, garanti veya vaat kurma; koşullu, seçimi kullanıcıda bırakan bir dil kullan. "
+        "Yalnızca şu biçimde bir JSON nesnesi döndür: {\"yorum\": \"paragrafın\"}."
     )
     return json.dumps({"context_schema": "homepage_digest_deep_context_v1", "day": day, "output_language": "English" if language == "en" else "Turkish", "output_instruction": instruction}, ensure_ascii=False, indent=2)
 
