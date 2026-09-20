@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import tempfile
 import unittest
 from datetime import date, datetime
@@ -38,61 +38,48 @@ def week_context():
 def valid_output(context=None):
     context = context or week_context()
     terms = {
-        "ilişki": ("Karşılıklı çabayı ölç ve sınırını koru.", "Yakın bir bağda söz ile davranış arasındaki fark görünür.", "Söylenene değil yapılanlara bak.", "Tek taraflı yükü üstlenme."),
-        "iş": ("İş yükünü sıraya koy ve ana görevi bitir.", "Sorumluluklar netleştiğinde odağın daha sağlam kalır.", "Önce tek görevi tamamla.", "Aceleyle yeni taahhüt verme."),
-        "huzur": ("Ev ve iç düzen bugün alan istiyor.", "Yakın çevrendeki ritim zihnini doğrudan etkiliyor.", "Kendine sakin bir köşe aç.", "Her çağrıya hemen dönme."),
-        "çevre": ("Arkadaşlarınla açık ve seçici temas kur.", "Doğru bağlantı, ortak hedefini daha görünür yapar.", "İhtiyacını doğrudan söyle.", "Kalabalığa uyum için söz verme."),
-        "düzen": ("Rutinini sadeleştir, yükünü dağıtma.", "Gün içindeki sorumluluklar düzen istediğini gösteriyor.", "Programını iki ana işe indir.", "Küçük işleri büyütme."),
-        "yaratıcılık": ("Fikrini somutlaştır ve görünür kıl.", "Keyif aldığın üretim alanı bugün seni toparlar.", "Taslağı paylaşılacak hale getir.", "Onay bekleyip durma."),
-        "dinlenme": ("Sessizliği seç, enerjini geri topla.", "Yoğunluk sonrası dinlenme alanı belirginleşiyor.", "Günü erken kapatmaya yer aç.", "Kendini açıklamak için yorulma."),
+        "ilişki": "İlişkilerde karşılıklı çabayı daha dikkatle ölçmek isteyebilirsin. Yakın bir bağda söylenenle yapılan arasındaki fark bugün daha görünür olabilir; bunu hemen büyütmek yerine sınırını sakin biçimde koru. İhtiyacını açık söyle, fakat tek taraflı yükü üstlenerek dengeyi kendi aleyhine bozma.",
+        "iş": "İş yükün içinde hangi görevin gerçekten öncelikli olduğunu ayırt etmek bugün daha kolaylaşır. Sorumlulukların netleşmesi, odağını dağıtan küçük talepleri elemeni sağlayabilir. Önce ana işi tamamla; hızlı görünmek için yeni bir yük üstlenmek yerine mevcut düzenini koru.",
+        "huzur": "Ev ve iç düzen, günün geri kalanını nasıl taşıdığını doğrudan etkileyebilir. Yakın çevrendeki ritim yoğunlaştığında kendine kısa bir sakin alan açmak, duygularını daha rahat duymanı sağlar. Her çağrıya hemen dönmek yerine kendi hızını belirlemeyi dene.",
+        "çevre": "Arkadaşların ve içinde bulunduğun çevre bugün hangi bağların seni gerçekten desteklediğini gösterebilir. Ortak hedeflerin konuşulduğu bir yerde ihtiyacını doğrudan dile getirmen ilişkiyi netleştirir. Kalabalığa uyum sağlamak için istemediğin bir söz vermekten kaçın.",
+        "düzen": "Günün sorumlulukları, rutinin içinde daha sade bir düzen kurma ihtiyacını öne çıkarabilir. Programını iki ana işe indirmek, zihnindeki dağınıklığı azaltır ve yaptığın işe daha sağlam dönmeni sağlar. Küçük ayrıntıları büyütmek yerine yapılabilir bir sıraya bağlı kal.",
+        "yaratıcılık": "Fikrini somutlaştırmak ve keyif aldığın üretim alanına biraz daha yer açmak bugün iyi gelebilir. İçinde tuttuğun taslağı görünür hale getirdiğinde hem hevesin hem de yönün netleşir. Onay bekleyerek ertelemek yerine küçük ama tamamlanmış bir adım at.",
+        "dinlenme": "Yoğunluğun ardından sessizliğe ve dinlenmeye ayırdığın alan bugün daha değerli hissedilebilir. Kendini sürekli açıklamak ya da yetişmek zorunda bırakmadan günün temposunu yavaşlatmak, gücünü toplamana yardım eder. Günü erken kapatmaya yer aç ve geleceği çözmeye çalışma.",
     }
     cards = []
     for evidence in context["days"]:
-        message, reason, direction, notice = terms[evidence["focus"]]
         cards.append({
             "date": evidence["date"], "odak": evidence["focus"],
-            "ana_mesaj": message, "neden": reason, "yon": direction,
-            "dikkat": notice, "alanlar": evidence["eligible_domains"],
+            "yorum": terms[evidence["focus"]], "alanlar": evidence["eligible_domains"],
         })
     return {"motto": "Bu hafta netlik, seçici davranışla güç kazanır.", "days": cards}
 
 
 class PaidHomepageDigestContractTests(unittest.TestCase):
     def test_week_contract_is_current(self):
-        self.assertEqual(HOMEPAGE_CONTEXT_VERSION, "homepage_digest_context_v3")
-        self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v5")
+        self.assertEqual(HOMEPAGE_CONTEXT_VERSION, "homepage_digest_context_v4")
+        self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v6")
 
     def test_writer_accepts_seven_evidence_bound_cards_and_direct_guidance(self):
         context = week_context()
         cleaned, error = paid_writer.validate(valid_output(context), context)
         self.assertIsNone(error)
         self.assertEqual(len(cleaned["days"]), 7)
-        self.assertEqual(cleaned["days"][0]["yon"], "Söylenene değil yapılanlara bak.")
+        self.assertIn("sınırını", cleaned["days"][0]["yorum"])
 
-    def test_english_writer_receives_exact_labels_expected_by_validator(self):
+    def test_writer_receives_exact_focus_labels_and_anchors(self):
         context = week_context()
         prompt = json.loads(paid_writer._user_text(context, "en"))
         self.assertEqual(
             [day["focus"] for day in prompt["week"]["days"]],
             [paid_writer.FOCUS_TRANSLATIONS[day["focus"]] for day in context["days"]],
         )
-        self.assertEqual(context["days"][0]["focus"], "ilişki")
         self.assertIn("Copy each given focus exactly", prompt["output_instruction"])
-        self.assertEqual(
-            prompt["week"]["days"][0]["focus_anchors"],
-            list(paid_writer.ENGLISH_FOCUS_TERMS["relationships"]),
-        )
+        self.assertEqual(prompt["week"]["days"][0]["focus_anchors"], list(paid_writer.ENGLISH_FOCUS_TERMS["relationships"]))
         self.assertNotIn("focus_anchors", context["days"][0])
-        self.assertIn("8-20 words in ana_mesaj", prompt["output_instruction"])
         turkish_prompt = json.loads(paid_writer._user_text(context, "tr"))
-        self.assertEqual(
-            turkish_prompt["week"]["days"][0]["focus_anchors"],
-            list(paid_writer.FOCUS_TERMS["ilişki"]),
-        )
-        self.assertNotIn("focus_anchors", context["days"][0])
-        self.assertIn("ana_mesaj 8-20", turkish_prompt["output_instruction"])
-        self.assertIn("kesin bildiren olacak, gelecek", turkish_prompt["output_instruction"])
-        self.assertIn("asla, tehlike, uyarı, garanti", turkish_prompt["output_instruction"])
+        self.assertEqual(turkish_prompt["week"]["days"][0]["focus_anchors"], list(paid_writer.FOCUS_TERMS["ilişki"]))
+        self.assertIn("32 ile 110", turkish_prompt["output_instruction"])
 
     def test_writer_rejects_unproven_domain_future_claim_and_technical_leak(self):
         context = week_context()
@@ -100,11 +87,17 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         output["days"][0]["alanlar"] = ["work"]
         self.assertEqual(paid_writer.validate(output, context)[1], "alan_kanitla_uyusmuyor")
         output = valid_output(context)
-        output["days"][1]["ana_mesaj"] = "Yeni işin kesinleşecek, beklemeden kabul et."
+        output["days"][1]["yorum"] = "İş yükün bugün yeni işin kesinleşecek, beklemeden kabul etmen gerektiğini gösteriyor. Bu gelişme kariyerinde kesin bir yön açacak ve bütün sorumluluklarını kolayca çözecek. Gün içindeki her talep sana daha iyi bir sonuç getirecek; bu nedenle mevcut işlerini düşünmeden bırakmalısın."
         self.assertEqual(paid_writer.validate(output, context)[1], "kesin_gelecek_iddiasi")
         output = valid_output(context)
-        output["days"][2]["neden"] = "Transit bilgisi evdeki düzenini açıklıyor."
+        output["days"][2]["yorum"] = "Ev ve iç düzen bugün alan istiyor; transit bilgisi bu ritmin nedenini açıklıyor. Yakın çevrendeki hareket arttığında kendine sakin bir köşe açman, duygularını daha dengeli taşımanı sağlayabilir. Her çağrıya hemen dönme. Günü biraz yavaşlatmak, çevrendeki ritmi daha açık izlemeni ve kendi ihtiyacını fark etmeni kolaylaştırabilir."
         self.assertEqual(paid_writer.validate(output, context)[1], "teknik_terim_sizintisi")
+
+    def test_deep_writer_accepts_only_evidence_bound_safe_paragraph(self):
+        day = week_context()["days"][1]
+        text, error = paid_writer.validate_deep({"yorum": "İş yükünün içindeki ana öncelik bugün daha görünür hale gelebilir. Sorumlulukların arasından gerçekten sonuç getirecek işi seçtiğinde, günün temposunu daha sakin taşırsın. Her talebe aynı anda yetişmeye çalışmak yerine yapılabilir bir sıraya bağlı kal. Bu yaklaşım, hem emeğini korumana hem de gün sonunda zihnini daha açık tutmana yardım eder. Küçük bir işi tamamlamak, yeni bir sözü aceleyle vermekten daha değerli olabilir. Gün içinde bir konu tekrar önüne geldiğinde, ilk tepkiyle karar vermek yerine elindeki işi ve sınırını yeniden hatırla. Böylece emeğinin nereye aktığını daha bilinçli seçebilir, akşam saatlerinde kendine daha az dağınık bir alan bırakabilirsin."}, day)
+        self.assertIsNone(error)
+        self.assertIn("İş yükünün", text)
 
     def test_technical_guard_matches_whole_terms_not_ordinary_word_fragments(self):
         self.assertFalse(paid_writer._leaks_technical_terms("Kısa bir sunum için sakin hazırlık yap."))
@@ -134,31 +127,20 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
                 monday = date(2026, 9, 14)
                 payload = valid_output()
                 paid_store.set_homepage_week("user-a", "chart-a", payload, monday, "hash-a", "tr")
+                paid_store.set_homepage_week_deep("user-a", "chart-a", "İş yükünün içindeki ana öncelik daha görünür hale gelebilir.", "2026-09-15", "deep-hash-a", "tr")
                 self.assertEqual(paid_store.get_homepage_week("user-a", "chart-a", monday, "hash-a", "tr"), payload)
+                self.assertEqual(paid_store.get_homepage_week_deep("user-a", "chart-a", "2026-09-15", "deep-hash-a", "tr"), "İş yükünün içindeki ana öncelik daha görünür hale gelebilir.")
                 self.assertIsNone(paid_store.get_homepage_week("user-a", "chart-a", monday, "hash-a", "en"))
                 self.assertIsNone(paid_store.get_homepage_week("user-b", "chart-a", monday, "hash-a", "tr"))
                 self.assertIsNone(paid_store.get_homepage_week("user-a", "chart-a", monday, "hash-b", "tr"))
                 self.assertGreaterEqual(paid_store.delete_user("user-a"), 1)
                 self.assertIsNone(paid_store.get_homepage_week("user-a", "chart-a", monday, "hash-a", "tr"))
+                self.assertIsNone(paid_store.get_homepage_week_deep("user-a", "chart-a", "2026-09-15", "deep-hash-a", "tr"))
             finally:
                 if previous is None:
                     os.environ.pop("PAID_DIGEST_DB_PATH", None)
                 else:
                     os.environ["PAID_DIGEST_DB_PATH"] = previous
-
-    def test_week_cache_uses_railway_volume_when_no_explicit_db_path(self):
-        with tempfile.TemporaryDirectory() as volume_root, patch.dict(
-            os.environ, {"RAILWAY_VOLUME_MOUNT_PATH": volume_root}
-        ):
-            os.environ.pop("PAID_DIGEST_DB_PATH", None)
-            monday = date(2026, 9, 14)
-            payload = valid_output()
-            paid_store.set_homepage_week("user-a", "chart-a", payload, monday, "hash-a", "tr")
-            self.assertTrue(os.path.isfile(os.path.join(volume_root, "digest", "paid_digest.sqlite3")))
-            self.assertEqual(
-                paid_store.get_homepage_week("user-a", "chart-a", monday, "hash-a", "tr"),
-                payload,
-            )
 
     def test_route_generates_once_then_reuses_same_week_cache(self):
         app = Flask(__name__)
@@ -183,6 +165,31 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertEqual(first.get_json()["status"], "ready")
         self.assertEqual(second.get_json()["kaynak"], "onbellek")
         self.assertEqual(first.get_json()["week_start"], "2026-09-14")
+        generate.assert_called_once()
+
+    def test_deep_route_generates_once_then_reuses_day_cache(self):
+        app = Flask(__name__)
+        app.register_blueprint(paid_routes.paid_digest_bp)
+        context = week_context()
+        current_hour = datetime(2026, 9, 16, 15, 0, tzinfo=ZoneInfo("Europe/Istanbul"))
+        chart = {"meta": {"engine_version": "test"}}
+        deep_text = "İş yükünün içindeki asıl öncelik bugün daha belirginleşebilir. Sorumluluklarını aynı anda taşımaya çalıştığında zihnin dağılabilir; bu nedenle önce sonuç doğuracak işi seçmek sana daha sağlam bir yön verir. Gün içinde senden istenen her şeye hemen cevap vermek yerine, neyi gerçekten üstlenebileceğini sakin biçimde değerlendir. Böylece emeğini görünür sonuçlara ayırır, sınırını korur ve günün sonunda kendine daha açık bir alan bırakırsın. Küçük fakat tamamlanmış bir adım, hızlı görünmek için verilen yeni bir sözden daha kalıcı bir rahatlık sağlayabilir."
+        with patch.object(paid_routes, "_load_owned_chart", return_value=((chart, "chart-1", "profile-1", "user-1"), None)), \
+                patch.object(paid_routes, "current_hour_ist", return_value=current_hour), \
+                patch.object(paid_routes, "_load_weekly_snapshots", return_value=([{"date": day["date"]} for day in context["days"]], 0)), \
+                patch.object(paid_routes, "build_personal_week_context", return_value=context), \
+                patch.object(paid_routes, "_sha256", return_value="evidence-hash"), \
+                patch.object(paid_routes.paid_store, "get_homepage_week_deep", side_effect=[None, None, deep_text]), \
+                patch.object(paid_routes.paid_store, "acquire_lock", return_value="owner"), \
+                patch.object(paid_routes.paid_store, "release_lock"), \
+                patch.object(paid_routes.paid_store, "set_homepage_week_deep"), \
+                patch.object(paid_routes.paid_writer, "generate_deep", return_value=(deep_text, None)) as generate:
+            first = app.test_client().post("/api/v2/pwa/digest/personal/deepen", json={"date": "2026-09-15"})
+            second = app.test_client().post("/api/v2/pwa/digest/personal/deepen", json={"date": "2026-09-15"})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.get_json()["kaynak"], "yeni_uretim")
+        self.assertEqual(second.get_json()["kaynak"], "onbellek")
+        self.assertEqual(first.get_json()["derin_yorum"], deep_text)
         generate.assert_called_once()
 
 

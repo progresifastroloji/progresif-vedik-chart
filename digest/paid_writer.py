@@ -11,8 +11,8 @@ import re
 import time
 import uuid
 
-MAX_WORDS = {"motto": 20, "ana_mesaj": 30, "neden": 36, "yon": 20, "dikkat": 20}
-MIN_WORDS = {"ana_mesaj": 4, "neden": 5, "yon": 2, "dikkat": 2}
+MAX_WORDS = {"motto": 20, "yorum": 110, "derin_yorum": 180}
+MIN_WORDS = {"yorum": 32, "derin_yorum": 90}
 ALLOWED_FOCUS = {
     "kendin", "kaynak", "girişim", "huzur", "yaratıcılık", "düzen",
     "ilişki", "derinlik", "anlam", "iş", "çevre", "dinlenme",
@@ -69,6 +69,11 @@ _PLANETS = ("güneş", "gunes", "ay burcu", "mars", "merkür", "merkur", "jüpit
 _SIGNS = ("koç", "koc burcu", "boğa", "boga", "i̇kizler", "ikizler", "yengeç", "yengec", "aslan burcu", "başak", "basak", "terazi", "akrep", "yay burcu", "oğlak", "oglak", "kova burcu", "balık burcu", "balik burcu", "aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra", "scorpio", "sagittarius", "capricorn", "aquarius", "pisces")
 _TERMS = ("nakshatra", "varga", "dasha", "dasa", "yükselen", "yukselen", "lagna", "transit", "retro", "gochara", "bhava", "rashi", "burç haritası", "burc haritasi", "panchanga", "tithi")
 _HOUSE_PATTERN = re.compile(r"\b(?:\d{1,2}\.?\s*(?:ev|house)|birinci ev|ikinci ev|üçüncü ev|ucuncu ev|dördüncü ev|dorduncu ev|beşinci ev|besinci ev|altıncı ev|altinci ev|yedinci ev|sekizinci ev|dokuzuncu ev|onuncu ev|on birinci ev|on ikinci ev)\b", re.IGNORECASE)
+_TECHNICAL_TERM_PATTERN = re.compile(
+    r"(?<![0-9A-Za-zÇĞİıÖŞÜçğöşü])(?:%s)(?![0-9A-Za-zÇĞİıÖŞÜçğöşü])" %
+    "|".join(re.escape(term) for term in (*_PLANETS, *_SIGNS, *_TERMS)),
+    re.IGNORECASE,
+)
 
 
 def _load_methodology():
@@ -93,10 +98,7 @@ def _word_count(text):
 
 def _leaks_technical_terms(text):
     lowered = (text or "").lower()
-    return any(
-        re.search(r"(?<!\w)%s(?!\w)" % re.escape(term), lowered)
-        for term in (*_PLANETS, *_SIGNS, *_TERMS)
-    ) or bool(_HOUSE_PATTERN.search(lowered))
+    return bool(_TECHNICAL_TERM_PATTERN.search(lowered)) or bool(_HOUSE_PATTERN.search(lowered))
 
 
 def _has_banned(text, language):
@@ -128,19 +130,15 @@ def _response_text(payload):
 def _user_text(context, language):
     week = context
     if language == "en":
-        # The methodology requires copying each supplied focus exactly. Give
-        # the writer the same canonical English labels and text anchors that
-        # validate() expects. These guide phrasing; they add no chart evidence.
         def english_day(day):
             focus = FOCUS_TRANSLATIONS.get(str(day.get("focus") or "").casefold(), day.get("focus"))
             return {**day, "focus": focus, "focus_anchors": ENGLISH_FOCUS_TERMS.get(focus, ())}
 
         week = {**context, "days": [english_day(day) for day in context.get("days", [])]}
         instruction = (
-            "Write every user-facing value in natural English. Copy each given focus exactly into odak. "
-            "For each day, include at least one of its focus_anchors verbatim in ana_mesaj, neden, yon, or dikkat; "
-            "do not output focus_anchors. Use 8-20 words in ana_mesaj, 8-24 in neden, "
-            "and 4-12 each in yon and dikkat."
+            "Return natural English only. Copy each given focus exactly into odak. Each day must contain one coherent paragraph of 32 to 110 words. "
+            "Include at least one supplied focus_anchors phrase verbatim in the paragraph, but do not output focus_anchors. "
+            "First identify the day's emphasis, then explain its personal meaning, then offer calm practical guidance."
         )
     else:
         week = {**context, "days": [
@@ -148,25 +146,22 @@ def _user_text(context, language):
             for day in context.get("days", [])
         ]}
         instruction = (
-            "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz. "
-            "Her odak değerini kanıttan aynen kopyala. Her gün için focus_anchors listesindeki "
-            "en az bir ifadeyi ana_mesaj, neden, yon veya dikkat içinde aynen kullan; "
-            "focus_anchors listesini çıktıya koyma. ana_mesaj 8-20, neden 8-24, "
-            "yon ve dikkat alanlarının her biri 4-12 kelime olsun. "
-            "Gelecekteki olayı kesin bildiren olacak, gelecek, gerçekleşecek, "
-            "kesinleşecek, evleneceksin, ayrılacaksın, kazanacaksın, "
-            "kaybedeceksin sözcüklerini kullanma; bugünkü durumu ve öneriyi anlat. "
-            "Gezegen, burç, ev, nakshatra, dasha ve transit adlarını hiçbir metin alanında anma. "
-            "Evren sana, kozmik enerji, enerjini yükselt, şanslı gün, büyük değişim, "
-            "hayatın değişecek, kaderinde, dikkat! kalıplarını ve mutlaka, kesinlikle, "
-            "asla, tehlike, uyarı, garanti sözcüklerini kullanma."
+            "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz. Her odak değerini kanıttan aynen kopyala. "
+            "Her gün için 32 ile 110 kelime arasında tek, akıcı paragraf yaz ve focus_anchors listesindeki en az bir ifadeyi paragrafta aynen kullan; "
+            "focus_anchors listesini çıktıya koyma. Paragraf önce günün tespitini, sonra bunun kişisel anlamını, ardından sakin ve uygulanabilir rehberliği taşısın."
         )
-    return json.dumps({
-        "context_schema": "homepage_digest_context_v3",
-        "week": week,
-        "output_language": "English" if language == "en" else "Turkish",
-        "output_instruction": instruction,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps({"context_schema": "homepage_digest_context_v4", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": instruction}, ensure_ascii=False, indent=2)
+
+
+def _deep_user_text(day, language):
+    instruction = (
+        "Return natural English only. Write one deeper, coherent paragraph of 90 to 180 words for this day. "
+        "Develop the supplied focus into a more nuanced personal interpretation and practical guidance. Do not introduce facts outside the supplied evidence."
+        if language == "en" else
+        "Yalnız doğal Türkiye Türkçesi kullan. Bu gün için 90 ile 180 kelime arasında tek, daha derin ve akıcı bir paragraf yaz. "
+        "Verilen odağı daha incelikli kişisel yorum ve uygulanabilir rehberlikle geliştir. Sağlanan kanıtın dışına çıkma."
+    )
+    return json.dumps({"context_schema": "homepage_digest_deep_context_v1", "day": day, "output_language": "English" if language == "en" else "Turkish", "output_instruction": instruction}, ensure_ascii=False, indent=2)
 
 
 def _call_bridge(user_text, language):
@@ -211,14 +206,13 @@ def validate(payload, context, language="tr"):
         if focus.casefold() not in {value.casefold() for value in allowed_focus} or focus.casefold() != expected_focus.casefold():
             return None, "gun_odagi_kanitla_uyusmuyor"
         cleaned = {"date": date, "odak": focus}
-        for field in ("ana_mesaj", "neden", "yon", "dikkat"):
-            value = card.get(field)
-            if not isinstance(value, str) or not value.strip():
-                return None, "%s_bos" % field
-            value = value.strip()
-            if _word_count(value) < MIN_WORDS[field] or _word_count(value) > MAX_WORDS[field]:
-                return None, "%s_kelime_siniri" % field
-            cleaned[field] = value
+        yorum = card.get("yorum")
+        if not isinstance(yorum, str) or not yorum.strip():
+            return None, "yorum_bos"
+        yorum = yorum.strip()
+        if _word_count(yorum) < MIN_WORDS["yorum"] or _word_count(yorum) > MAX_WORDS["yorum"]:
+            return None, "yorum_kelime_siniri"
+        cleaned["yorum"] = yorum
         domains = card.get("alanlar", [])
         if not isinstance(domains, list) or any(not isinstance(item, str) for item in domains):
             return None, "alanlar_gecersiz"
@@ -228,17 +222,16 @@ def validate(payload, context, language="tr"):
         if not set(domains).issubset(set(evidence.get("eligible_domains") or [])):
             return None, "alan_kanitla_uyusmuyor"
         cleaned["alanlar"] = domains
-        combined = " ".join(cleaned[field] for field in ("ana_mesaj", "neden", "yon", "dikkat"))
-        if not _reflects_focus(combined, focus, language):
+        if not _reflects_focus(yorum, focus, language):
             return None, "gun_metni_odakla_uyusmuyor"
-        marker = cleaned["ana_mesaj"].casefold()
+        marker = yorum.casefold()
         if marker in seen_messages:
-            return None, "tekrarli_ana_mesaj"
+            return None, "tekrarli_yorum"
         seen_messages.add(marker)
         cleaned_days.append(cleaned)
     if set(seen_dates) != set(expected_by_date):
         return None, "gun_tarihleri_eksik"
-    all_text = " ".join([motto.strip()] + [" ".join(card[field] for field in ("ana_mesaj", "neden", "yon", "dikkat")) for card in cleaned_days])
+    all_text = " ".join([motto.strip()] + [card["yorum"] for card in cleaned_days])
     if _has_banned(all_text, language):
         return None, "yasakli_ifade"
     if _has_future_claim(all_text, language):
@@ -246,6 +239,32 @@ def validate(payload, context, language="tr"):
     if _leaks_technical_terms(all_text):
         return None, "teknik_terim_sizintisi"
     return {"motto": motto.strip(), "days": cleaned_days}, None
+
+
+def validate_deep(payload, day, language="tr"):
+    """Premium ayrıntının yalnız seçilen günün kanıtına bağlı kalmasını sağlar."""
+    if not isinstance(payload, dict):
+        return None, "json_sozluk_degil"
+    yorum = payload.get("yorum")
+    if not isinstance(yorum, str) or not yorum.strip():
+        return None, "derin_yorum_bos"
+    yorum = yorum.strip()
+    if _word_count(yorum) < MIN_WORDS["derin_yorum"] or _word_count(yorum) > MAX_WORDS["derin_yorum"]:
+        return None, "derin_yorum_kelime_siniri"
+    focus = str((day or {}).get("focus") or "").strip()
+    if not focus:
+        return None, "gun_odagi_yok"
+    if language == "en":
+        focus = FOCUS_TRANSLATIONS.get(focus.casefold(), focus)
+    if not _reflects_focus(yorum, focus, language):
+        return None, "derin_yorum_odakla_uyusmuyor"
+    if _has_banned(yorum, language):
+        return None, "yasakli_ifade"
+    if _has_future_claim(yorum, language):
+        return None, "kesin_gelecek_iddiasi"
+    if _leaks_technical_terms(yorum):
+        return None, "teknik_terim_sizintisi"
+    return yorum, None
 
 
 def generate(context, language="tr"):
@@ -266,3 +285,22 @@ def generate(context, language="tr"):
         return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": elapsed}
     result["sure_ms"] = elapsed
     return result, None
+
+
+def generate_deep(day, language="tr"):
+    if not llm_enabled():
+        return None, {"asama": "kapali", "fallback_nedeni": "DIGEST_LLM_ENABLED=0", "sure_ms": 0}
+    started = time.time()
+    try:
+        payload = _call_bridge(_deep_user_text(day, language), language)
+    except Exception as exc:
+        return None, {"asama": "bridge", "exc": exc, "fallback_nedeni": "bridge_cagrisi_basarisiz", "sure_ms": int((time.time() - started) * 1000)}
+    try:
+        raw = json.loads(_response_text(payload))
+    except Exception as exc:
+        return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
+    result, reason = validate_deep(raw, day, language)
+    elapsed = int((time.time() - started) * 1000)
+    if result is None:
+        return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": elapsed}
+    return result, {"sure_ms": elapsed}

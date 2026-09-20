@@ -186,6 +186,7 @@ def api_v2_pwa_digest_personal():
                 "profile_id": profile_id,
                 "digest": onbellek,
                 "context_version": HOMEPAGE_CONTEXT_VERSION,
+                "week_start": monday.isoformat(),
             })
 
         lock_key = "homepage:week-gemini:%s:%s:%s" % (owner_user_id, chart_id, evidence_hash)
@@ -215,6 +216,7 @@ def api_v2_pwa_digest_personal():
                     "profile_id": profile_id,
                     "digest": onbellek,
                     "context_version": HOMEPAGE_CONTEXT_VERSION,
+                    "week_start": monday.isoformat(),
                 })
 
             sonuc_llm, hata_llm = paid_writer.generate(context, language=language)
@@ -256,3 +258,92 @@ def api_v2_pwa_digest_personal():
             "status": "generation_unavailable",
             "fallback_nedeni": "beklenmeyen_sunucu_hatasi",
         }), 200
+
+
+@paid_digest_bp.route("/api/v2/pwa/digest/personal/deepen", methods=["POST"])
+def api_v2_pwa_digest_personal_deepen():
+    """Premium kullanici icin secili gunun ayrintili yorumunu getirir.
+
+    Bu endpoint web sunucusunun Premium kontrolunun arkasindadir. Railway
+    tarafinda yine de kullanici/chart sahipligi dogrulanir; ayrintili metin
+    ayni kanit ozeti icin bir kez uretilip kullaniciya ozel saklanir.
+    """
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli istek gövdesi gerekli")
+        language = str(data.get("language") or "tr").strip().lower()
+        if language not in {"tr", "en"}:
+            raise ValueError("Geçerli çıktı dili gerekli")
+        requested_day = str(data.get("date") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", requested_day):
+            raise ValueError("Geçerli gün gerekli")
+
+        sonuc, hata = _load_owned_chart(data)
+        if hata:
+            kod, http_status = hata
+            return jsonify({"ok": False, "status": kod, "error_code": "beta_chart_%s" % kod}), http_status
+        chart, chart_id, profile_id, owner_user_id = sonuc
+
+        local_hour = current_hour_ist()
+        monday = week_start(local_hour.date())
+        weekly_snapshots, _ = _load_weekly_snapshots(monday)
+        if weekly_snapshots is None:
+            return jsonify({"ok": False, "status": "generation_pending", "fallback_nedeni": "durum_paketi_hazir_degil"}), 200
+        context = build_personal_week_context(
+            chart,
+            monday,
+            weekly_snapshots,
+            julian_day_for_date=_julian_day_for_week_date,
+        )
+        if context is None:
+            return jsonify({"ok": False, "status": "generation_pending", "fallback_nedeni": "haftalik_kanit_paketi_hazir_degil"}), 200
+        day_context = next((day for day in context["days"] if day.get("date") == requested_day), None)
+        if day_context is None:
+            return jsonify({"ok": False, "status": "day_not_in_current_week"}), 400
+        evidence_hash = _sha256({
+            "chart_hash": _sha256(chart),
+            "day": day_context,
+            "language": language,
+            "snapshot_hash": _sha256(weekly_snapshots),
+            "methodology_version": HOMEPAGE_METHODOLOGY_VERSION,
+        })
+        cached = paid_store.get_homepage_week_deep(
+            owner_user_id, chart_id, requested_day, evidence_hash, language,
+            generator_version=paid_store.GENERATOR_VERSION,
+            methodology_version=HOMEPAGE_METHODOLOGY_VERSION,
+        )
+        if cached:
+            return jsonify({"ok": True, "status": "ready", "kaynak": "onbellek", "derin_yorum": cached})
+
+        lock_key = "homepage:week-deep-gemini:%s:%s:%s:%s" % (owner_user_id, chart_id, requested_day, evidence_hash)
+        sahibi = paid_store.acquire_lock(lock_key)
+        if sahibi is None:
+            return jsonify({"ok": False, "status": "generation_pending", "fallback_nedeni": "ayni_istek_uretiliyor"}), 200
+        try:
+            cached = paid_store.get_homepage_week_deep(
+                owner_user_id, chart_id, requested_day, evidence_hash, language,
+                generator_version=paid_store.GENERATOR_VERSION,
+                methodology_version=HOMEPAGE_METHODOLOGY_VERSION,
+            )
+            if cached:
+                return jsonify({"ok": True, "status": "ready", "kaynak": "onbellek", "derin_yorum": cached})
+            deep_text, deep_error = paid_writer.generate_deep(day_context, language=language)
+            if deep_text is None:
+                return jsonify({
+                    "ok": False,
+                    "status": "generation_unavailable",
+                    "fallback_nedeni": (deep_error or {}).get("fallback_nedeni"),
+                }), 200
+            paid_store.set_homepage_week_deep(
+                owner_user_id, chart_id, deep_text, requested_day, evidence_hash, language,
+                generator_version=paid_store.GENERATOR_VERSION,
+                methodology_version=HOMEPAGE_METHODOLOGY_VERSION,
+            )
+        finally:
+            paid_store.release_lock(lock_key, sahibi)
+        return jsonify({"ok": True, "status": "ready", "kaynak": "yeni_uretim", "derin_yorum": deep_text})
+    except (TypeError, ValueError) as e:
+        return jsonify({"ok": False, "error": "Geçersiz derinleştirme isteği: %s" % e}), 400
+    except Exception:
+        return jsonify({"ok": False, "status": "generation_unavailable", "fallback_nedeni": "beklenmeyen_sunucu_hatasi"}), 200

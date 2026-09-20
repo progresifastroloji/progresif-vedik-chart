@@ -38,8 +38,8 @@ from .situation import build_situation
 _STRONG_DIGNITY = ("uccha", "moolatrikona", "swakshetra")
 _WEAK_DIGNITY_ESSENTIAL = ("enemy",)
 
-HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v3"
-HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v5"
+HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v4"
+HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v6"
 WEEK_CARD_EVIDENCE_VERSION = "personal-week-day-evidence-v1"
 
 # Kullanıcıya ancak harita ve dönem kanıtı aynı anda yeterliyse gösterilecek
