@@ -75,11 +75,13 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
             [paid_writer.FOCUS_TRANSLATIONS[day["focus"]] for day in context["days"]],
         )
         self.assertIn("Copy each given focus exactly", prompt["output_instruction"])
+        self.assertIn("Never state a future outcome as certain", prompt["output_instruction"])
         self.assertEqual(prompt["week"]["days"][0]["focus_anchors"], list(paid_writer.ENGLISH_FOCUS_TERMS["relationships"]))
         self.assertNotIn("focus_anchors", context["days"][0])
         turkish_prompt = json.loads(paid_writer._user_text(context, "tr"))
         self.assertEqual(turkish_prompt["week"]["days"][0]["focus_anchors"], list(paid_writer.FOCUS_TERMS["ilişki"]))
         self.assertIn("32 ile 110", turkish_prompt["output_instruction"])
+        self.assertIn("Geleceğe dair kesinlik", turkish_prompt["output_instruction"])
 
     def test_writer_rejects_unproven_domain_future_claim_and_technical_leak(self):
         context = week_context()

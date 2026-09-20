@@ -138,7 +138,9 @@ def _user_text(context, language):
         instruction = (
             "Return natural English only. Copy each given focus exactly into odak. Each day must contain one coherent paragraph of 32 to 110 words. "
             "Include at least one supplied focus_anchors phrase verbatim in the paragraph, but do not output focus_anchors. "
-            "First identify the day's emphasis, then explain its personal meaning, then offer calm practical guidance."
+            "First identify the day's emphasis, then explain its personal meaning, then offer calm practical guidance. "
+            "Never state a future outcome as certain or guaranteed. Avoid phrases such as will happen, will definitely, is certain to, "
+            "or promises about relationships, work, money, health, or other people. Use conditional language such as may, can, or consider instead."
         )
     else:
         week = {**context, "days": [
@@ -148,7 +150,9 @@ def _user_text(context, language):
         instruction = (
             "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz. Her odak değerini kanıttan aynen kopyala. "
             "Her gün için 32 ile 110 kelime arasında tek, akıcı paragraf yaz ve focus_anchors listesindeki en az bir ifadeyi paragrafta aynen kullan; "
-            "focus_anchors listesini çıktıya koyma. Paragraf önce günün tespitini, sonra bunun kişisel anlamını, ardından sakin ve uygulanabilir rehberliği taşısın."
+            "focus_anchors listesini çıktıya koyma. Paragraf önce günün tespitini, sonra bunun kişisel anlamını, ardından sakin ve uygulanabilir rehberliği taşısın. "
+            "Geleceğe dair kesinlik, garanti veya vaat kurma. Olacak, kesinleşecek, mutlaka, kesin, garanti, kaderinde var gibi ifadeleri kullanma; "
+            "olabilir, öne çıkabilir, fark edebilirsin, değerlendirebilirsin gibi koşullu ve özgür iradeyi koruyan dil kullan."
         )
     return json.dumps({"context_schema": "homepage_digest_context_v4", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": instruction}, ensure_ascii=False, indent=2)
 
@@ -156,10 +160,12 @@ def _user_text(context, language):
 def _deep_user_text(day, language):
     instruction = (
         "Return natural English only. Write one deeper, coherent paragraph of 90 to 180 words for this day. "
-        "Develop the supplied focus into a more nuanced personal interpretation and practical guidance. Do not introduce facts outside the supplied evidence."
+        "Develop the supplied focus into a more nuanced personal interpretation and practical guidance. Do not introduce facts outside the supplied evidence. "
+        "Never state a future outcome as certain or guaranteed; use conditional, choice-preserving language instead."
         if language == "en" else
         "Yalnız doğal Türkiye Türkçesi kullan. Bu gün için 90 ile 180 kelime arasında tek, daha derin ve akıcı bir paragraf yaz. "
-        "Verilen odağı daha incelikli kişisel yorum ve uygulanabilir rehberlikle geliştir. Sağlanan kanıtın dışına çıkma."
+        "Verilen odağı daha incelikli kişisel yorum ve uygulanabilir rehberlikle geliştir. Sağlanan kanıtın dışına çıkma. "
+        "Gelecek hakkında kesinlik, garanti veya vaat kurma; koşullu, seçimi kullanıcıda bırakan bir dil kullan."
     )
     return json.dumps({"context_schema": "homepage_digest_deep_context_v1", "day": day, "output_language": "English" if language == "en" else "Turkish", "output_instruction": instruction}, ensure_ascii=False, indent=2)
 
