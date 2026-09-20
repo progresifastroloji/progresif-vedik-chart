@@ -99,9 +99,23 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         day = week_context()["days"][1]
         deep_prompt = json.loads(paid_writer._deep_user_text(day, "tr"))
         self.assertIn("\"yorum\"", deep_prompt["output_instruction"])
+        self.assertIn("110 ile 140", deep_prompt["output_instruction"])
         text, error = paid_writer.validate_deep({"yorum": "İş yükünün içindeki ana öncelik bugün daha görünür hale gelebilir. Sorumlulukların arasından gerçekten sonuç getirecek işi seçtiğinde, günün temposunu daha sakin taşırsın. Her talebe aynı anda yetişmeye çalışmak yerine yapılabilir bir sıraya bağlı kal. Bu yaklaşım, hem emeğini korumana hem de gün sonunda zihnini daha açık tutmana yardım eder. Küçük bir işi tamamlamak, yeni bir sözü aceleyle vermekten daha değerli olabilir. Gün içinde bir konu tekrar önüne geldiğinde, ilk tepkiyle karar vermek yerine elindeki işi ve sınırını yeniden hatırla. Böylece emeğinin nereye aktığını daha bilinçli seçebilir, akşam saatlerinde kendine daha az dağınık bir alan bırakabilirsin."}, day)
         self.assertIsNone(error)
         self.assertIn("İş yükünün", text)
+
+    def test_deep_writer_retries_only_a_length_rejection(self):
+        day = week_context()["days"][1]
+        short = {"yorum": "iş " * 20}
+        valid = {"yorum": "iş " * 120}
+        def bridge_payload(value):
+            return {"candidates": [{"content": {"parts": [{"text": json.dumps(value)}]}}]}
+        with patch.object(paid_writer, "llm_enabled", return_value=True), \
+                patch.object(paid_writer, "_call_bridge", side_effect=[bridge_payload(short), bridge_payload(valid)]) as bridge:
+            text, error = paid_writer.generate_deep(day)
+        self.assertIsNotNone(error)
+        self.assertEqual(text.split()[0], "iş")
+        self.assertEqual(bridge.call_count, 2)
 
     def test_technical_guard_matches_whole_terms_not_ordinary_word_fragments(self):
         self.assertFalse(paid_writer._leaks_technical_terms("Kısa bir sunum için sakin hazırlık yap."))

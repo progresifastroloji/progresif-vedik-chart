@@ -159,12 +159,12 @@ def _user_text(context, language):
 
 def _deep_user_text(day, language):
     instruction = (
-        "Return natural English only. Write one deeper, coherent paragraph of 90 to 180 words for this day. "
+        "Return natural English only. Write one deeper, coherent paragraph of 110 to 140 words for this day. "
         "Develop the supplied focus into a more nuanced personal interpretation and practical guidance. Do not introduce facts outside the supplied evidence. "
         "Never state a future outcome as certain or guaranteed; use conditional, choice-preserving language instead. "
         "Return only a JSON object with exactly one key: {\"yorum\": \"your paragraph\"}."
         if language == "en" else
-        "Yalnız doğal Türkiye Türkçesi kullan. Bu gün için 90 ile 180 kelime arasında tek, daha derin ve akıcı bir paragraf yaz. "
+        "Yalnız doğal Türkiye Türkçesi kullan. Bu gün için 110 ile 140 kelime arasında tek, daha derin ve akıcı bir paragraf yaz. "
         "Verilen odağı daha incelikli kişisel yorum ve uygulanabilir rehberlikle geliştir. Sağlanan kanıtın dışına çıkma. "
         "Gelecek hakkında kesinlik, garanti veya vaat kurma; koşullu, seçimi kullanıcıda bırakan bir dil kullan. "
         "Yalnızca şu biçimde bir JSON nesnesi döndür: {\"yorum\": \"paragrafın\"}."
@@ -299,16 +299,19 @@ def generate_deep(day, language="tr"):
     if not llm_enabled():
         return None, {"asama": "kapali", "fallback_nedeni": "DIGEST_LLM_ENABLED=0", "sure_ms": 0}
     started = time.time()
-    try:
-        payload = _call_bridge(_deep_user_text(day, language), language)
-    except Exception as exc:
-        return None, {"asama": "bridge", "exc": exc, "fallback_nedeni": "bridge_cagrisi_basarisiz", "sure_ms": int((time.time() - started) * 1000)}
-    try:
-        raw = json.loads(_response_text(payload))
-    except Exception as exc:
-        return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
-    result, reason = validate_deep(raw, day, language)
-    elapsed = int((time.time() - started) * 1000)
-    if result is None:
-        return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": elapsed}
-    return result, {"sure_ms": elapsed}
+    instruction = _deep_user_text(day, language)
+    for attempt in range(2):
+        try:
+            payload = _call_bridge(instruction, language)
+        except Exception as exc:
+            return None, {"asama": "bridge", "exc": exc, "fallback_nedeni": "bridge_cagrisi_basarisiz", "sure_ms": int((time.time() - started) * 1000)}
+        try:
+            raw = json.loads(_response_text(payload))
+        except Exception as exc:
+            return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
+        result, reason = validate_deep(raw, day, language)
+        if result is not None:
+            return result, {"sure_ms": int((time.time() - started) * 1000)}
+        if reason != "derin_yorum_kelime_siniri" or attempt == 1:
+            return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": int((time.time() - started) * 1000)}
+        instruction += "\n\nKRİTİK: İlk yanıt uzunluk sınırını aştı veya altında kaldı. Yorum alanında 110 ile 140 kelime arasında kal."
