@@ -30977,10 +30977,91 @@ def _beta_chart_summary(chart):
             "retrograde": bool((planet.get("motion") or {}).get("retrograde")),
             "nakshatra": (planet.get("nakshatra") or {}).get("name"),
             "nakshatra_pada": (planet.get("nakshatra") or {}).get("pada"),
+            "nakshatra_lord": (planet.get("nakshatra") or {}).get("lord"),
+            "sign_lord": SIGN_LORDS.get(planet.get("sign_index")),
         }
         for planet in chart.get("planets", [])
         if planet.get("name") in supported_planets
     ]
+
+    def nakshatra_analysis(rows):
+        """Expose a small, calculation-only nakshatra chain for the PWA.
+
+        The browser may render this projection, but it must not calculate a
+        lord or follow a chain itself.  The source chart already contains the
+        validated nakshatra and sign lords, so this function only projects
+        those values and follows the existing planet records.
+        """
+        by_name = {}
+        for row in rows:
+            name = str(row.get("name") or "").strip()
+            if not name:
+                continue
+            by_name[name] = row
+            if name == "Rahu (True)":
+                by_name["Rahu"] = row
+
+        entries = []
+        for row in rows:
+            name = str(row.get("name") or "").strip()
+            if not name:
+                continue
+            chain = [name]
+            chain_links = []
+            seen = {name}
+            current = row
+            for _ in range(8):
+                lord = str(current.get("nakshatra_lord") or "").strip()
+                if not lord:
+                    break
+                target = by_name.get(lord)
+                if not target:
+                    break
+                target_name = str(target.get("name") or lord).strip()
+                if target_name in seen:
+                    chain_links.append({
+                        "from": str(current.get("name") or ""),
+                        "to": target_name,
+                        "relation": "nakshatra_lord",
+                        "cycle": True,
+                    })
+                    break
+                chain.append(target_name)
+                chain_links.append({
+                    "from": str(current.get("name") or ""),
+                    "to": target_name,
+                    "relation": "nakshatra_lord",
+                    "cycle": False,
+                })
+                seen.add(target_name)
+                current = target
+            entries.append({
+                "id": row.get("id"),
+                "name": name,
+                "name_tr": row.get("name_tr"),
+                "nakshatra": row.get("nakshatra"),
+                "pada": row.get("nakshatra_pada"),
+                "nakshatra_lord": row.get("nakshatra_lord"),
+                "sign_lord": row.get("sign_lord"),
+                "house": row.get("house"),
+                "chain": chain,
+                "chain_links": chain_links,
+            })
+
+        lord_counts = {}
+        for entry in entries:
+            lord = entry.get("nakshatra_lord")
+            if lord:
+                lord_counts[lord] = lord_counts.get(lord, 0) + 1
+        return {
+            "schema_version": "vedic-pwa-nakshatra-v1",
+            "confidence": (birth.get("time_confidence") or "unknown"),
+            "entries": entries,
+            "shared_lords": [
+                {"lord": lord, "count": count}
+                for lord, count in sorted(lord_counts.items(), key=lambda item: (-item[1], item[0]))
+            ],
+        }
     vargas = {}
     for division in VARGA_NAMES:
         varga = (chart.get("vargas") or {}).get(division) or {}
@@ -31151,6 +31232,7 @@ def _beta_chart_summary(chart):
         },
         "ayanamsa": (chart.get("ayanamsa") or {}).get("type") or "Lahiri",
         "planets": planets,
+        "nakshatra_analysis": nakshatra_analysis(planets),
         "vargas": vargas,
         "special_charts": special_charts,
         "active_dasha_path": active.get("path"),

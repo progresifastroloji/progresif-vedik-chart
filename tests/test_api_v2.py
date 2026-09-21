@@ -3312,6 +3312,11 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v2")
         self.assertEqual(data["chart_summary"]["display_name"], "Beta Kisi")
         self.assertGreaterEqual(len(data["chart_summary"]["planets"]), 9)
+        nakshatra = data["chart_summary"]["nakshatra_analysis"]
+        self.assertEqual(nakshatra["schema_version"], "vedic-pwa-nakshatra-v1")
+        self.assertGreaterEqual(len(nakshatra["entries"]), 9)
+        self.assertTrue(all("nakshatra_lord" in entry for entry in nakshatra["entries"]))
+        self.assertTrue(all(entry["chain"] for entry in nakshatra["entries"]))
         self.assertIn("D9", data["chart_summary"]["vargas"])
         self.assertIn("transit", data["chart_summary"]["special_charts"])
         self.assertIn("varshaphala", data["chart_summary"]["special_charts"])
