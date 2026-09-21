@@ -11,6 +11,8 @@ import re
 import time
 import uuid
 
+from .nakshatra_guidance import NAKSHATRA_GUIDANCE
+
 MAX_WORDS = {"motto": 20, "yorum": 110, "derin_yorum": 180}
 MIN_WORDS = {"yorum": 32, "derin_yorum": 90}
 ALLOWED_FOCUS = {
@@ -67,7 +69,7 @@ _FUTURE_CLAIM_RE = re.compile(r"\b(?:olacak(?:sın|tır)?|gelecek|gerçekleşece
 _ENGLISH_FUTURE_CLAIM_RE = re.compile(r"\b(?:will happen|will definitely|is guaranteed|you will marry|you will lose|you will gain)\b", re.IGNORECASE)
 _PLANETS = ("güneş", "gunes", "ay burcu", "mars", "merkür", "merkur", "jüpiter", "jupiter", "venüs", "venus", "satürn", "saturn", "rahu", "ketu", "sun", "moon", "mercury")
 _SIGNS = ("koç", "koc burcu", "boğa", "boga", "i̇kizler", "ikizler", "yengeç", "yengec", "aslan burcu", "başak", "basak", "terazi", "akrep", "yay burcu", "oğlak", "oglak", "kova burcu", "balık burcu", "balik burcu", "aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra", "scorpio", "sagittarius", "capricorn", "aquarius", "pisces")
-_TERMS = ("nakshatra", "varga", "dasha", "dasa", "yükselen", "yukselen", "lagna", "transit", "retro", "gochara", "bhava", "rashi", "burç haritası", "burc haritasi", "panchanga", "tithi")
+_TERMS = ("nakshatra", "nakşatra", "varga", "dasha", "dasa", "yükselen", "yukselen", "lagna", "transit", "retro", "gochara", "bhava", "rashi", "burç haritası", "burc haritasi", "panchanga", "tithi")
 _HOUSE_PATTERN = re.compile(r"\b(?:\d{1,2}\.?\s*(?:ev|house)|birinci ev|ikinci ev|üçüncü ev|ucuncu ev|dördüncü ev|dorduncu ev|beşinci ev|besinci ev|altıncı ev|altinci ev|yedinci ev|sekizinci ev|dokuzuncu ev|onuncu ev|on birinci ev|on ikinci ev)\b", re.IGNORECASE)
 _TECHNICAL_TERM_PATTERN = re.compile(
     r"(?<![0-9A-Za-zÇĞİıÖŞÜçğöşü])(?:%s)(?![0-9A-Za-zÇĞİıÖŞÜçğöşü])" %
@@ -99,6 +101,57 @@ def _word_count(text):
 def _leaks_technical_terms(text):
     lowered = (text or "").lower()
     return bool(_TECHNICAL_TERM_PATTERN.search(lowered)) or bool(_HOUSE_PATTERN.search(lowered))
+
+
+def _specificity(evidence):
+    return bool(_nakshatra_name(evidence)) and (evidence or {}).get("activation", {}).get("specificity") in {
+        "day_sky_plus_personal_house", "day_sky_only",
+    }
+
+
+def _nakshatra_name(evidence):
+    transit = (evidence or {}).get("transit") or {}
+    nak = transit.get("moon_nakshatra") or (evidence or {}).get("panchanga", {}).get("moon_nakshatra") or {}
+    name = str(nak.get("name") or "").strip()
+    return name if name in NAKSHATRA_GUIDANCE else None
+
+
+def _has_specific_evidence(text, evidence):
+    """Zengin kanıt paketi geldiğinde paragrafın gerçekten o güne
+    bağlandığını kontrol eder. Nakşatra adı yanlışsa veya hiç anılmıyorsa
+    modelin genel bir metni geçirmesine izin verilmez."""
+    name = _nakshatra_name(evidence)
+    lowered = (text or "").casefold()
+    if not name or name.casefold() not in lowered:
+        return False
+    for other in NAKSHATRA_GUIDANCE:
+        if other.casefold() in lowered and other.casefold() != name.casefold():
+            return False
+    activation = (evidence or {}).get("activation") or {}
+    actions = [str(value).casefold() for value in activation.get("action_options") or []]
+    # En az bir öneri, kanıt paketindeki eylem seçeneklerinden birinin ana
+    # kelimesini taşımalı; tam cümleyi kopyalamak şart değildir.
+    action_tokens = {
+        token for action in actions for token in re.findall(r"[A-Za-zÇĞİıÖŞÜçğöşü]{4,}", action)
+    }
+    if action_tokens and not any(token in lowered for token in action_tokens):
+        action_markers = ("yap", "seç", "belir", "net", "yaz", "ayır", "plan", "konuş", "ifade", "başlat", "dinle", "tamam", "söyle", "koru", "aç", "gözden", "ölç", "choose", "set", "write", "plan", "name", "start", "finish")
+        if not any(marker in lowered for marker in action_markers):
+            return False
+    return True
+
+
+def _technical_terms_bound_to_evidence(text, evidence):
+    """Yalnız pakette doğrulanmış Ay nakşatrası adının sade anlatımda
+    kullanılmasına izin ver; gezegen/burç/ev/transit gibi hesaplamayı modelin
+    kendisinin yapabileceği teknik sızıntıları engelle."""
+    name = _nakshatra_name(evidence)
+    if not name:
+        return _leaks_technical_terms(text)
+    scrubbed = text or ""
+    for allowed in (name, "nakshatra", "nakşatra", "moon"):
+        scrubbed = re.sub(r"(?<![0-9A-Za-zÇĞİıÖŞÜçğöşü])%s(?![0-9A-Za-zÇĞİıÖŞÜçğöşü])" % re.escape(allowed), " ", scrubbed, flags=re.IGNORECASE)
+    return _leaks_technical_terms(scrubbed)
 
 
 def _has_banned(text, language):
@@ -138,7 +191,9 @@ def _user_text(context, language):
         instruction = (
             "Return natural English only. Copy each given focus exactly into odak. Each day must contain one coherent paragraph of 32 to 110 words. "
             "Include at least one supplied focus_anchors phrase verbatim in the paragraph, but do not output focus_anchors. "
-            "First identify the day's emphasis, then explain its personal meaning, then offer calm practical guidance. "
+            "For every day, name the supplied specific observation (including the exact Moon nakshatra name when present), identify the activated topic and life area, mention a supplied supporting period area only when present, then give one concrete action and one thing to watch. "
+            "Do not invent a house, planet, sign, period, or nakshatra. Technical wording is allowed only for the exact supplied Moon nakshatra name; explain it in plain language. "
+            "First identify the day's evidence, then explain its personal meaning, then offer calm practical guidance. "
             "Never state a future outcome as certain or guaranteed. Avoid phrases such as will happen, will definitely, is certain to, "
             "or promises about relationships, work, money, health, or other people. Use conditional language such as may, can, or consider instead."
         )
@@ -150,22 +205,26 @@ def _user_text(context, language):
         instruction = (
             "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz. Her odak değerini kanıttan aynen kopyala. "
             "Her gün için 32 ile 110 kelime arasında tek, akıcı paragraf yaz ve focus_anchors listesindeki en az bir ifadeyi paragrafta aynen kullan; "
-            "focus_anchors listesini çıktıya koyma. Paragraf önce günün tespitini, sonra bunun kişisel anlamını, ardından sakin ve uygulanabilir rehberliği taşısın. "
+            "focus_anchors listesini çıktıya koyma. Her paragrafta verilen somut gözlemi (varsa Ay'ın tam nakşatra adını), devredeki konuyu ve bunun hangi yaşam alanında görünebileceğini açıkça söyle; supporting_period_areas varsa onu da yalnız kanıttaki alan olarak bağla; ardından kanıt paketindeki eylemlerden birini ve bir dikkat noktasını ver. "
+            "Nakşatra adı dışında gezegen, burç, ev, dönem veya transit uydurma. Teknik ifade yalnız kanıtta verilen Ay nakşatrası adıyla sınırlı kalsın ve sade dille açıklansın. "
+            "Paragraf önce günün tespitini, sonra bunun kişisel anlamını, ardından sakin ve uygulanabilir rehberliği taşısın. "
             "Geleceğe dair kesinlik, garanti veya vaat kurma. Olacak, kesinleşecek, mutlaka, kesin, garanti, kaderinde var gibi ifadeleri kullanma; "
             "olabilir, öne çıkabilir, fark edebilirsin, değerlendirebilirsin gibi koşullu ve özgür iradeyi koruyan dil kullan."
         )
-    return json.dumps({"context_schema": "homepage_digest_context_v4", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": instruction}, ensure_ascii=False, indent=2)
+    return json.dumps({"context_schema": "homepage_digest_context_v5", "week": week, "output_language": "English" if language == "en" else "Turkish", "output_instruction": instruction}, ensure_ascii=False, indent=2)
 
 
 def _deep_user_text(day, language):
     instruction = (
         "Return natural English only. Write one deeper, coherent paragraph of 110 to 140 words for this day. "
-        "Develop the supplied focus into a more nuanced personal interpretation and practical guidance. Do not introduce facts outside the supplied evidence. "
+        "Develop the supplied focus into a more nuanced interpretation. Name the exact supplied Moon nakshatra when present, connect the activated topic to its supplied life area, mention a supplied supporting period area only when present, and include a concrete action plus a caution. Do not introduce facts outside the supplied evidence. "
+        "Technical wording is allowed only for the exact supplied Moon nakshatra name; never invent a house, planet, sign, period, or transit. "
         "Never state a future outcome as certain or guaranteed; use conditional, choice-preserving language instead. "
         "Return only a JSON object with exactly one key: {\"yorum\": \"your paragraph\"}."
         if language == "en" else
         "Yalnız doğal Türkiye Türkçesi kullan. Bu gün için 110 ile 140 kelime arasında tek, daha derin ve akıcı bir paragraf yaz. "
-        "Verilen odağı daha incelikli kişisel yorum ve uygulanabilir rehberlikle geliştir. Sağlanan kanıtın dışına çıkma. "
+        "Verilen odağı daha incelikli kişisel yorum ve uygulanabilir rehberlikle geliştir; varsa Ay'ın tam nakşatra adını an, devredeki konuyu ve yaşam alanını bağla, supporting_period_areas varsa onu da yalnız kanıt sınırında kullan, somut bir eylem ve dikkat noktası ekle. Sağlanan kanıtın dışına çıkma. "
+        "Nakşatra adı dışında gezegen, burç, ev, dönem veya transit uydurma; teknik ifadeyi doğrulanmış kanıtla sınırla. "
         "Gelecek hakkında kesinlik, garanti veya vaat kurma; koşullu, seçimi kullanıcıda bırakan bir dil kullan. "
         "Yalnızca şu biçimde bir JSON nesnesi döndür: {\"yorum\": \"paragrafın\"}."
     )
@@ -244,7 +303,17 @@ def validate(payload, context, language="tr"):
         return None, "yasakli_ifade"
     if _has_future_claim(all_text, language):
         return None, "kesin_gelecek_iddiasi"
-    if _leaks_technical_terms(all_text):
+    evidence_by_date = {str(item.get("date")): item for item in expected if isinstance(item, dict)}
+    for card in cleaned_days:
+        evidence = evidence_by_date.get(card["date"], {})
+        if _specificity(evidence):
+            if not _has_specific_evidence(card["yorum"], evidence):
+                return None, "gun_somut_kanit_yok"
+            if _technical_terms_bound_to_evidence(card["yorum"], evidence):
+                return None, "teknik_terim_kanita_bagli_degil"
+        elif _leaks_technical_terms(card["yorum"]):
+            return None, "teknik_terim_sizintisi"
+    if not any(_specificity(evidence) for evidence in expected) and _leaks_technical_terms(all_text):
         return None, "teknik_terim_sizintisi"
     return {"motto": motto.strip(), "days": cleaned_days}, None
 
@@ -270,7 +339,12 @@ def validate_deep(payload, day, language="tr"):
         return None, "yasakli_ifade"
     if _has_future_claim(yorum, language):
         return None, "kesin_gelecek_iddiasi"
-    if _leaks_technical_terms(yorum):
+    if _specificity(day):
+        if not _has_specific_evidence(yorum, day):
+            return None, "derin_yorum_somut_kanit_yok"
+        if _technical_terms_bound_to_evidence(yorum, day):
+            return None, "derin_yorum_teknik_terim_kanita_bagli_degil"
+    elif _leaks_technical_terms(yorum):
         return None, "teknik_terim_sizintisi"
     return yorum, None
 

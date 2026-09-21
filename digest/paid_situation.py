@@ -30,17 +30,19 @@ Cikti: METODOLOJI_DIGEST.md'nin bekledigi alanlar. Alan yoksa sozluge
 hic konulmaz; "veri eksik" gibi bir deger asla yazilmaz.
 """
 
-from .keys import GENERATOR_VERSION, LAYER_DASHA_LEVEL, SNAPSHOT_HOUR
+from .keys import GENERATOR_VERSION, LAYER_DASHA_LEVEL, SNAPSHOT_HOUR, house_from
 from .rules import house_of
 from .writer import HOUSE_THEME
 from .situation import build_situation
+from .nakshatra_guidance import FOCUS_GUIDANCE, NAKSHATRA_GUIDANCE
+from vedic_chart import NAKSHATRAS
 
 _STRONG_DIGNITY = ("uccha", "moolatrikona", "swakshetra")
 _WEAK_DIGNITY_ESSENTIAL = ("enemy",)
 
-HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v4"
-HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v6"
-WEEK_CARD_EVIDENCE_VERSION = "personal-week-day-evidence-v1"
+HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v5"
+HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v7"
+WEEK_CARD_EVIDENCE_VERSION = "personal-week-day-evidence-v2"
 
 # Kullanıcıya ancak harita ve dönem kanıtı aynı anda yeterliyse gösterilecek
 # yaşam alanı rozetleri. Kodlar yalnız model sözleşmesindedir; kullanıcıya
@@ -261,6 +263,7 @@ def _period_evidence(chart, reference_jd):
         if house in HOUSE_THEME:
             fields["current_area"] = HOUSE_THEME[house]
         fields["strength"] = _guc(planet)
+    fields["areas"] = [value for value in (fields.get("emphasis"), fields.get("current_area")) if value]
     return fields
 
 
@@ -269,13 +272,44 @@ def _compact_panchanga(snapshot):
     raw = snapshot.get("panchanga") or {}
     if raw.get("status") != "available":
         return {"available": False}
+    moon_nakshatra = raw.get("moon_nakshatra")
+    if not isinstance(moon_nakshatra, dict):
+        try:
+            index = int(raw.get("moon_nakshatra_index"))
+            name, lord = NAKSHATRAS[index]
+            moon_nakshatra = {"index": index, "name": name, "lord": lord}
+        except (TypeError, ValueError, IndexError):
+            moon_nakshatra = None
     return {
         "available": True,
         "lunar_phase": raw.get("paksha"),
         "weekday": raw.get("vara_weekday"),
         "lunar_day_index": raw.get("tithi_number"),
         "moon_star_index": raw.get("moon_nakshatra_index"),
+        "moon_nakshatra": moon_nakshatra,
     }
+
+
+def _daily_activation(focus, nakshatra, *, house=None, unknown_time=False):
+    """Konuyu, yaşam alanını ve eylemi modelin serbestçe uyduramayacağı
+    kadar açık sınırlar içinde taşır."""
+    focus_seed = FOCUS_GUIDANCE.get(focus) or FOCUS_GUIDANCE["düzen"]
+    nak_seed = NAKSHATRA_GUIDANCE.get(nakshatra or "")
+    activation = {
+        "topic": focus_seed["topic"],
+        "area": focus_seed["area"] if not unknown_time else "günün ritmi",
+        "observation": focus_seed["topic"] + " konusu bugün daha görünür olabilir",
+        "action_options": [focus_seed["action"]],
+        "watch_for": [focus_seed["watch"]],
+        "specificity": "day_sky_plus_personal_house" if not unknown_time else "day_sky_only",
+    }
+    if nak_seed:
+        activation["nakshatra_theme"] = nak_seed["theme"]
+        activation["action_options"].append(nak_seed["action"])
+        activation["watch_for"].append(nak_seed["watch"])
+    if house is not None and not unknown_time:
+        activation["house_from_natal_moon"] = int(house)
+    return activation
 
 
 def build_week_day_evidence(chart, snapshot, *, reference_jd):
@@ -295,6 +329,10 @@ def build_week_day_evidence(chart, snapshot, *, reference_jd):
     if moon_sign is None or transit_moon is None:
         return None
 
+    panchanga = _compact_panchanga(snapshot)
+    moon_nakshatra = panchanga.get("moon_nakshatra") or {}
+    nakshatra_name = str(moon_nakshatra.get("name") or "").strip() or None
+    natal_moon_house = house_from(moon_sign, transit_moon)
     evidence = {
         "evidence_version": WEEK_CARD_EVIDENCE_VERSION,
         "date": day,
@@ -311,8 +349,10 @@ def build_week_day_evidence(chart, snapshot, *, reference_jd):
             "moon_available": True,
             "snapshot_local_datetime": snapshot.get("local_datetime"),
             "day_sky_available": True,
+            "moon_sign_index": int(transit_moon),
+            "moon_nakshatra": moon_nakshatra,
         },
-        "panchanga": _compact_panchanga(snapshot),
+        "panchanga": panchanga,
         "eligible_domains": [],
     }
 
@@ -323,6 +363,7 @@ def build_week_day_evidence(chart, snapshot, *, reference_jd):
             "focus": "düzen",
             "focus_basis": "moon_and_day_context_only",
             "period": {"available": False, "withheld_by_birth_time_policy": True},
+            "activation": _daily_activation("düzen", nakshatra_name, unknown_time=True),
         })
         return evidence
 
@@ -340,11 +381,15 @@ def build_week_day_evidence(chart, snapshot, *, reference_jd):
     if period.get("available") and DOMAIN_BY_FOCUS.get(focus):
         eligible_domains.append(DOMAIN_BY_FOCUS[focus])
 
+    activation = _daily_activation(focus, nakshatra_name, house=natal_moon_house)
+    if period.get("areas"):
+        activation["supporting_period_areas"] = list(period["areas"])
     evidence.update({
         "focus": focus,
         "focus_basis": "verified_natal_moon_and_day_sky",
         "period": period,
         "eligible_domains": eligible_domains,
+        "activation": activation,
     })
     return evidence
 

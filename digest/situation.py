@@ -56,7 +56,7 @@ def planet_signs_at(local_dt):
     ``local_dt`` saat dilimli olmalıdır. Kişisel ana sayfa günlük yorumu
     bu fonksiyonu İstanbul saatinin saatlik kovasıyla kullanır.
     """
-    from vedic_chart import calculate_chart
+    from vedic_chart import calculate_chart, get_nakshatra
 
     if local_dt.tzinfo is None or local_dt.utcoffset() is None:
         raise ValueError("Saat dilimli yerel zaman gerekli")
@@ -84,19 +84,30 @@ def planet_signs_at(local_dt):
         raise RuntimeError("transit Ay hesaplanamadi")
 
     # Panchanga is calculated here, from the same verified sidereal positions
-    # as the transit snapshot.  It remains internal evidence: the writer gets
-    # only its bounded day-context values and may never expose these terms.
+    # as the transit snapshot. The writer receives bounded day-context values;
+    # only the exact verified nakshatra name may be surfaced in the paragraph.
     sun_longitude = longitudes.get("Sun")
     moon_longitude = longitudes.get("Moon")
     panchanga = {"status": "not_available"}
     if sun_longitude is not None and moon_longitude is not None:
         lunar_angle = (moon_longitude - sun_longitude) % 360.0
+        moon_nakshatra = get_nakshatra(moon_longitude)
         panchanga = {
             "status": "available",
             "tithi_number": min(30, int(lunar_angle / 12.0) + 1),
             "paksha": "waxing" if lunar_angle < 180.0 else "waning",
             "vara_weekday": local_dt.weekday(),
-            "moon_nakshatra_index": min(26, int((moon_longitude % 360.0) / (360.0 / 27.0))),
+            # Keep the legacy index for old consumers, but carry the
+            # canonical name/pada/lord from the same Swiss-Ephemeris
+            # longitude so the writer can bind a specific daily observation
+            # without calculating or guessing it.
+            "moon_nakshatra_index": moon_nakshatra["index"],
+            "moon_nakshatra": {
+                "index": moon_nakshatra["index"],
+                "name": moon_nakshatra["name"],
+                "pada": moon_nakshatra["pada"],
+                "lord": moon_nakshatra["lord"],
+            },
         }
 
     return {

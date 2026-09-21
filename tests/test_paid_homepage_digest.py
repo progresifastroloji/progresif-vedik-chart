@@ -57,8 +57,8 @@ def valid_output(context=None):
 
 class PaidHomepageDigestContractTests(unittest.TestCase):
     def test_week_contract_is_current(self):
-        self.assertEqual(HOMEPAGE_CONTEXT_VERSION, "homepage_digest_context_v4")
-        self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v6")
+        self.assertEqual(HOMEPAGE_CONTEXT_VERSION, "homepage_digest_context_v5")
+        self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v7")
 
     def test_writer_accepts_seven_evidence_bound_cards_and_direct_guidance(self):
         context = week_context()
@@ -136,6 +136,52 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertEqual(evidence["data_quality"]["house_or_lagna_interpretation"], False)
         self.assertEqual(evidence["eligible_domains"], [])
         self.assertEqual(evidence["period"]["available"], False)
+
+    def test_daily_evidence_binds_nakshatra_topic_area_and_actions(self):
+        chart = {
+            "birth": {"time_declaration": "exact"},
+            "planets": [{"name": "Moon", "sign_index": 2}],
+        }
+        snapshot = {
+            "date": "2026-09-14", "local_datetime": "2026-09-14T12:00:00+03:00",
+            "planets": {"Moon": 4},
+            "panchanga": {
+                "status": "available", "paksha": "waxing", "vara_weekday": 0,
+                "tithi_number": 2, "moon_nakshatra_index": 22,
+                "moon_nakshatra": {"index": 22, "name": "Dhanishta", "pada": 1, "lord": "Mars"},
+            },
+        }
+        evidence = build_week_day_evidence(chart, snapshot, reference_jd=2461297.0)
+        self.assertEqual(evidence["transit"]["moon_nakshatra"]["name"], "Dhanishta")
+        self.assertEqual(evidence["activation"]["specificity"], "day_sky_plus_personal_house")
+        self.assertEqual(evidence["activation"]["house_from_natal_moon"], 3)
+        self.assertTrue(evidence["activation"]["topic"])
+        self.assertTrue(evidence["activation"]["area"])
+        self.assertGreaterEqual(len(evidence["activation"]["action_options"]), 2)
+
+    def test_rich_writer_requires_exact_nakshatra_and_action(self):
+        context = week_context()
+        rich_day = {
+            **context["days"][0],
+            "transit": {"moon_nakshatra": {"name": "Dhanishta", "pada": 1, "lord": "Mars"}},
+            "activation": {
+                "specificity": "day_sky_plus_personal_house",
+                "topic": "sınır ve öz-ifade", "area": "kişisel duruş",
+                "action_options": ["tek bir önceliğini açıkça ifade et"],
+                "watch_for": ["başkasının beklentisini kendi ihtiyacın sanma"],
+            },
+        }
+        rich_context = {**context, "days": [rich_day, *context["days"][1:]]}
+        output = valid_output(rich_context)
+        output["days"][0]["yorum"] = (
+            "Ay bugün Dhanishta nakşatrasında; ilişki içinde sınır ve öz-ifade konusu kişisel duruş alanında daha görünür olabilir. "
+            "Tek bir önceliğini açıkça ifade et ve başkasının beklentisini kendi ihtiyacın sanma. "
+            "Günün ritmini tek hedefte toplamak, neyi taşıyıp neyi bırakacağını fark etmene yardımcı olabilir."
+        )
+        cleaned, error = paid_writer.validate(output, rich_context)
+        self.assertIsNone(error)
+        output["days"][0]["yorum"] = output["days"][0]["yorum"].replace("Dhanishta", "Rohini")
+        self.assertEqual(paid_writer.validate(output, rich_context)[1], "gun_somut_kanit_yok")
 
     def test_week_cache_is_scoped_by_owner_chart_week_language_and_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
