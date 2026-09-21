@@ -353,20 +353,38 @@ def generate(context, language="tr"):
     if not llm_enabled():
         return None, {"asama": "kapali", "fallback_nedeni": "DIGEST_LLM_ENABLED=0", "sure_ms": 0}
     started = time.time()
-    try:
-        payload = _call_bridge(_user_text(context, language), language)
-    except Exception as exc:
-        return None, {"asama": "bridge", "exc": exc, "fallback_nedeni": "bridge_cagrisi_basarisiz", "sure_ms": int((time.time() - started) * 1000)}
-    try:
-        raw = json.loads(_response_text(payload))
-    except Exception as exc:
-        return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
-    result, reason = validate(raw, context, language)
+    instruction = _user_text(context, language)
+    retry_reasons = {
+        "kesin_gelecek_iddiasi", "gun_somut_kanit_yok",
+        "teknik_terim_kanita_bagli_degil", "teknik_terim_sizintisi",
+    }
+    for attempt in range(2):
+        try:
+            payload = _call_bridge(instruction, language)
+        except Exception as exc:
+            return None, {"asama": "bridge", "exc": exc, "fallback_nedeni": "bridge_cagrisi_basarisiz", "sure_ms": int((time.time() - started) * 1000)}
+        try:
+            raw = json.loads(_response_text(payload))
+        except Exception as exc:
+            return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
+        result, reason = validate(raw, context, language)
+        if result is not None:
+            elapsed = int((time.time() - started) * 1000)
+            result["sure_ms"] = elapsed
+            return result, None
+        if reason not in retry_reasons or attempt == 1:
+            elapsed = int((time.time() - started) * 1000)
+            return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": elapsed}
+        instruction += (
+            "\n\nÖNCEKİ TASLAK GÜVENLİK DOĞRULAMASINDAN GEÇMEDİ. "
+            "Yeni yanıtta kesin gelecek bildiren tüm fiilleri çıkar; özellikle olacak, kesinleşecek, mutlaka ve garanti dilini kullanma. "
+            "Her günün doğrulanmış nakşatra adını ve somut eylemini koru; yalnız koşullu ve seçim bırakan dil kullan."
+            if language != "en" else
+            "\n\nThe previous draft failed validation. Remove every certain-future claim, including will, definitely, guaranteed, or fixed outcomes. "
+            "Keep each exact supplied nakshatra name and concrete action, using conditional, choice-preserving language only."
+        )
     elapsed = int((time.time() - started) * 1000)
-    if result is None:
-        return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": elapsed}
-    result["sure_ms"] = elapsed
-    return result, None
+    return None, {"asama": "validate", "fallback_nedeni": "yeniden_uretim_basarisiz", "sure_ms": elapsed}
 
 
 def generate_deep(day, language="tr"):

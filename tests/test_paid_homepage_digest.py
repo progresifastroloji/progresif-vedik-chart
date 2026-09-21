@@ -117,6 +117,22 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertEqual(text.split()[0], "iş")
         self.assertEqual(bridge.call_count, 2)
 
+    def test_week_writer_retries_certain_future_claim(self):
+        context = week_context()
+        rejected = valid_output(context)
+        rejected["days"][0]["yorum"] = rejected["days"][0]["yorum"].replace(
+            "daha dikkatle ölçmek isteyebilirsin", "daha dikkatle ölçmek olacak",
+        )
+        accepted = valid_output(context)
+        def bridge_payload(value):
+            return {"candidates": [{"content": {"parts": [{"text": json.dumps(value)}]}}]}
+        with patch.object(paid_writer, "llm_enabled", return_value=True), \
+                patch.object(paid_writer, "_call_bridge", side_effect=[bridge_payload(rejected), bridge_payload(accepted)]) as bridge:
+            result, error = paid_writer.generate(context)
+        self.assertIsNone(error)
+        self.assertEqual(len(result["days"]), 7)
+        self.assertEqual(bridge.call_count, 2)
+
     def test_technical_guard_matches_whole_terms_not_ordinary_word_fragments(self):
         self.assertFalse(paid_writer._leaks_technical_terms("Kısa bir sunum için sakin hazırlık yap."))
         self.assertTrue(paid_writer._leaks_technical_terms("Sun bugün ilişkinizi yönetiyor."))
