@@ -15,6 +15,7 @@ from methodology_orchestrator import (
     full_markdown_test_mode,
     load_guidance_methodology,
     load_methodology_candidates,
+    normalize_personal_memory_update,
     ordered_full_markdown_mode,
     run_methodology_comparison,
     validate_methodology_response,
@@ -121,6 +122,72 @@ def _narrative_payload(answer=None, opening_summary=None):
 
 
 class MethodologyOrchestratorTest(unittest.TestCase):
+    def test_personal_memory_update_is_conservative_and_optional(self):
+        self.assertEqual(
+            normalize_personal_memory_update({
+                "summary": "Kullanıcı karar verirken seçenekleri yazılı karşılaştırmayı tercih ediyor.",
+                "changed": True,
+            })["summary"],
+            "Kullanıcı karar verirken seçenekleri yazılı karşılaştırmayı tercih ediyor.",
+        )
+        self.assertIsNone(normalize_personal_memory_update({"summary": "Satürn haritasında güçlü.", "changed": True}))
+        self.assertIsNone(normalize_personal_memory_update({"summary": "API key: secret-value", "changed": True}))
+
+    def test_narrative_accepts_hidden_memory_update_but_normalizes_it(self):
+        analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
+        payload = _narrative_payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["memory_update"] = {
+            "summary": "Kullanıcı büyük kararları küçük ve geri alınabilir adımlarla değerlendirmeyi tercih ediyor.",
+            "changed": True,
+        }
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value, ensure_ascii=False)
+        validated = validate_narrative_response(payload, analysis, compact_evidence(_draft()))
+        self.assertEqual(validated["memory_update"]["changed"], True)
+        self.assertIn("geri alınabilir", validated["memory_update"]["summary"])
+
+    def test_personal_memory_summary_is_sent_only_to_narrative_prompt(self):
+        draft = _draft()
+        draft["personal_memory_summary"] = "Kullanıcı yazılı karşılaştırma ve küçük adımları tercih ediyor."
+        candidate = load_methodology_candidates()[0]
+        evidence = compact_evidence(draft)
+        analysis = validate_methodology_response(_payload(), evidence)
+        request, _ = _narrative_request(
+            candidate,
+            evidence,
+            analysis,
+            personal_memory_summary=draft["personal_memory_summary"],
+        )
+        narrative_text = request["contents"][0]["parts"][0]["text"]
+        self.assertIn("personal_memory_summary", narrative_text)
+        self.assertIn("küçük adımları tercih ediyor", narrative_text)
+
+    def test_comparison_returns_server_only_memory_update(self):
+        draft = _draft()
+        draft["personal_memory_summary"] = "Kullanıcı kararlarını küçük adımlarla değerlendirmeyi tercih ediyor."
+
+        def model_call(request_id, request):
+            if "-narrative" not in request_id:
+                return request_id, _payload()
+            payload = _narrative_payload()
+            value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+            value["memory_update"] = {
+                "summary": "Kullanıcı kararlarını küçük adımlarla değerlendirmeyi tercih ediyor.",
+                "changed": True,
+            }
+            payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value, ensure_ascii=False)
+            return request_id, payload
+
+        result = run_methodology_comparison(draft, "methodology-compare-memory", model_call)
+        self.assertEqual(
+            result["server_memory_update"]["summary"],
+            "Kullanıcı kararlarını küçük adımlarla değerlendirmeyi tercih ediyor.",
+        )
+        self.assertEqual(
+            result["methodology_results"][0]["analysis"]["memory_update"]["changed"],
+            True,
+        )
+
     def test_full_markdown_test_mode_adds_complete_markdown_once_without_changing_default(self):
         document = "# FULL NATAL TEST\n\nBu metin yalnız test için gönderilir.\n"
         draft = _draft()

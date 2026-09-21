@@ -40,6 +40,7 @@ TECHNICAL_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MIN_CHARS = 300
 NARRATIVE_MIN_PARAGRAPHS = 1
+PERSONAL_MEMORY_MAX_CHARS = 1_600
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 SUPPORTED_RESPONSE_LANGUAGES = {"tr", "en"}
 COVERAGE_STATUSES = {"applied", "not_applicable", "missing"}
@@ -84,6 +85,48 @@ RETRYABLE_NARRATIVE_ERRORS = {
     "methodology_narrative_language_invalid",
     "methodology_narrative_safety_invalid",
 }
+
+_PERSONAL_MEMORY_TECHNICAL_PATTERN = re.compile(
+    r"(?:evidence\.|methodology|kanıt|harita|chart|gezegen|planet|burç|burc|"
+    r"nakshatra|nakşatra|dasha|daşa|transit|varga|yoga|ev\s+yerleş|ev\s+konum|"
+    r"satürn|jüpiter|mars|venüs|merkür|rahu|ketu|güneş|astroloji)",
+    re.IGNORECASE,
+)
+_PERSONAL_MEMORY_SENSITIVE_PATTERN = re.compile(
+    r"(?:şifre|parola|password|api\s*key|token|secret|iban|kredi\s*kart|"
+    r"tc\s*kimlik|sağlık|hastalık|teşhis|ilaç|dava|hukuk|mahkeme|"
+    r"yatırım\s*tavsiyesi|borç\s*numarası)",
+    re.IGNORECASE,
+)
+
+
+def normalize_personal_memory_update(value):
+    """Return a safe, short user-stated memory update or None.
+
+    This is deliberately conservative: the field is optional, hidden from the
+    customer response, and must never become an astrology/evidence store or a
+    credential/sensitive-data store.
+    """
+
+    if isinstance(value, dict):
+        summary = str(value.get("summary") or "").strip()
+        changed = bool(value.get("changed", True))
+    elif isinstance(value, str):
+        summary = value.strip()
+        changed = bool(summary)
+    else:
+        return None
+    if not changed or not summary or len(summary) > PERSONAL_MEMORY_MAX_CHARS:
+        return None
+    if "{" in summary or "}" in summary or "```" in summary:
+        return None
+    if _PERSONAL_MEMORY_TECHNICAL_PATTERN.search(summary):
+        return None
+    if _PERSONAL_MEMORY_SENSITIVE_PATTERN.search(summary):
+        return None
+    if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", summary):
+        return None
+    return {"summary": summary, "changed": True}
 RETRYABLE_PROVIDER_ERRORS = {
     "vertex_bridge_rate_limited",
     "vertex_bridge_upstream_unavailable",
@@ -511,6 +554,7 @@ def _narrative_request(
     conversation_context=None,
     guidance=None,
     response_language="tr",
+    personal_memory_summary="",
 ):
     """Build the client-facing call from validated analysis and active sources."""
 
@@ -539,6 +583,8 @@ def _narrative_request(
         "question_route": evidence.get("question_route"),
         "analysis": analysis,
     }
+    if personal_memory_summary:
+        narrative_input["personal_memory_summary"] = str(personal_memory_summary).strip()[:PERSONAL_MEMORY_MAX_CHARS]
     system_text = (
         "Sen Vedik AI'nin danışan anlatımı ve rehberlik katmanısın. Astrolojik hesap veya yeni teknik analiz yapma. "
         f"Sunucu tarafından doğrulanmış Aşama 1 JSON'unu ve etkin tam Markdown kaynaklarını {language_name} diline çevir. "
@@ -548,6 +594,9 @@ def _narrative_request(
         "yeni teknik veri, olay, derece veya tarih üretme. "
         "conversation_context aynı açık sayfadaki önceki soru-cevaplarıdır; anlatımın devamlılığını "
         "korumak için kullan fakat oradan yeni astrolojik teknik iddia çıkarma. Yalnız güncel soruyu yanıtla. "
+        "personal_memory_summary sunucu tarafından hazırlanan gizli kişiselleştirme özetidir; kanıt değildir ve "
+        "kullanıcıya bundan söz etme. Yalnız kullanıcının açıkça söylediği, istikrarlı tercih/hedef/bağlamı doğal "
+        "bir devamlılık için kullan; modelin çıkardığı astrolojik, psikolojik veya hassas bilgileri ekleme. "
         "opening_summary alanında cevabın ana sonucunu teknik kanıt listesine girmeden kısa ve anlaşılır biçimde özetle; "
         "bu alanda gezegen, ev, burç, nakshatra, dasha veya transit adı hiç kullanma. "
         "answer alanında bu özeti aynen tekrarlamadan ayrıntılı yoruma geç. İlk paragrafta kullanıcının asıl sorusuna "
@@ -585,8 +634,10 @@ def _narrative_request(
         f"REHBERLİK METODOLOJİSİ BELGESİ:\n{guidance['document']}"
     )
     user_text = (
-        "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON yalnız "
-        "opening_summary ve answer alanlarını içersin. opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
+        "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON opening_summary ve "
+        "answer alanlarını zorunlu, memory_update alanını ise yalnız yeni ve açık kullanıcı bilgisi varsa içersin. "
+        "memory_update {summary, changed} biçiminde sunucuya özel alandır; yanıtta bu alanı veya gizli hafızayı anma. "
+        "opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
         f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
         + (
             "\n\nTAM KAYNAK SIRASI (3 DOSYANIN TAMAMI):\n"
@@ -638,7 +689,8 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "\n\nONARIM DENEMESİ: Önceki anlatı yanıtı doğrulama kapısından geçmedi. "
             f"Doğrulama hata kodu: {error_code or 'methodology_narrative_invalid'}. "
             "Bu kez yalnız DOĞRULANMIŞ AŞAMA 1 içindeki anlamı yeniden yaz. "
-            "Sadece JSON döndür ve yalnız opening_summary ile answer alanlarını kullan. "
+            "Sadece JSON döndür; opening_summary ve answer zorunludur, yalnız açık kullanıcı bilgisi varsa memory_update "
+            "alanını {summary, changed} biçiminde ekleyebilirsin. Bu alan sunucuya özeldir ve kullanıcıya anılmaz. "
             "opening_summary 1–3 tamamlanmış cümle olsun. answer en az 300 karakter ve "
             "en az iki doğal paragraf olsun; başlık, madde işareti veya etiket kullanma. "
             "İlk cümlede kullanıcının sorusuna doğrudan ve koşullu yanıt ver. "
@@ -780,6 +832,7 @@ def _relaxed_narrative_response(payload):
     return {
         "opening_summary": str(value.get("opening_summary") or "").strip(),
         "answer": answer,
+        "memory_update": normalize_personal_memory_update(value.get("memory_update")),
         "validation_bypassed": True,
     }
 
@@ -1479,7 +1532,11 @@ def validate_narrative_response(payload, analysis, evidence):
         value = json.loads(response_text)
     except json.JSONDecodeError as exc:
         raise MethodologyOrchestrationError("methodology_narrative_json_invalid", 502) from exc
-    if not isinstance(value, dict) or set(value) != {"opening_summary", "answer"}:
+    if (
+        not isinstance(value, dict)
+        or not {"opening_summary", "answer"}.issubset(value)
+        or set(value) - {"opening_summary", "answer", "memory_update"}
+    ):
         raise MethodologyOrchestrationError("methodology_narrative_schema_invalid", 502)
     opening_summary = str(value.get("opening_summary") or "").strip()
     answer = str(value.get("answer") or "").strip()
@@ -1623,6 +1680,7 @@ def validate_narrative_response(payload, analysis, evidence):
     return {
         "opening_summary": opening_summary,
         "answer": answer,
+        "memory_update": normalize_personal_memory_update(value.get("memory_update")),
     }
 
 
@@ -1665,6 +1723,7 @@ def _run_candidate(
     conversation_context=None,
     guidance=None,
     response_language="tr",
+    personal_memory_summary="",
 ):
     base_request_id = f"{comparison_id}-{candidate['id']}"
     validation_mode = methodology_validation_mode()
@@ -1823,6 +1882,7 @@ def _run_candidate(
         conversation_context,
         guidance,
         response_language,
+        personal_memory_summary,
     )
     current_narrative_request = narrative_request
     narrative_payload = None
@@ -1853,6 +1913,7 @@ def _run_candidate(
                 "technical_summary": technical_analysis["summary"],
                 "opening_summary": narrative["opening_summary"],
                 "summary": narrative["answer"],
+                "memory_update": narrative.get("memory_update"),
             }
             return {
                 "status": "completed",
@@ -1916,6 +1977,7 @@ def _run_candidate(
                     "technical_summary": technical_analysis["summary"],
                     "opening_summary": narrative["opening_summary"],
                     "summary": narrative["answer"],
+                    "memory_update": narrative.get("memory_update"),
                 }
                 return {
                     "status": "completed",
@@ -1969,6 +2031,7 @@ def _run_candidate(
                         "technical_summary": technical_analysis["summary"],
                         "opening_summary": narrative["opening_summary"],
                         "summary": narrative["answer"],
+                        "memory_update": narrative.get("memory_update"),
                     }
                     return {
                         "status": "completed",
@@ -2018,6 +2081,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
     response_language = normalize_response_language(draft.get("response_language"))
     evidence = {**compact_evidence(draft), "response_language": response_language}
     conversation_context = draft.get("conversation_context") or []
+    personal_memory_summary = str(draft.get("personal_memory_summary") or "").strip()[:PERSONAL_MEMORY_MAX_CHARS]
     evidence_json = _canonical_json(evidence)
     evidence_sha256 = _sha256(evidence_json)
     monotonic = clock or time.monotonic
@@ -2033,6 +2097,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
                 conversation_context,
                 guidance,
                 response_language,
+                personal_memory_summary,
             ),
             candidates,
         ))
@@ -2048,6 +2113,16 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         else "comparison_ready" if completed == len(results)
         else "partial" if completed
         else "failed"
+    )
+    server_memory_update = next(
+        (
+            result.get("analysis", {}).get("memory_update")
+            for result in results
+            if isinstance(result, dict)
+            and isinstance(result.get("analysis"), dict)
+            and normalize_personal_memory_update(result["analysis"].get("memory_update"))
+        ),
+        None,
     )
     return {
         "contract_version": CONTRACT_VERSION,
@@ -2073,6 +2148,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
         "completed_count": completed,
         "candidate_count": len(results),
         "degraded_count": degraded,
+        "server_memory_update": server_memory_update,
     }
 
 

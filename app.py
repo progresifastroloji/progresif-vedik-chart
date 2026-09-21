@@ -29801,6 +29801,7 @@ def _beta_public_methodology_response(comparison):
         analysis.pop("methodology_coverage", None)
         analysis.pop("technical_summary", None)
         analysis.pop("validation_bypassed", None)
+        analysis.pop("memory_update", None)
         analysis["missing_layers"] = (analysis.get("missing_layers") or [])[:1]
         analysis["limitations"] = (analysis.get("limitations") or [])[:1]
         result["internal_technical_record"] = "stored_server_side"
@@ -32153,6 +32154,7 @@ def _beta_build_chat_draft(
     response_language="tr",
     require_mandatory_evidence=False,
     selected_varga=None,
+    personal_memory_summary="",
 ):
     response_language = normalize_response_language(response_language)
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
@@ -32324,6 +32326,7 @@ def _beta_build_chat_draft(
         "question": question,
         "response_language": response_language,
         "conversation_context": conversation_context or [],
+        "personal_memory_summary": str(personal_memory_summary or "").strip()[:1600],
         "topic": topic,
         "subject_topic": subject_topic,
         "question_route": selected_route,
@@ -32430,6 +32433,21 @@ def _beta_conversation_context(value):
     if len(encoded) > 64 * 1024:
         raise ValueError("conversation_context_too_large")
     return context
+
+
+def _beta_personal_memory_summary(value):
+    """Validate the server-only personalization summary without treating it as evidence."""
+
+    if value is None or value == "":
+        return ""
+    if not isinstance(value, str):
+        raise ValueError("personal_memory_summary metin olmalı")
+    summary = value.strip()
+    if len(summary) > 1600:
+        raise ValueError("personal_memory_summary çok uzun")
+    if "{" in summary or "}" in summary or "```" in summary:
+        raise ValueError("personal_memory_summary geçersiz")
+    return summary
 
 
 def _beta_existing_comparison(conn, comparison_id, profile_id, chart_id, question):
@@ -33256,6 +33274,9 @@ def api_v2_beta_chat_compare():
         conversation_context = _beta_conversation_context(
             data.get("conversation_context")
         )
+        personal_memory_summary = _beta_personal_memory_summary(
+            data.get("personal_memory_summary")
+        )
         if _beta_is_rectification_question(question):
             return jsonify({
                 "ok": False,
@@ -33464,6 +33485,7 @@ def api_v2_beta_chat_compare():
             profile_id=profile_id,
             chart_id=chart_id,
             conversation_context=conversation_context,
+            personal_memory_summary=personal_memory_summary,
             include_full_markdown_sources=(
                 full_source_context_mode() and not app.config.get("TESTING")
             ),
