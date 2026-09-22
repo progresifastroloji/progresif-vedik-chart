@@ -213,7 +213,7 @@ def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, non
     if not marked(vertex_request):
         return call(request_id, vertex_request)
     # One shared budget for writing, editing and at most one repair.
-    deadline = time.monotonic() + 65
+    deadline = time.monotonic() + 90
     try:
         return generate_checked(request_id, vertex_request, call)
     except VertexBridgeClientError as exc:

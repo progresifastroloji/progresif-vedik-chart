@@ -54,13 +54,15 @@ def review_request(request, payload):
             "\"unsupported_claims\":[],\"issues\":[]}. Listelerde yalnız düzeltilmesi gereken somut sorunları kısa belirt.\n" + STANDARD
         )}]},
         "contents": [{"role": "user", "parts": [{"text": json.dumps({"source": source, "draft": response_text(payload)}, ensure_ascii=False)}]}],
-        "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 3000,
+        "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 6000,
                              "thinkingConfig": {"thinkingLevel": "HIGH"}},
     }
 
 
 def parse_review(payload):
     try:
+        if any(c.get("finishReason") == "MAX_TOKENS" for c in payload.get("candidates", [])):
+            raise ValueError("truncated_review")
         value = json.loads(response_text(payload))
         scores = value["scores"]
         if set(scores) != set(DIMENSIONS) or any(type(s) is not int or not 1 <= s <= 5 for s in scores.values()):
@@ -73,6 +75,8 @@ def parse_review(payload):
                 raise ValueError(name)
         return value
     except (ValueError, TypeError, KeyError) as exc:
+        logging.getLogger(__name__).warning("turkish_editor invalid_review error=%s finish=%s chars=%d",
+            type(exc).__name__, [c.get("finishReason") for c in payload.get("candidates", [])], len(response_text(payload)))
         raise EditorialError("editor_response_invalid") from exc
 
 

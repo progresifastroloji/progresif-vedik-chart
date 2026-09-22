@@ -57,6 +57,13 @@ class TurkishNarrativeTest(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(EditorialError):
                 parse_review(payload(text))
 
+    def test_truncated_review_is_not_accepted_even_with_valid_json(self):
+        value = report()
+        value["candidates"][0]["finishReason"] = "MAX_TOKENS"
+        with self.assertRaises(EditorialError):
+            parse_review(value)
+        self.assertEqual(review_request(self.request, payload("x"))["generationConfig"]["maxOutputTokens"], 6000)
+
     def test_editor_uses_validated_analysis_not_full_archive(self):
         self.request["contents"][0]["parts"][0]["text"] = "DOĞRULANMIŞ AŞAMA 1: görev paylaşımı\n\nTAM KAYNAK SIRASI: fazla arşiv"
         request = review_request(self.request, payload("Görev paylaşımı"))
