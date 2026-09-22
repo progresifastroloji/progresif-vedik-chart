@@ -204,7 +204,7 @@ def _user_text(context, language):
         ]}
         instruction = (
             "Kullanıcıya gösterilecek bütün değerleri doğal Türkiye Türkçesiyle yaz. Her odak değerini kanıttan aynen kopyala. "
-            "Her gün için 32 ile 110 kelime arasında tek, akıcı paragraf yaz ve focus_anchors listesindeki en az bir ifadeyi paragrafta aynen kullan; "
+            "Her gün için 32 ile 110 kelime arasında tek, akıcı paragraf yaz. focus_anchors kavramlarını doğal çekim ve eş anlamlarıyla anlat; hazır ifadeyi aynen kopyalamak zorunlu değildir. "
             "focus_anchors listesini çıktıya koyma. Her paragrafta verilen somut gözlemi (varsa Ay'ın tam nakşatra adını), devredeki konuyu ve bunun hangi yaşam alanında görünebileceğini açıkça söyle; supporting_period_areas varsa onu da yalnız kanıttaki alan olarak bağla; ardından kanıt paketindeki eylemlerden birini ve bir dikkat noktasını ver. "
             "Nakşatra adı dışında gezegen, burç, ev, dönem veya transit uydurma. Teknik ifade yalnız kanıtta verilen Ay nakşatrası adıyla sınırlı kalsın ve sade dille açıklansın. "
             "Paragraf önce günün tespitini, sonra bunun kişisel anlamını, ardından sakin ve uygulanabilir rehberliği taşısın. "
@@ -233,13 +233,13 @@ def _deep_user_text(day, language):
 
 def _call_bridge(user_text, language):
     from vertex_bridge_client import call_vertex_bridge
-    language_instruction = "Return natural English only. Do not use Turkish words or suffixes." if language == "en" else "Yalnız doğal Türkiye Türkçesi kullan."
+    language_instruction = "Return natural English only. Do not use Turkish words or suffixes." if language == "en" else "VEDIC_TR_NARRATIVE_V1\nYalnız doğal Türkiye Türkçesi kullan."
     request = {"systemInstruction": {"parts": [{"text": _METHODOLOGY_TEXT + "\n\n" + language_instruction}]}, "contents": [{"role": "user", "parts": [{"text": user_text}]}], "generationConfig": {"temperature": 0.4 if language == "tr" else 0.65, "maxOutputTokens": 3072, "responseMimeType": "application/json", "thinkingConfig": {"thinkingLevel": "MINIMAL"}}}
     _, payload = call_vertex_bridge(_safe_request_id(), request)
     return payload
 
 
-def validate(payload, context, language="tr"):
+def validate(payload, context, language="tr", *, semantic_verified=False):
     """Yalnız yedi beklenen gün ve kanıtla izinli alanları kabul eder."""
     if not isinstance(payload, dict):
         return None, "json_sozluk_degil"
@@ -289,7 +289,7 @@ def validate(payload, context, language="tr"):
         if not set(domains).issubset(set(evidence.get("eligible_domains") or [])):
             return None, "alan_kanitla_uyusmuyor"
         cleaned["alanlar"] = domains
-        if not _reflects_focus(yorum, focus, language):
+        if not semantic_verified and not _reflects_focus(yorum, focus, language):
             return None, "gun_metni_odakla_uyusmuyor"
         marker = yorum.casefold()
         if marker in seen_messages:
@@ -318,7 +318,7 @@ def validate(payload, context, language="tr"):
     return {"motto": motto.strip(), "days": cleaned_days}, None
 
 
-def validate_deep(payload, day, language="tr"):
+def validate_deep(payload, day, language="tr", *, semantic_verified=False):
     """Premium ayrıntının yalnız seçilen günün kanıtına bağlı kalmasını sağlar."""
     if not isinstance(payload, dict):
         return None, "json_sozluk_degil"
@@ -333,7 +333,7 @@ def validate_deep(payload, day, language="tr"):
         return None, "gun_odagi_yok"
     if language == "en":
         focus = FOCUS_TRANSLATIONS.get(focus.casefold(), focus)
-    if not _reflects_focus(yorum, focus, language):
+    if not semantic_verified and not _reflects_focus(yorum, focus, language):
         return None, "derin_yorum_odakla_uyusmuyor"
     if _has_banned(yorum, language):
         return None, "yasakli_ifade"
@@ -367,12 +367,14 @@ def generate(context, language="tr"):
             raw = json.loads(_response_text(payload))
         except Exception as exc:
             return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
-        result, reason = validate(raw, context, language)
+        editorial = payload.get("editorialQuality") or {}
+        semantic_verified = language == "tr" and editorial.get("version") == "tr-narrative-v1"
+        result, reason = validate(raw, context, language, semantic_verified=semantic_verified)
         if result is not None:
             elapsed = int((time.time() - started) * 1000)
             result["sure_ms"] = elapsed
             return result, None
-        if reason not in retry_reasons or attempt == 1:
+        if reason not in retry_reasons or attempt == 1 or semantic_verified:
             elapsed = int((time.time() - started) * 1000)
             return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": elapsed}
         instruction += (
@@ -401,9 +403,11 @@ def generate_deep(day, language="tr"):
             raw = json.loads(_response_text(payload))
         except Exception as exc:
             return None, {"asama": "parse", "exc": exc, "fallback_nedeni": "yanit_ayristirilamadi", "sure_ms": int((time.time() - started) * 1000)}
-        result, reason = validate_deep(raw, day, language)
+        editorial = payload.get("editorialQuality") or {}
+        semantic_verified = language == "tr" and editorial.get("version") == "tr-narrative-v1"
+        result, reason = validate_deep(raw, day, language, semantic_verified=semantic_verified)
         if result is not None:
             return result, {"sure_ms": int((time.time() - started) * 1000)}
-        if reason != "derin_yorum_kelime_siniri" or attempt == 1:
+        if reason != "derin_yorum_kelime_siniri" or attempt == 1 or semantic_verified:
             return None, {"asama": "validate", "fallback_nedeni": reason, "sure_ms": int((time.time() - started) * 1000)}
         instruction += "\n\nKRİTİK: İlk yanıt uzunluk sınırını aştı veya altında kaldı. Yorum alanında 110 ile 140 kelime arasında kal."

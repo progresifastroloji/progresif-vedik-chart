@@ -46,7 +46,7 @@ _ORTAK_KURALLAR = """KESIN KURALLAR
 CIKTI: yalnizca JSON.
 {"cumle": "...", "odak": "<tek kelime>"}"""
 
-_ROL = "ROL: Vedik astroloji yorumunu sade Turkceye ceviren yazar.\n"
+_ROL = "VEDIC_TR_NARRATIVE_V1\nROL: Vedik astroloji yorumunu sade Turkceye ceviren yazar.\n"
 
 PROMPTS = {
     "daily": (

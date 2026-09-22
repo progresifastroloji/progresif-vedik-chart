@@ -65,7 +65,7 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
 
     def test_week_contract_is_current(self):
         self.assertEqual(HOMEPAGE_CONTEXT_VERSION, "homepage_digest_context_v5")
-        self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v7")
+        self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v8-tr-narrative-v1")
 
     def test_writer_accepts_seven_evidence_bound_cards_and_direct_guidance(self):
         context = week_context()
@@ -144,6 +144,28 @@ class PaidHomepageDigestContractTests(unittest.TestCase):
         self.assertFalse(paid_writer._leaks_technical_terms("Kısa bir sunum için sakin hazırlık yap."))
         self.assertTrue(paid_writer._leaks_technical_terms("Sun bugün ilişkinizi yönetiyor."))
         self.assertTrue(paid_writer._leaks_technical_terms("Transit bilgisi sekizinci ev için konuşuyor."))
+
+    def test_editorial_approval_never_skips_domain_or_safety_guards(self):
+        context = week_context()
+        output = valid_output(context)
+        output["days"][0]["alanlar"] = ["work"]
+        self.assertEqual(paid_writer.validate(output, context, semantic_verified=True)[1], "alan_kanitla_uyusmuyor")
+        output = valid_output(context)
+        output["days"][0]["yorum"] += " Yeni ilişkin kesinleşecek."
+        self.assertEqual(paid_writer.validate(output, context, semantic_verified=True)[1], "kesin_gelecek_iddiasi")
+
+    def test_editorial_checked_week_does_not_start_another_repair_chain(self):
+        context = week_context()
+        rejected = valid_output(context)
+        rejected["days"][0]["yorum"] += " Yeni ilişkin kesinleşecek."
+        checked = {"candidates": [{"content": {"parts": [{"text": json.dumps(rejected)}]}}],
+                   "editorialQuality": {"version": "tr-narrative-v1", "repaired": False}}
+        with patch.object(paid_writer, "llm_enabled", return_value=True), \
+                patch.object(paid_writer, "_call_bridge", return_value=checked) as bridge:
+            result, error = paid_writer.generate(context)
+        self.assertIsNone(result)
+        self.assertEqual(error["fallback_nedeni"], "kesin_gelecek_iddiasi")
+        self.assertEqual(bridge.call_count, 1)
 
     def test_unknown_birth_time_has_no_house_or_domain_evidence(self):
         chart = {

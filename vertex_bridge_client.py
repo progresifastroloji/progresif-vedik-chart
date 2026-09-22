@@ -148,10 +148,15 @@ def _classified_http_error(exc, request_id):
     )
 
 
-def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, nonce=None):
+def _call_vertex_bridge_raw(request_id, vertex_request, *, opener=None, now=None, nonce=None, deadline=None):
     """Sign one Vertex request and send it through the configured Vedik bridge."""
 
     bridge_url, secret, timeout_seconds = _bridge_config()
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise VertexBridgeClientError("vertex_narrative_timeout", 504, retryable=False, request_id=request_id)
+        timeout_seconds = min(timeout_seconds, remaining)
     normalized_request_id, raw_body = _request_body(request_id, vertex_request)
     timestamp = str(int((now or time.time)()))
     nonce_value = str((nonce or uuid.uuid4)())
@@ -196,3 +201,24 @@ def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, non
     if not isinstance(payload, dict):
         raise VertexBridgeClientError("vertex_bridge_response_invalid", 502)
     return normalized_request_id, payload
+
+
+def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, nonce=None):
+    from turkish_narrative import EditorialError, generate_checked, marked
+    deadline = None
+    def call(identifier, request):
+        return _call_vertex_bridge_raw(identifier, request, opener=opener, now=now, nonce=nonce, deadline=deadline)
+    # Validate the original id too: suffixing must not hide an invalid caller id.
+    _request_body(request_id, vertex_request)
+    if not marked(vertex_request):
+        return call(request_id, vertex_request)
+    # One shared budget for writing, editing and at most one repair.
+    deadline = time.monotonic() + 65
+    try:
+        return generate_checked(request_id, vertex_request, call)
+    except VertexBridgeClientError as exc:
+        # Restarting the whole editorial chain can exceed both latency and cost bounds.
+        raise VertexBridgeClientError("vertex_narrative_provider_failed", exc.http_status,
+            upstream_status=exc.upstream_status, retryable=False, request_id=request_id) from exc
+    except EditorialError as exc:
+        raise VertexBridgeClientError("vertex_narrative_quality_failed", 502, retryable=False, request_id=request_id) from exc

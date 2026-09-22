@@ -1,0 +1,302 @@
+[
+  {
+    "id": "dev-1",
+    "split": "development",
+    "kind": "daily",
+    "question": "Bugün kendi programımı nasıl düzenleyebilirim?",
+    "evidence": "Günlük Ay: Dhanishta. Kişisel alan: zaman kullanımı ve kendini ifade. Eylem: tek işi seçip süre ayır. Dikkat: fazla yük. Natal Ay nakşatrası verilmemiş.",
+    "reference": "Bugün zamanınızı tek bir işe ayırmak, başkalarının talepleri arasında kendi önceliğinizi korumanızı kolaylaştırabilir."
+  },
+  {
+    "id": "dev-2",
+    "split": "development",
+    "kind": "relationship",
+    "question": "İletişimde neye dikkat etmeliyim?",
+    "evidence": "Doğrulanmış sentez: yakınlık ile kişisel alan ihtiyacı birlikte. Partnerin duyguları/niyeti bilinmiyor. Öneri: ihtiyaçları örnekle anlat.",
+    "reference": "Yakın olmak isterken kendi zamanınıza da ihtiyaç duyabilirsiniz. Bunu uzaklaşmakla eş tutmadan, birlikte ve ayrı geçireceğiniz zamanı konuşabilirsiniz."
+  },
+  {
+    "id": "dev-3",
+    "split": "development",
+    "kind": "career",
+    "question": "İş düzenimde ne öne çıkıyor?",
+    "evidence": "Doğrulanmış sentez: görev paylaşımı ve sorumluluk sınırı. Terfi veya iş teklifi kanıtı yok.",
+    "reference": "İş yükünüzü değerlendirirken hangi görevlerin size ait olduğunu netleştirmek yararlı olabilir. Yeni bir talepte teslim tarihini ve sorumluluğun kapsamını sorun."
+  },
+  {
+    "id": "dev-4",
+    "split": "development",
+    "kind": "family",
+    "question": "Evdeki sorumlulukları nasıl ele alabilirim?",
+    "evidence": "Doğrulanmış sentez: ev içi düzen ve paylaşım. Aile üyelerinin niyeti bilinmiyor.",
+    "reference": "Evde aksayan bir işi seçip kimin ne zaman üstlenebileceğini konuşmak, sorumlulukları paylaşmak için somut bir başlangıç olabilir."
+  },
+  {
+    "id": "dev-5",
+    "split": "development",
+    "kind": "learning",
+    "question": "Öğrenme yaklaşımım için ne önerirsin?",
+    "evidence": "Doğrulanmış sentez: merak ile uygulamada süreklilik arasında gerilim. Zeka veya sınav sonucu çıkarılamaz.",
+    "reference": "Yeni bilgi toplamak kadar öğrendiğinizi denemeye de zaman ayırabilirsiniz. Seçtiğiniz bir konuyu kendi cümlelerinizle açıklamak, hangi kısmın eksik kaldığını gösterebilir."
+  },
+  {
+    "id": "dev-6",
+    "split": "development",
+    "kind": "friends",
+    "question": "Arkadaşlıklarımda neye bakmalıyım?",
+    "evidence": "Doğrulanmış sentez: karşılıklı destek ve gruba uyum. İhanet veya kopuş kanıtı yok.",
+    "reference": "Arkadaşlarınıza destek verirken sizin de yardım isteyebilmeniz önemli bir denge olabilir. Son görüşmelerinizde iki tarafın ihtiyaçlarına ne kadar yer açıldığını gözlemleyebilirsiniz."
+  },
+  {
+    "id": "dev-7",
+    "split": "development",
+    "kind": "unknown",
+    "question": "Doğum saatimi bilmiyorum, bugün işim nasıl gider?",
+    "evidence": "Doğum saati bilinmiyor. Yalnız günlük Ay: Shravana. Kişisel ev/iş alanı yok. Genel tema: dinleme ve öğrenme.",
+    "reference": "Bu veri işinizde ne olacağını söylemek için yeterli değil. Günün genel dinleme temasını, bir konuşmada duyduğunuzu kısaca özetleyip doğru anlayıp anlamadığınızı sormak için kullanabilirsiniz."
+  },
+  {
+    "id": "dev-8",
+    "split": "development",
+    "kind": "conflict",
+    "question": "Yeni bir başlangıç yapmalı mıyım?",
+    "evidence": "Doğrulanmış sentez: girişim isteği destekleniyor, mevcut yük süreyi sınırlıyor. Kesin karar veya sonuç yok.",
+    "reference": "Yeni bir şeye başlama isteğinizle mevcut işlerinizi sürdürme ihtiyacı birlikte değerlendirilmeli. Küçük ve geri alınabilir bir deneme, ne kadar zaman ayırabildiğinizi görmenize yardımcı olabilir."
+  },
+  {
+    "id": "dev-9",
+    "split": "development",
+    "kind": "natal",
+    "question": "Doğum Ayım Dhanishta, bu ne anlatır?",
+    "evidence": "Yalnız natal Ay Dhanishta doğrulanmış. Günlük Ay konumu ve tam kavuşum yok. Tema: ritim, ortak hedef.",
+    "reference": "Doğum Ayınız için verilen Dhanishta teması, kendi ritminizle birlikte çalıştığınız insanların temposunu nasıl uzlaştırdığınızı düşünmek için kullanılabilir. Bu bilgi bugünkü Ay konumunu veya belirli bir olayı göstermez."
+  },
+  {
+    "id": "dev-10",
+    "split": "development",
+    "kind": "period",
+    "question": "İçinde bulunduğum dönemi yorumla.",
+    "evidence": "Yalnız Satürn ana dönemi, Venüs alt dönemi tarihleri doğrulanmış. Ev, yöneticilik, güç ve kişisel tema sentezi verilmemiş.",
+    "reference": "Dönemlerin adları tek başına hayatınızda hangi konunun öne çıkacağını belirlemeye yetmez. Kişisel yorum için bu gezegenlerin doğum haritanızdaki görevleri ve bağlantıları da gerekir."
+  },
+  {
+    "id": "dev-11",
+    "split": "development",
+    "kind": "daily",
+    "question": "Günlük yorumumu ver.",
+    "evidence": "Günlük Ay Hasta. Desteklenen alan: günlük rutin. Eylem: küçük bir işi tamamla. Dikkat: aşırı kontrol. Özel olay yok.",
+    "reference": "Günlük düzende tamamlanabilir bir işe odaklanmak yararlı olabilir. Hasta temasıyla bağlantılı olarak, her ayrıntıyı düzeltmeye çalışmak yerine bir işin hangi noktada yeterli sayılacağını belirleyebilirsiniz."
+  },
+  {
+    "id": "dev-12",
+    "split": "development",
+    "kind": "relationship",
+    "question": "Kırgınlığımı nasıl anlatabilirim?",
+    "evidence": "Kullanıcı kırgın olduğunu söyledi. Doğrulanmış sentez: açık iletişim ihtiyacı. Karşı tarafın niyeti bilinmiyor.",
+    "reference": "Kırgınlığınızı anlatırken karşı tarafın niyetini açıklamaya çalışmak yerine, sizi etkileyen davranışı ve ihtiyacınızı ayırabilirsiniz. Tek bir örnek üzerinden konuşmak anlaşılmayı kolaylaştırabilir."
+  },
+  {
+    "id": "dev-13",
+    "split": "development",
+    "kind": "career",
+    "question": "Yeteneklerimi işimde nasıl kullanabilirim?",
+    "evidence": "Doğrulanmış sentez: bilgi aktarımı ile düzen kurma birlikte destekleniyor. Meslek adı ve başarı garantisi yok.",
+    "reference": "Bilgiyi anlaşılır hale getirmek ve işleri düzenlemek, işinizde deneyebileceğiniz iki yön olabilir. Sık tekrarlanan bir süreci kısa bir açıklamaya dönüştürmek, bu becerileri birlikte kullanmanızı sağlar."
+  },
+  {
+    "id": "dev-14",
+    "split": "development",
+    "kind": "family",
+    "question": "Aile beklentileri konusunda ne yapabilirim?",
+    "evidence": "Kullanıcı aile beklentileriyle zorlandığını söyledi. Doğrulanmış sentez: aidiyet ile bağımsız karar gerilimi.",
+    "reference": "Ailenizle bağınızı korurken her beklentiyi üstlenmek zorunda hissetmeniz gerekmez. Hangi konuda destek verebildiğinizi, hangisi için zamanınız olmadığını ayrı ayrı söylemek konuşmayı somutlaştırabilir."
+  },
+  {
+    "id": "dev-15",
+    "split": "development",
+    "kind": "learning",
+    "question": "Çok konu arasında dağılıyorum.",
+    "evidence": "Kullanıcı dağılma bildirdi. Doğrulanmış sentez: öğrenmede çeşitlilik; süreklilik zorlayıcı. Klinik çıkarım yok.",
+    "reference": "Birden çok konuya ilgi duymanız öğrenmeyi canlı tutabilir; başladıklarınızı tamamlamak için bir sıra belirlemek yararlı olabilir. Bugün yalnız bir konunun tek sorusuna cevap aramayı deneyebilirsiniz."
+  },
+  {
+    "id": "dev-16",
+    "split": "development",
+    "kind": "friends",
+    "question": "Bir arkadaşımın benden uzaklaştığını düşünüyorum.",
+    "evidence": "Kullanıcı şüphesi doğrulanmış olay değil. Harita üçüncü kişinin niyetini göstermez. Desteklenen konu: açık iletişim.",
+    "reference": "Arkadaşınızın neden uzaklaştığını bu veriden bilemeyiz. Bir süredir daha az görüştüğünüzü fark ettiyseniz, bunu suçlama içermeyen bir soruyla konuşmak varsayımları ayırmanıza yardımcı olabilir."
+  },
+  {
+    "id": "dev-17",
+    "split": "development",
+    "kind": "unknown",
+    "question": "Yükselenime göre ilişkimi anlat.",
+    "evidence": "Doğum saati bilinmiyor; gerçek yükselen yok. İlişki sentezi verilmemiş.",
+    "reference": "Doğum saatiniz bilinmediği için yükselene dayalı ilişki yorumu yapamam. İlişkinizde anlamak istediğiniz durumu paylaşırsanız, mevcut verinin hangi kısmının buna yanıt verebildiğini ayırabiliriz."
+  },
+  {
+    "id": "dev-18",
+    "split": "development",
+    "kind": "conflict",
+    "question": "Göstergeler hem destek hem zorluk gösteriyor.",
+    "evidence": "Doğrulanmış sentez: yaratıcı üretim destekleniyor; zaman ve kaynak kısıtı var. İkisi aynı anda geçerli.",
+    "reference": "Bir fikri geliştirmek için istek duyarken ayırabildiğiniz zaman sınırlı olabilir. Fikrin tamamını gerçekleştirmek yerine küçük bir taslak hazırlamak, hem üretme isteğinize hem mevcut koşullarınıza yer açabilir."
+  },
+  {
+    "id": "dev-19",
+    "split": "development",
+    "kind": "natal",
+    "question": "Aynı nakşatrada olmak tam kavuşum mu?",
+    "evidence": "Natal ve günlük Ay Shravana. Dereceler verilmemiş. Aynı nakşatra doğrulanmış, tam kavuşum değil.",
+    "reference": "İki Ay konumunun aynı nakşatrada olması, derecelerinin aynı olduğu anlamına gelmez. Bu nedenle tam kavuşum diyemeyiz; bunun için doğrulanmış derecelerin karşılaştırılması gerekir."
+  },
+  {
+    "id": "dev-20",
+    "split": "development",
+    "kind": "period",
+    "question": "Bu dönem kesin evlilik getirir mi?",
+    "evidence": "İlişki teması destekleniyor. Kesin olay, partner veya tarih kanıtı yok. Karşılıklılık gerekli.",
+    "reference": "İlişki temasının desteklenmesi evlilik garantisi değildir. Mevcut bir ilişkiniz varsa beklentilerinizin ve ortak kararlarınızın ne kadar uyuştuğunu konuşmak, bu temayı değerlendirmenin somut bir yolu olabilir."
+  },
+  {
+    "id": "holdout-1",
+    "split": "holdout",
+    "kind": "daily",
+    "question": "Bugün iletişim için nasıl bir yaklaşım uygun?",
+    "evidence": "Ay Shravana. Yakın çevre ve iletişim alanı destekli. Eylem: dinlediğini özetle. Başkasının niyeti bilinmiyor."
+  },
+  {
+    "id": "holdout-2",
+    "split": "holdout",
+    "kind": "daily",
+    "question": "Bugünkü günlük düzen yorumum nedir?",
+    "evidence": "Ay Revati. Rutin alanı. Açık işi tamamlama, yeni işler biriktirmeme. Natal nakşatra yok."
+  },
+  {
+    "id": "holdout-3",
+    "split": "holdout",
+    "kind": "daily",
+    "question": "Bugün arkadaş çevremde hangi konuya dikkat edebilirim?",
+    "evidence": "Ay Anuradha. Arkadaşlık alanı destekleniyor. Karşılıklı destek, rol paylaşımı; olay tahmini yok."
+  },
+  {
+    "id": "holdout-4",
+    "split": "holdout",
+    "kind": "daily",
+    "question": "Bugün yaratıcı çalışmalarımı nasıl ele alayım?",
+    "evidence": "Ay Chitra. Yaratıcılık alanı. Fikri taslağa dönüştürme; görüntüye takılıp içeriği bırakmama."
+  },
+  {
+    "id": "holdout-5",
+    "split": "holdout",
+    "kind": "daily",
+    "question": "Bugünün genel yorumunu istiyorum.",
+    "evidence": "Ay Pushya. Doğum saati bilinmiyor; kişisel yaşam alanı yok. Genel destekleyici rutin teması."
+  },
+  {
+    "id": "holdout-6",
+    "split": "holdout",
+    "kind": "relationship",
+    "question": "İlişkide hem yakınlık hem yalnız kalmak istiyorum.",
+    "evidence": "Kullanıcı iki ihtiyacını bildirdi. Doğrulanmış analiz: birliktelik ve kişisel alan arasında denge. Partnerin tutumu yok."
+  },
+  {
+    "id": "holdout-7",
+    "split": "holdout",
+    "kind": "relationship",
+    "question": "Yeni ilişkim devam eder mi?",
+    "evidence": "Doğrulanmış analiz: iletişim ihtiyacı. Devam etme/ayrılma sonucu kanıtlanmıyor."
+  },
+  {
+    "id": "holdout-8",
+    "split": "holdout",
+    "kind": "career",
+    "question": "İş yerinde fazla sorumluluk alıyorum, ne önerirsin?",
+    "evidence": "Kullanıcı fazla sorumluluk bildirdi. Analiz: görev sınırı ve süre planlama. İşveren niyeti bilinmiyor."
+  },
+  {
+    "id": "holdout-9",
+    "split": "holdout",
+    "kind": "career",
+    "question": "İş değiştirmek için kesin doğru zaman mı?",
+    "evidence": "Değişim isteğini destekleyen ve mevcut sorumluluklara işaret eden karşıt bulgular. Kesin zaman penceresi verilmemiş."
+  },
+  {
+    "id": "holdout-10",
+    "split": "holdout",
+    "kind": "family",
+    "question": "Evde düzen konusunda zorlanıyorum.",
+    "evidence": "Kullanıcı düzen güçlüğü bildiriyor. Analiz: görev paylaşımı teması. Aile üyesi suçlanamaz."
+  },
+  {
+    "id": "holdout-11",
+    "split": "holdout",
+    "kind": "family",
+    "question": "Aileme destek olurken kendimi unutuyorum.",
+    "evidence": "Kullanıcı kendi ihtiyacını ertelediğini söyledi. Analiz: aidiyet ve kendi ihtiyacını ifade dengesi."
+  },
+  {
+    "id": "holdout-12",
+    "split": "holdout",
+    "kind": "learning",
+    "question": "Bir konuyu bitirmeden yenisine geçiyorum.",
+    "evidence": "Kullanıcının davranış bildirimi var. Analiz: merak güçlü, sürdürme için somut yapı ihtiyacı. Tanı yok."
+  },
+  {
+    "id": "holdout-13",
+    "split": "holdout",
+    "kind": "learning",
+    "question": "Bu dönemde sınavı kazanır mıyım?",
+    "evidence": "Öğrenme teması destekli; sınav sonucu bilinmiyor. Çalışma davranışı önerilebilir, başarı vaat edilemez."
+  },
+  {
+    "id": "holdout-14",
+    "split": "holdout",
+    "kind": "friends",
+    "question": "Arkadaş grubunda kendimi nasıl ifade edebilirim?",
+    "evidence": "Doğrulanmış analiz: gruba katılım ile kişisel fikir paylaşımı dengesi. Dışlanma kanıtı yok."
+  },
+  {
+    "id": "holdout-15",
+    "split": "holdout",
+    "kind": "natal",
+    "question": "Doğum Ayım Hasta, bugün ne olacak?",
+    "evidence": "Yalnız natal Hasta verisi var. Günlük transit yok. Natal tema beceri ve düzenleme; gün tahmini yapılamaz."
+  },
+  {
+    "id": "holdout-16",
+    "split": "holdout",
+    "kind": "natal",
+    "question": "Natal Ayım ile günlük Ayım Dhanishta, anlamı ne?",
+    "evidence": "İki konum aynı nakşatrada. Derece/pada bilinmiyor. Aynı nakşatra tam kavuşum iddiasını desteklemez."
+  },
+  {
+    "id": "holdout-17",
+    "split": "holdout",
+    "kind": "period",
+    "question": "Jüpiter dönemim para kazandırır mı?",
+    "evidence": "Yalnız Jüpiter dönem adı var. Natal yöneticilik, güç ve para alanı verisi yok. Kazanç çıkarımı yapılamaz."
+  },
+  {
+    "id": "holdout-18",
+    "split": "holdout",
+    "kind": "period",
+    "question": "Verilen dönem tarihlerini günlük hayatıma nasıl çevirelim?",
+    "evidence": "Satürn/Venüs adları ve sıralama var; natal konu bağlantısı yok. Dönem adı tek başına kişiselleştirme sağlamaz."
+  },
+  {
+    "id": "holdout-19",
+    "split": "holdout",
+    "kind": "conflict",
+    "question": "Yeni bir projeye başlamak istiyorum ama zamanım az.",
+    "evidence": "Kullanıcı isteği ve kısıtı bildiriyor. Analiz: yaratıcı girişim desteği ile sorumluluk yükü birlikte. Küçük deneme uygun."
+  },
+  {
+    "id": "holdout-20",
+    "split": "holdout",
+    "kind": "unknown",
+    "question": "Doğum saatim belirsiz, hangi alanda değişim olacak?",
+    "evidence": "Güvenilir yaşam alanı aktivasyonu yok. Genel Ay teması merak. Ev, yükselen veya kesin değişim çıkarılamaz."
+  }
+]

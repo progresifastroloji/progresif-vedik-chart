@@ -41,7 +41,7 @@ _STRONG_DIGNITY = ("uccha", "moolatrikona", "swakshetra")
 _WEAK_DIGNITY_ESSENTIAL = ("enemy",)
 
 HOMEPAGE_CONTEXT_VERSION = "homepage_digest_context_v5"
-HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v7"
+HOMEPAGE_METHODOLOGY_VERSION = "digest-methodology-v8-tr-narrative-v1"
 WEEK_CARD_EVIDENCE_VERSION = "personal-week-day-evidence-v2"
 
 # Kullanıcıya ancak harita ve dönem kanıtı aynı anda yeterliyse gösterilecek

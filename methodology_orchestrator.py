@@ -163,10 +163,10 @@ CANDIDATE_MANIFEST = (
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.4.3",
+    "version": "1.5.0",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "0b31b190613fadb2eed30593db61938e655649652c14b502c8d4a21400ee0fe0",
+    "sha256": "46acf98144263441ed47dd88c08289bb6586a7db79a8278cb88b16b527869e4f",
 }
 
 
@@ -650,7 +650,7 @@ def _narrative_request(
         )
     )
     request = {
-        "systemInstruction": {"parts": [{"text": system_text}]},
+        "systemInstruction": {"parts": [{"text": system_text + ("\nVEDIC_TR_NARRATIVE_V1" if response_language == "tr" else "")}]},
         "contents": [{"role": "user", "parts": [{"text": user_text}]}],
         "generationConfig": {
             "temperature": 0.35,
@@ -1942,7 +1942,7 @@ def _run_candidate(
                 if isinstance(exc, MethodologyOrchestrationError)
                 else getattr(exc, "code", "methodology_narrative_failed")
             )
-            if attempt_index == 0 and (
+            if attempt_index == 0 and not (narrative_payload or {}).get("editorialQuality") and (
                 code in RETRYABLE_NARRATIVE_ERRORS
                 or _is_retryable_provider_error(exc, code)
             ):

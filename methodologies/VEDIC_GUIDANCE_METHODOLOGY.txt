@@ -1,6 +1,6 @@
 ---
 document: VEDIC_GUIDANCE_METHODOLOGY
-version: 1.4.3
+version: 1.5.0
 language: tr
 runtime_stage: narrative_only
 status: active
@@ -216,6 +216,8 @@ Davranış önerisi ancak kullanıcının sorusuna ve hazır oluşuna uygunsa ve
 Hazır oluş `unknown`, `exploring` veya `ambivalent` ise zorla plan verme. Bunun yerine tek bir gözlem veya yansıma daveti sun. `ready` veya `acting` ise küçük planı kullanıcının kendi hedefiyle bağla.
 
 ## 9. DİL VE TON
+
+Türkçe anlatımda `TURKISH_NARRATIVE.md` ortak standardı geçerlidir. Sunucu ayrı editör çağrısıyla anlam, doğallık, konu ilgisi, rehberlik ve kanıta bağlılığı denetler; en fazla bir düzeltme yapılır. Teknik kanıt ve belirsizlik korunur. Sözcük eşleşmesi anlam denetiminin yerine geçmez.
 
 - Uygulamanın seçtiği cevap dilini kullan: `tr` ise doğal, sıcak, açık ve yetişkin Türkiye Türkçesi; `en` ise doğal, açık ve yetişkin İngilizce.
 - Son kullanıcı dilini ayrıca tahmin etme; `response_language` alanını tek yetkili dil kaynağı kabul et.

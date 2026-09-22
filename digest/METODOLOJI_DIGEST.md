@@ -1,6 +1,8 @@
 # Yedi Günlük Kişisel Yorum Metodolojisi
 
-Sürüm: digest-methodology-v7
+Sürüm: digest-methodology-v8-tr-narrative-v1
+
+Türkçe üretimde `methodologies/TURKISH_NARRATIVE.md` ortak anlatım standardı ve sunucu editör denetimi uygulanır. Tespit, konu ve alan teknik etiketi aynen kopyalanmadan doğal davranış diliyle açıklanır. Yedi gün birlikte denetlenir; bir düzeltmeden sonra da başarısızsa kişisel yorum olarak yayımlanmaz.
 
 Bu yöntem her gün için aynı zinciri uygular: **doğrulanmış günlük gökyüzü → somut tespit → devredeki konu → yaşam alanı → yapılabilir adım → dikkat noktası**. Model hesap yapmaz, pakette olmayan bir gezegen/burç/ev/dönem çıkarmaz ve tek bir göstergeden değişmez kişilik hükmü kurmaz.
 

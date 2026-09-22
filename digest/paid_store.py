@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 _LOCAL_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "digest_data", "paid_digest.sqlite3")
 
 GENERATOR_VERSION = "homepage-gemini-v5"
-METHODOLOGY_VERSION = "digest-methodology-v7"
+METHODOLOGY_VERSION = "digest-methodology-v8-tr-narrative-v1"
 LOCK_TIMEOUT_MIN = 10
 
 
