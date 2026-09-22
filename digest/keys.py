@@ -1,7 +1,7 @@
 """Anahtar semasi, sabitler ve Europe/Istanbul tarih yardimcilari.
 
-Iki ayri zaman kavrami vardir:
-  - Yayin ani  : 00:00 Europe/Istanbul (yeni digest kullaniciya acilir)
+ Iki ayri zaman kavrami vardir:
+  - Yayin ani  : Pazar 20:00 Europe/Istanbul (gelecek pazartesi haftasi acilir)
   - Snapshot ani: 12:00 Europe/Istanbul (o gunun gezegen goruntusu)
 
 Sabit UTC+3 yazilmaz; ZoneInfo gercek tarihsel farki cozer.
@@ -94,6 +94,19 @@ def tz_offset_hours(d):
 def week_start(d):
     """ISO haftasinin pazartesisi."""
     return d - timedelta(days=d.weekday())
+
+
+def published_week_start(local_time):
+    """Kullaniciya acik haftanin pazartesisini doner.
+
+    Pazar 20:00'ye kadar mevcut hafta gorunur; bu esikten sonra bildirimle
+    birlikte gelecek pazartesi-pazar paketi acilir.
+    """
+    if local_time.tzinfo is None or local_time.utcoffset() is None:
+        raise ValueError("Saat dilimli yerel zaman gerekli")
+    if local_time.weekday() == 6 and (local_time.hour, local_time.minute) >= (20, 0):
+        return week_start(local_time.date() + timedelta(days=1))
+    return week_start(local_time.date())
 
 
 def week_days(d):

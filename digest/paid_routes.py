@@ -26,7 +26,7 @@ from datetime import datetime
 from flask import Blueprint, current_app, jsonify, request
 
 from . import batch, paid_store, paid_writer, store
-from .keys import IST, SNAPSHOT_HOUR, current_hour_ist, week_start
+from .keys import IST, SNAPSHOT_HOUR, current_hour_ist, published_week_start, week_start
 from .situation import required_days
 from .paid_situation import (
     HOMEPAGE_CONTEXT_VERSION,
@@ -137,8 +137,7 @@ def api_v2_pwa_digest_personal():
         chart, chart_id, profile_id, owner_user_id = sonuc
 
         local_hour = current_hour_ist()
-        d = local_hour.date()
-        monday = week_start(d)
+        monday = published_week_start(local_hour)
         weekly_snapshots, weekly_snapshot_ms = _load_weekly_snapshots(monday)
         if weekly_snapshots is None:
             return jsonify({
@@ -290,7 +289,7 @@ def api_v2_pwa_digest_personal_deepen():
         chart, chart_id, profile_id, owner_user_id = sonuc
 
         local_hour = current_hour_ist()
-        monday = week_start(local_hour.date())
+        monday = published_week_start(local_hour)
         weekly_snapshots, _ = _load_weekly_snapshots(monday)
         if weekly_snapshots is None:
             return jsonify({"ok": False, "status": "generation_pending", "fallback_nedeni": "durum_paketi_hazir_degil"}), 200

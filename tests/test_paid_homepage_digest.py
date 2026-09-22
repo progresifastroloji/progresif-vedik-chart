@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask
 
 from digest import paid_routes, paid_store, paid_writer
+from digest.keys import IST, published_week_start
 from digest.paid_situation import (
     HOMEPAGE_CONTEXT_VERSION,
     HOMEPAGE_METHODOLOGY_VERSION,
@@ -56,6 +57,12 @@ def valid_output(context=None):
 
 
 class PaidHomepageDigestContractTests(unittest.TestCase):
+    def test_week_publishes_on_sunday_at_eight_pm_istanbul(self):
+        before = datetime(2026, 9, 20, 19, 59, tzinfo=IST)
+        at = datetime(2026, 9, 20, 20, 0, tzinfo=IST)
+        self.assertEqual(published_week_start(before).isoformat(), "2026-09-14")
+        self.assertEqual(published_week_start(at).isoformat(), "2026-09-21")
+
     def test_week_contract_is_current(self):
         self.assertEqual(HOMEPAGE_CONTEXT_VERSION, "homepage_digest_context_v5")
         self.assertEqual(HOMEPAGE_METHODOLOGY_VERSION, "digest-methodology-v7")
