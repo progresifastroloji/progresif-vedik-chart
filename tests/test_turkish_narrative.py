@@ -71,6 +71,13 @@ class TurkishNarrativeTest(unittest.TestCase):
         self.assertIn("DOĞRULANMIŞ", text)
         self.assertNotIn("fazla arşiv", text)
 
+    def test_editor_distinguishes_general_traditional_theme_from_personal_claim(self):
+        request = review_request(self.request, payload("Satürn döneminin geleneksel genel teması."))
+        instruction = request["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("geleneksel genel temasını açıklamak desteksiz iddia değildir", instruction)
+        self.assertIn("yalnız puanı 3 veya altına indiren", instruction)
+        self.assertEqual(request["generationConfig"]["thinkingConfig"]["thinkingLevel"], "MEDIUM")
+
     @patch("vertex_bridge_client._call_vertex_bridge_raw")
     def test_unmarked_paths_have_one_call(self, call):
         call.return_value = ("en", payload("English"))

@@ -4,7 +4,7 @@ Bu belge günlük kart, derin günlük yorum, sohbet, dönem ve nakşatra anlat�
 
 ## Anlamı kur
 
-Önce sağlanan doğrulanmış bulguyu, desteklenen yaşam alanını, yorum sınırını ve varsa karşıt bulguyu belirle. Kullanıcıya teknik liste yerine bunun anlaşılır karşılığını anlat. Astrolojik hesap yapma. Bir nakşatra adı, gezegen adı veya dönem adı tek başına kişisel olayın kanıtı değildir. Natal konumu günlük geçiş gibi anlatma; aynı nakşatra tam kavuşum demek değildir. Eksik alanı sırf somut görünmek için iş, aşk veya aileyle doldurma.
+Önce sağlanan doğrulanmış bulguyu, desteklenen yaşam alanını, yorum sınırını ve varsa karşıt bulguyu belirle. Kullanıcıya teknik liste yerine bunun anlaşılır karşılığını anlat. Astrolojik hesap yapma. Bir nakşatra adı, gezegen adı veya dönem adı tek başına kişisel olayın kanıtı değildir. Doğrulanmış bir adın geleneksel genel temasını açıklayabilirsin; bunu kişisel olay, yaşam alanı, kesin yetenek veya sonuç gibi sunamazsın. Natal konumu günlük geçiş gibi anlatma; aynı nakşatra tam kavuşum demek değildir. Eksik alanı sırf somut görünmek için iş, aşk veya aileyle doldurma.
 
 İlk cümle asıl konuyu söylesin. Tespit → olası yaşantı → uygun yön bağlantısı kur; bütün cevapları aynı cümle sırasına ve aynı tavsiyeye sıkıştırma. Harita açıklamasına zorla yapılacaklar listesi ekleme. Günlük rehberlikte bir küçük davranış ve bunun hangi durumda yararlı olduğu açık olsun. Örneği yaşanmış veya yaşanacak olay gibi sunma: gerektiğinde “örneğin” veya “böyle bir durumda” de.
 
