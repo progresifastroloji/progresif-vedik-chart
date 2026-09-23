@@ -1995,6 +1995,26 @@ def _run_candidate(
                 },
                 "memory_update": narrative.get("memory_update"),
             }
+            # The provider may describe indicators in the pro body but omit
+            # the optional arrays. Keep the UI inventory complete by deriving
+            # those labels from the already-returned technical evidence; this
+            # is not a second model call or a semantic quality gate.
+            pro_view = analysis["pro_view"] if isinstance(analysis.get("pro_view"), dict) else {}
+            if not pro_view.get("used_indicators"):
+                pro_view["used_indicators"] = [
+                row.get("claim", "") for row in technical_analysis.get("supporting_evidence", [])
+                if isinstance(row, dict) and str(row.get("claim") or "").strip()
+                ]
+            if not pro_view.get("counter_indicators"):
+                pro_view["counter_indicators"] = [
+                row.get("claim", "") for row in technical_analysis.get("challenging_evidence", [])
+                if isinstance(row, dict) and str(row.get("claim") or "").strip()
+                ]
+            if not pro_view.get("missing_data"):
+                pro_view["missing_data"] = list(technical_analysis.get("missing_layers") or [])
+            if not pro_view.get("limitations"):
+                pro_view["limitations"] = list(technical_analysis.get("limitations") or [])
+            analysis["pro_view"] = pro_view
             return {
                 "status": "completed",
                 "methodology": {key: candidate[key] for key in ("id", "title", "version", "status", "sha256")},
