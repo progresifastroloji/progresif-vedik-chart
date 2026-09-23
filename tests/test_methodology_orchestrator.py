@@ -1189,6 +1189,51 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertTrue(analysis["validation_bypassed"])
         self.assertEqual(analysis["opening_summary"], "Bu özet iki cümlede kalır.")
 
+    def test_chat_raw_output_mode_pauses_semantic_gates_and_retries(self):
+        calls = []
+        requests = []
+
+        def model_call(request_id, _request):
+            calls.append(request_id)
+            requests.append(_request)
+            if request_id.endswith("-analysis"):
+                unchecked = _payload()
+                value = json.loads(unchecked["candidates"][0]["content"]["parts"][0]["text"])
+                value["methodology_coverage"] = []
+                value["supporting_evidence"][0]["evidence_path"] = "evidence.nonexistent.layer"
+                unchecked["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+                return request_id, unchecked
+            return request_id, _narrative_payload(
+                opening_summary="Ham özet",
+                answer="Gemini'nin ham cevabı.",
+            )
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-compare-chat-raw-output",
+            model_call,
+            output_validation_mode="raw",
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        self.assertEqual(calls, [
+            "methodology-compare-chat-raw-output-vedic-system-methodology-v1-analysis",
+            "methodology-compare-chat-raw-output-vedic-system-methodology-v1-narrative",
+        ])
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["output_validation_mode"], "raw")
+        self.assertEqual(system_result["technical_attempt_count"], 1)
+        self.assertEqual(system_result["narrative_attempt_count"], 1)
+        self.assertTrue(system_result["analysis"]["validation_bypassed"])
+        self.assertEqual(system_result["analysis"]["summary"], "Gemini'nin ham cevabı.")
+        narrative_system = requests[1]["systemInstruction"]["parts"][0]["text"]
+        narrative_user = requests[1]["contents"][0]["parts"][0]["text"]
+        self.assertIn("VEDIC_TR_NARRATIVE_V1", narrative_system)
+        self.assertIn("DOĞRULANMIŞ AŞAMA 1", narrative_user)
+        self.assertNotIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
+        self.assertNotIn("REHBERLİK METODOLOJİSİ BELGESİ", narrative_system)
+        self.assertNotIn("TAM MARKDOWN KAYNAKLARI", narrative_user)
+
     def test_response_rejects_a_made_up_evidence_path(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])

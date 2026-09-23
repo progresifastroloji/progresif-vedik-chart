@@ -203,7 +203,22 @@ def _call_vertex_bridge_raw(request_id, vertex_request, *, opener=None, now=None
     return normalized_request_id, payload
 
 
-def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, nonce=None):
+def call_vertex_bridge(
+    request_id,
+    vertex_request,
+    *,
+    opener=None,
+    now=None,
+    nonce=None,
+    editorial_mode="checked",
+):
+    """Call the fixed Vertex bridge, optionally skipping only narrative editing.
+
+    ``raw`` is an explicit diagnostic mode for marked Turkish narrative
+    requests. It preserves request validation, signing, transport and provider
+    response parsing while bypassing the Gemini editor/rewrite chain. The safe
+    production default remains ``checked``.
+    """
     from turkish_narrative import EditorialError, generate_checked, marked
     deadline = None
     def call(identifier, request):
@@ -211,6 +226,8 @@ def call_vertex_bridge(request_id, vertex_request, *, opener=None, now=None, non
     # Validate the original id too: suffixing must not hide an invalid caller id.
     _request_body(request_id, vertex_request)
     if not marked(vertex_request):
+        return call(request_id, vertex_request)
+    if str(editorial_mode or "checked").strip().lower() == "raw":
         return call(request_id, vertex_request)
     # One shared budget for writing, editing and at most one repair.
     deadline = time.monotonic() + 90

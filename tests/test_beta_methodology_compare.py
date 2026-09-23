@@ -503,6 +503,7 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(public_analysis["display_evidence"], ["Destekleyici faktör var"])
         self.assertEqual(public_analysis["display_counter_evidence"], ["Zorlayıcı faktör var"])
         self.assertNotIn("supporting_evidence", public_analysis)
+
         self.assertNotIn("challenging_evidence", public_analysis)
         self.assertNotIn("methodology_coverage", public_analysis)
         self.assertNotIn("technical_summary", public_analysis)
@@ -526,6 +527,33 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertIn("technical_summary", stored_analysis)
         usage = self.client.get(f"/api/v2/beta/usage?profile_id={PROFILE_ID}").get_json()
         self.assertEqual(usage["counts"]["methodology_comparisons"], 1)
+
+    @patch("app.call_vertex_bridge")
+    def test_endpoint_raw_mode_is_explicit_and_chat_only(self, bridge_call):
+        bridge_call.side_effect = lambda request_id, _request, **_kwargs: (
+            request_id,
+            _analysis_or_narrative_payload(request_id),
+        )
+        payload = {
+            "comparison_id": "methodology-compare-raw-editorial-mode",
+            "profile_id": PROFILE_ID,
+            "chart_id": CHART_ID,
+            "question": "Kariyer kanıtları nelerdir?",
+        }
+
+        with patch.dict(os.environ, {"VEDIC_CHAT_EDITORIAL_MODE": "raw"}):
+            response = self.client.post("/api/v2/beta/chat/compare", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["methodology_results"][0]["output_validation_mode"],
+            "raw",
+        )
+        self.assertTrue(bridge_call.call_args_list)
+        self.assertTrue(all(
+            call.kwargs == {"editorial_mode": "raw"}
+            for call in bridge_call.call_args_list
+        ))
 
     @patch("app.call_vertex_bridge")
     def test_selected_varga_uses_server_data_with_d1_and_the_selected_code(self, bridge_call):

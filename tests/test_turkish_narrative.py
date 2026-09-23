@@ -85,6 +85,32 @@ class TurkishNarrativeTest(unittest.TestCase):
         self.assertEqual(call.call_count, 1)
 
     @patch("vertex_bridge_client._call_vertex_bridge_raw")
+    def test_explicit_raw_mode_skips_only_editorial_chain(self, call):
+        call.return_value = ("tr-test", payload("Ham Gemini yanıtı"))
+
+        identifier, value = call_vertex_bridge(
+            "tr-test",
+            self.request,
+            editorial_mode="raw",
+        )
+
+        self.assertEqual(identifier, "tr-test")
+        self.assertEqual(value["candidates"][0]["content"]["parts"][0]["text"], "Ham Gemini yanıtı")
+        self.assertEqual(call.call_count, 1)
+        self.assertIsNone(call.call_args.kwargs["deadline"])
+
+    @patch("vertex_bridge_client._call_vertex_bridge_raw")
+    def test_unknown_editorial_mode_keeps_checked_default(self, call):
+        call.side_effect = [
+            ("draft", payload("Taslak")),
+            ("review", report()),
+        ]
+
+        call_vertex_bridge("tr-test", self.request, editorial_mode="unexpected")
+
+        self.assertEqual(call.call_count, 2)
+
+    @patch("vertex_bridge_client._call_vertex_bridge_raw")
     def test_invalid_editor_returns_safe_nonretryable_error(self, call):
         call.side_effect = [("a", payload("x")), ("b", payload("{}"))]
         with self.assertRaises(VertexBridgeClientError) as raised:

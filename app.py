@@ -33575,10 +33575,23 @@ def api_v2_beta_chat_compare():
             require_mandatory_evidence=True,
             selected_varga=selected_varga,
         )
+        chat_editorial_mode = str(
+            os.environ.get("VEDIC_CHAT_EDITORIAL_MODE", "checked") or "checked"
+        ).strip().lower()
+        chat_model_call = (
+            (lambda request_id, vertex_request: call_vertex_bridge(
+                request_id,
+                vertex_request,
+                editorial_mode="raw",
+            ))
+            if chat_editorial_mode == "raw"
+            else call_vertex_bridge
+        )
         comparison = run_methodology_comparison(
             draft,
             comparison_id,
-            call_vertex_bridge,
+            chat_model_call,
+            output_validation_mode=chat_editorial_mode,
         )
         # Preserve the server-controlled route and evidence provenance beside
         # the model result. The PWA uses this trace to show the exact transit

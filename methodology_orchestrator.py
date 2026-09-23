@@ -555,6 +555,7 @@ def _narrative_request(
     guidance=None,
     response_language="tr",
     personal_memory_summary="",
+    minimal_output=False,
 ):
     """Build the client-facing call from validated analysis and active sources."""
 
@@ -585,6 +586,33 @@ def _narrative_request(
     }
     if personal_memory_summary:
         narrative_input["personal_memory_summary"] = str(personal_memory_summary).strip()[:PERSONAL_MEMORY_MAX_CHARS]
+    if minimal_output:
+        system_text = (
+            "Sen Vedic AI sohbet anlatıcısısın. Yalnız doğrulanmış Aşama 1 verisini kullan; "
+            "astrolojik hesap, yeni teknik iddia veya kaynakta olmayan olay üretme. Kullanıcının "
+            "sorusunu doğal ve anlaşılır biçimde yanıtla; sağlık, hukuk, finans veya gelecek sonucu "
+            "garanti etme. Yalnız JSON döndür: opening_summary kısa sonuç, answer doğal cevap; "
+            "memory_update yalnız kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir."
+        )
+        user_text = (
+            "Aşağıdaki doğrulanmış Aşama 1 kaydından kullanıcı cevabını üret. Teknik denetim veya "
+            "puanlama yapma; cevabı yeniden yazmaya çalışma.\n\n"
+            f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
+        )
+        request = {
+            "systemInstruction": {"parts": [{"text": system_text + ("\nVEDIC_TR_NARRATIVE_V1" if response_language == "tr" else "")}]},
+            "contents": [{"role": "user", "parts": [{"text": user_text}]}],
+            "generationConfig": {
+                "temperature": 0.35,
+                "maxOutputTokens": NARRATIVE_MAX_OUTPUT_TOKENS,
+                "responseMimeType": "application/json",
+                "thinkingConfig": {"thinkingLevel": "MINIMAL"},
+            },
+        }
+        raw = _canonical_json(request).encode("utf-8")
+        if len(raw) > MAX_PROMPT_BYTES:
+            raise MethodologyOrchestrationError("methodology_narrative_prompt_too_large", 413)
+        return request, _sha256(raw)
     system_text = (
         "Sen Vedik AI'nin danışan anlatımı ve rehberlik katmanısın. Astrolojik hesap veya yeni teknik analiz yapma. "
         f"Sunucu tarafından doğrulanmış Aşama 1 JSON'unu ve etkin tam Markdown kaynaklarını {language_name} diline çevir. "
@@ -1724,9 +1752,11 @@ def _run_candidate(
     guidance=None,
     response_language="tr",
     personal_memory_summary="",
+    output_validation_mode="checked",
 ):
     base_request_id = f"{comparison_id}-{candidate['id']}"
     validation_mode = methodology_validation_mode()
+    raw_output_mode = str(output_validation_mode or "checked").strip().lower() == "raw"
     request, technical_prompt_sha256 = _model_request(
         candidate,
         evidence,
@@ -1742,7 +1772,7 @@ def _run_candidate(
     provider_request_id = None
     provider_upstream_status = None
     current_technical_request = request
-    for attempt_index in range(2):
+    for attempt_index in range(1 if raw_output_mode else 2):
         request_id = (
             f"{base_request_id}-analysis"
             if attempt_index == 0
@@ -1755,7 +1785,7 @@ def _run_candidate(
                 raise MethodologyOrchestrationError("methodology_model_response_invalid", 502)
             analysis = (
                 _relaxed_methodology_response(payload, evidence)
-                if validation_mode == "bypass"
+                if validation_mode == "bypass" or raw_output_mode
                 else validate_methodology_response(payload, evidence)
             )
             technical_payload = payload
@@ -1771,7 +1801,7 @@ def _run_candidate(
                 if isinstance(exc, MethodologyOrchestrationError)
                 else getattr(exc, "code", "methodology_model_failed")
             )
-            if attempt_index == 0 and (
+            if not raw_output_mode and attempt_index == 0 and (
                 code in RETRYABLE_RESPONSE_ERRORS
                 or _is_retryable_provider_error(exc, code)
             ):
@@ -1782,7 +1812,7 @@ def _run_candidate(
                         code,
                     )
                 continue
-            if validation_mode == "strict" and str(code).startswith("vertex_"):
+            if not raw_output_mode and validation_mode == "strict" and str(code).startswith("vertex_"):
                 provider_error_code = code
                 provider_request_id = getattr(exc, "request_id", None) or request_id
                 provider_upstream_status = getattr(exc, "upstream_status", None)
@@ -1792,7 +1822,7 @@ def _run_candidate(
                 technical_request_id = request_id
                 technical_attempt_count = attempt_index + 1
                 break
-            if validation_mode == "strict" and code in RETRYABLE_RESPONSE_ERRORS:
+            if not raw_output_mode and validation_mode == "strict" and code in RETRYABLE_RESPONSE_ERRORS:
                 technical_analysis = _fallback_methodology_analysis(evidence, code)
                 technical_payload = payload if isinstance(payload, dict) else {}
                 technical_request_id = request_id
@@ -1814,7 +1844,8 @@ def _run_candidate(
     # narrative model reinterpret full source documents and turn missing or
     # invalid evidence into a confident customer answer.
     if (
-        validation_mode == "strict"
+        not raw_output_mode
+        and validation_mode == "strict"
         and isinstance(technical_analysis, dict)
         and (
             technical_analysis.get("analysis_status") == "INCOMPLETE"
@@ -1883,10 +1914,11 @@ def _run_candidate(
         guidance,
         response_language,
         personal_memory_summary,
+        minimal_output=raw_output_mode,
     )
     current_narrative_request = narrative_request
     narrative_payload = None
-    for attempt_index in range(2):
+    for attempt_index in range(1 if raw_output_mode else 2):
         narrative_request_id = (
             f"{base_request_id}-narrative"
             if attempt_index == 0
@@ -1901,7 +1933,7 @@ def _run_candidate(
                 raise MethodologyOrchestrationError("methodology_narrative_response_invalid", 502)
             narrative = (
                 _relaxed_narrative_response(narrative_payload)
-                if validation_mode == "bypass"
+                if validation_mode == "bypass" or raw_output_mode
                 else validate_narrative_response(
                     narrative_payload,
                     technical_analysis,
@@ -1933,6 +1965,7 @@ def _run_candidate(
                 "usage": _combined_usage(technical_payload, narrative_payload),
                 "analysis": analysis,
                 "validation_mode": validation_mode,
+                "output_validation_mode": "raw" if raw_output_mode else "checked",
             }
         except Exception as exc:
             if not isinstance(exc, MethodologyOrchestrationError) and not hasattr(exc, "code"):
@@ -1942,7 +1975,7 @@ def _run_candidate(
                 if isinstance(exc, MethodologyOrchestrationError)
                 else getattr(exc, "code", "methodology_narrative_failed")
             )
-            if attempt_index == 0 and not (narrative_payload or {}).get("editorialQuality") and (
+            if not raw_output_mode and attempt_index == 0 and not (narrative_payload or {}).get("editorialQuality") and (
                 code in RETRYABLE_NARRATIVE_ERRORS
                 or _is_retryable_provider_error(exc, code)
             ):
@@ -1952,7 +1985,7 @@ def _run_candidate(
                     code,
                 )
                 continue
-            if validation_mode == "strict" and str(code).startswith("vertex_"):
+            if not raw_output_mode and validation_mode == "strict" and str(code).startswith("vertex_"):
                 fallback_payload = {
                     "candidates": [{
                         "content": {
@@ -2004,7 +2037,8 @@ def _run_candidate(
                     "provider_upstream_status": getattr(exc, "upstream_status", None),
                 }
             if (
-                validation_mode == "strict"
+                not raw_output_mode
+                and validation_mode == "strict"
                 and technical_analysis is not None
                 and code in RETRYABLE_NARRATIVE_ERRORS
             ):
@@ -2075,7 +2109,15 @@ def _run_candidate(
             }
 
 
-def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_root=None, clock=None):
+def run_methodology_comparison(
+    draft,
+    comparison_id,
+    model_call,
+    *,
+    candidates_root=None,
+    clock=None,
+    output_validation_mode="checked",
+):
     candidates = load_methodology_candidates(candidates_root)
     guidance = load_guidance_methodology(candidates_root)
     response_language = normalize_response_language(draft.get("response_language"))
@@ -2098,6 +2140,7 @@ def run_methodology_comparison(draft, comparison_id, model_call, *, candidates_r
                 guidance,
                 response_language,
                 personal_memory_summary,
+                output_validation_mode,
             ),
             candidates,
         ))
