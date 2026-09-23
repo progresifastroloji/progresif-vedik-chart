@@ -227,7 +227,7 @@ def call_vertex_bridge(
     _request_body(request_id, vertex_request)
     if not marked(vertex_request):
         return call(request_id, vertex_request)
-    if str(editorial_mode or "checked").strip().lower() == "raw":
+    if str(editorial_mode or "checked").strip().lower() in {"raw", "dual_direct"}:
         return call(request_id, vertex_request)
     # One shared budget for writing, editing and at most one repair.
     deadline = time.monotonic() + 90

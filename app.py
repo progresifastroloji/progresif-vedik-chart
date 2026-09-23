@@ -29786,6 +29786,24 @@ def _beta_public_methodology_response(comparison):
                 claims.append(claim)
         return claims
 
+    def public_view(value):
+        """Expose the two narrative views without raw evidence paths."""
+        if not isinstance(value, dict):
+            return None
+        body = value.get("body")
+        if isinstance(body, str):
+            body = [body]
+        if not isinstance(body, list):
+            body = []
+        return {
+            "headline": str(value.get("headline") or "").strip(),
+            "body": [str(item).strip() for item in body if str(item).strip()],
+            "used_indicators": public_claims(value.get("used_indicators")),
+            "counter_indicators": public_claims(value.get("counter_indicators")),
+            "missing_data": public_claims(value.get("missing_data")),
+            "limitations": public_claims(value.get("limitations")),
+        }
+
     public = json.loads(json.dumps(comparison))
     public.pop("validation_mode", None)
     for result in public.get("methodology_results") or []:
@@ -29798,6 +29816,12 @@ def _beta_public_methodology_response(comparison):
         challenging = analysis.pop("challenging_evidence", [])
         analysis["display_evidence"] = public_claims(supporting)
         analysis["display_counter_evidence"] = public_claims(challenging)
+        simple_view = public_view(analysis.get("simple_view"))
+        pro_view = public_view(analysis.get("pro_view"))
+        if simple_view is not None:
+            analysis["simple_view"] = simple_view
+        if pro_view is not None:
+            analysis["pro_view"] = pro_view
         analysis.pop("methodology_coverage", None)
         analysis.pop("technical_summary", None)
         analysis.pop("validation_bypassed", None)
@@ -33584,7 +33608,7 @@ def api_v2_beta_chat_compare():
                 vertex_request,
                 editorial_mode="raw",
             ))
-            if chat_editorial_mode == "raw"
+            if chat_editorial_mode in {"raw", "dual_direct"}
             else call_vertex_bridge
         )
         comparison = run_methodology_comparison(

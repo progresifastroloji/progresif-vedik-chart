@@ -591,12 +591,19 @@ def _narrative_request(
             "Sen Vedic AI sohbet anlatıcısısın. Yalnız doğrulanmış Aşama 1 verisini kullan; "
             "astrolojik hesap, yeni teknik iddia veya kaynakta olmayan olay üretme. Kullanıcının "
             "sorusunu doğal ve anlaşılır biçimde yanıtla; sağlık, hukuk, finans veya gelecek sonucu "
-            "garanti etme. Yalnız JSON döndür: opening_summary kısa sonuç, answer doğal cevap; "
-            "memory_update yalnız kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir."
+            "garanti etme. Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
+            "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
+            "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
+            "counter_indicators array, missing_data array, limitations array}; memory_update yalnız "
+            "kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. Sade görünümde teknik terimleri "
+            "olabildiğince açıklama veya çıkar. Pro görünümde yalnız Aşama 1 kaydında gerçekten kullanılan "
+            "göstergeleri adlarıyla belirt; evidence_path, dosya yolu, gizli alan veya yeni hesaplama yazma."
         )
         user_text = (
-            "Aşağıdaki doğrulanmış Aşama 1 kaydından kullanıcı cevabını üret. Teknik denetim veya "
-            "puanlama yapma; cevabı yeniden yazmaya çalışma.\n\n"
+            "Aşağıdaki doğrulanmış Aşama 1 kaydından iki görünümlü kullanıcı cevabı üret. "
+            "Teknik denetim, puanlama, kalite editörü veya otomatik yeniden yazım yapma; "
+            "cevabı doğrudan üret. simple_view.body ve pro_view.body doğal paragraf dizileri olsun. "
+            "answer, simple_view.body metninin birleşik geriye dönük kopyası olsun.\n\n"
             f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
         )
         request = {
@@ -857,9 +864,41 @@ def _relaxed_narrative_response(payload):
     answer = str(value.get("answer") or "").strip()
     if not answer:
         raise MethodologyOrchestrationError("methodology_narrative_response_empty", 502)
+
+    def view(value, fallback):
+        if not isinstance(value, dict):
+            return {"headline": "", "body": [fallback] if fallback else []}
+        body = value.get("body")
+        if isinstance(body, str):
+            body = [body]
+        if not isinstance(body, list):
+            body = []
+        body = [str(item).strip() for item in body if str(item).strip()]
+        if not body and fallback:
+            body = [fallback]
+        return {
+            "headline": str(value.get("headline") or "").strip(),
+            "body": body,
+            "used_indicators": [str(item).strip() for item in value.get("used_indicators", []) if str(item).strip()]
+            if isinstance(value.get("used_indicators"), list) else [],
+            "counter_indicators": [str(item).strip() for item in value.get("counter_indicators", []) if str(item).strip()]
+            if isinstance(value.get("counter_indicators"), list) else [],
+            "missing_data": [str(item).strip() for item in value.get("missing_data", []) if str(item).strip()]
+            if isinstance(value.get("missing_data"), list) else [],
+            "limitations": [str(item).strip() for item in value.get("limitations", []) if str(item).strip()]
+            if isinstance(value.get("limitations"), list) else [],
+        }
+
+    simple = view(value.get("simple_view"), answer)
+    pro = view(value.get("pro_view"), answer)
+    # Keep the legacy answer as the simple view so conversation context and
+    # existing clients remain compatible while the new UI can select either.
+    simple_answer = "\n\n".join(simple["body"]) or answer
     return {
         "opening_summary": str(value.get("opening_summary") or "").strip(),
-        "answer": answer,
+        "answer": simple_answer,
+        "simple_view": simple,
+        "pro_view": pro,
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
         "validation_bypassed": True,
     }
@@ -1756,7 +1795,8 @@ def _run_candidate(
 ):
     base_request_id = f"{comparison_id}-{candidate['id']}"
     validation_mode = methodology_validation_mode()
-    raw_output_mode = str(output_validation_mode or "checked").strip().lower() == "raw"
+    output_mode = str(output_validation_mode or "checked").strip().lower()
+    raw_output_mode = output_mode in {"raw", "dual_direct"}
     request, technical_prompt_sha256 = _model_request(
         candidate,
         evidence,
@@ -1945,6 +1985,14 @@ def _run_candidate(
                 "technical_summary": technical_analysis["summary"],
                 "opening_summary": narrative["opening_summary"],
                 "summary": narrative["answer"],
+                "simple_view": narrative.get("simple_view") or {
+                    "headline": narrative["opening_summary"],
+                    "body": [narrative["answer"]],
+                },
+                "pro_view": narrative.get("pro_view") or {
+                    "headline": narrative["opening_summary"],
+                    "body": [narrative["answer"]],
+                },
                 "memory_update": narrative.get("memory_update"),
             }
             return {
@@ -1965,7 +2013,7 @@ def _run_candidate(
                 "usage": _combined_usage(technical_payload, narrative_payload),
                 "analysis": analysis,
                 "validation_mode": validation_mode,
-                "output_validation_mode": "raw" if raw_output_mode else "checked",
+                "output_validation_mode": output_mode if raw_output_mode else "checked",
             }
         except Exception as exc:
             if not isinstance(exc, MethodologyOrchestrationError) and not hasattr(exc, "code"):
