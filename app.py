@@ -29786,6 +29786,16 @@ def _beta_public_methodology_response(comparison):
                 claims.append(claim)
         return claims
 
+    def public_strings(values):
+        seen = set()
+        result = []
+        for value in values or []:
+            item = str(value or "").strip()
+            if item and item not in seen:
+                seen.add(item)
+                result.append(item)
+        return result
+
     def public_view(value):
         """Expose the two narrative views without raw evidence paths."""
         if not isinstance(value, dict):
@@ -29798,10 +29808,10 @@ def _beta_public_methodology_response(comparison):
         return {
             "headline": str(value.get("headline") or "").strip(),
             "body": [str(item).strip() for item in body if str(item).strip()],
-            "used_indicators": public_claims(value.get("used_indicators")),
-            "counter_indicators": public_claims(value.get("counter_indicators")),
-            "missing_data": public_claims(value.get("missing_data")),
-            "limitations": public_claims(value.get("limitations")),
+            "used_indicators": public_strings(value.get("used_indicators")),
+            "counter_indicators": public_strings(value.get("counter_indicators")),
+            "missing_data": public_strings(value.get("missing_data")),
+            "limitations": public_strings(value.get("limitations")),
         }
 
     public = json.loads(json.dumps(comparison))
@@ -31261,6 +31271,90 @@ def _beta_chart_summary(chart):
         "special_charts": special_charts,
         "active_dasha_path": active.get("path"),
         "active_dasha_periods": active_periods,
+    }
+
+
+def _beta_synastry_summary(chart_a, chart_b):
+    """Build a browser-safe, calculation-only first synastry result.
+
+    No interpretation is produced here.  The API calculates whole-sign
+    cross-house placements from the two already validated charts; the PWA may
+    render these facts and a later interpretation layer can consume them.
+    """
+    def sign_index(value):
+        try:
+            return int(value.get("sign_index")) % 12
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    def chart_view(chart):
+        summary = _beta_chart_summary(chart)
+        lagna = sign_index(chart.get("lagna") or {})
+        planets = []
+        for planet in chart.get("planets") or []:
+            idx = sign_index(planet)
+            if idx is None or not planet.get("name"):
+                continue
+            planets.append({
+                "id": planet.get("id"),
+                "name": planet.get("name"),
+                "name_tr": planet.get("name_tr"),
+                "sign": planet.get("sign"),
+                "sign_tr": planet.get("sign_tr"),
+                "sign_index": idx,
+                "house": planet.get("house"),
+                "longitude": planet.get("longitude"),
+                "nakshatra": (planet.get("nakshatra") or {}).get("name"),
+                "nakshatra_pada": (planet.get("nakshatra") or {}).get("pada"),
+            })
+        return {"summary": summary, "lagna_sign_index": lagna, "planets": planets}
+
+    def directional(source, target):
+        rows = []
+        target_lagna = target["lagna_sign_index"]
+        if target_lagna is None:
+            return rows
+        for planet in source["planets"]:
+            house = ((planet["sign_index"] - target_lagna) % 12) + 1
+            rows.append({
+                "planet_id": planet.get("id"),
+                "planet": planet.get("name"),
+                "planet_tr": planet.get("name_tr"),
+                "source_sign": planet.get("sign"),
+                "source_sign_tr": planet.get("sign_tr"),
+                "target_house": house,
+                "source_longitude": planet.get("longitude"),
+            })
+        return rows
+
+    a = chart_view(chart_a)
+    b = chart_view(chart_b)
+    d1_a = a["summary"]
+    d1_b = b["summary"]
+    d9_a = (d1_a.get("vargas") or {}).get("D9")
+    d9_b = (d1_b.get("vargas") or {}).get("D9")
+    d9_confidence = [d9_a.get("confidence") if isinstance(d9_a, dict) else None,
+                     d9_b.get("confidence") if isinstance(d9_b, dict) else None]
+    return {
+        "schema_version": "vedic-pwa-synastry-v1",
+        "calculation_method": "sidereal_lahiri_whole_sign_cross_house",
+        "interpretation": {"available": False, "reason": "chart_only_first_release"},
+        "person_a": d1_a,
+        "person_b": d1_b,
+        "cross_houses": {
+            "b_in_a": directional(b, a),
+            "a_in_b": directional(a, b),
+        },
+        "navamsha": {
+            "person_a": d9_a,
+            "person_b": d9_b,
+            "confidence": d9_confidence,
+            "available": bool(d9_a and d9_b),
+        },
+        "compatibility": {
+            "ashtakuta": {"status": "not_available", "reason": "methodology_fixture_pending"},
+            "mangala_matching": {"status": "not_available", "reason": "pair_rule_engine_pending"},
+        },
     }
 
 
@@ -33103,6 +33197,51 @@ def api_v2_beta_chart_summary():
         return jsonify({"error": f"Geçersiz beta harita özet verisi: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"Beta harita özet hatası: {str(e)}"}), 500
+
+
+@app.route("/api/v2/beta/synastry", methods=["POST"])
+def api_v2_beta_synastry():
+    """Return calculation-only synastry data for two owned beta charts."""
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli sinastri isteği gerekli")
+        owner_user_id = _account_deletion_user_id(data.get("owner_user_id"))
+        profile_a = str(data.get("profile_id_a") or "").strip()
+        profile_b = str(data.get("profile_id_b") or "").strip()
+        chart_a_id = str(data.get("chart_id_a") or "").strip()
+        chart_b_id = str(data.get("chart_id_b") or "").strip()
+        if not all((profile_a, profile_b, chart_a_id, chart_b_id)) or chart_a_id == chart_b_id:
+            raise ValueError("İki farklı profil ve harita gerekli")
+        with closing(_beta_db()) as conn:
+            rows = []
+            for profile_id, chart_id in ((profile_a, chart_a_id), (profile_b, chart_b_id)):
+                row = conn.execute(
+                    """
+                    SELECT c.chart_json, c.owner_user_id, p.owner_user_id AS profile_owner_user_id
+                    FROM beta_charts c JOIN beta_profiles p ON p.id = c.profile_id
+                    WHERE c.id = ? AND c.profile_id = ?
+                    """,
+                    (chart_id, profile_id),
+                ).fetchone()
+                if not row:
+                    return jsonify({"ok": False, "status": "chart_not_found", "error_code": "beta_chart_not_found"}), 404
+                if row["owner_user_id"] != owner_user_id or row["profile_owner_user_id"] != owner_user_id:
+                    return jsonify({"ok": False, "status": "ownership_mismatch", "error_code": "beta_chart_ownership_mismatch"}), 403
+                rows.append(_beta_load_json(row["chart_json"]))
+        return jsonify({
+            "ok": True,
+            "status": "synastry_ready",
+            "profile_id_a": profile_a,
+            "profile_id_b": profile_b,
+            "chart_id_a": chart_a_id,
+            "chart_id_b": chart_b_id,
+            "synastry": _beta_synastry_summary(rows[0], rows[1]),
+        })
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": f"Geçersiz sinastri verisi: {str(e)}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Sinastri hesaplama hatası: {str(e)}"}), 500
 
 
 @app.route("/api/v2/pwa/artifacts/generate", methods=["POST"])
