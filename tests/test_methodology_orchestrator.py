@@ -869,6 +869,30 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
+    def test_narrative_rejects_karmic_diagnosis_partner_mind_reading_and_financial_orders(self):
+        analysis = validate_methodology_response(
+            _payload(),
+            compact_evidence(_draft()),
+        )
+        cases = (
+            ("general", "Bu tekrar, karmik borcunuzu ödemeniz için önünüze geliyor. "),
+            ("wellbeing", "Yaşadığınız sıkışma, travmanız nedeniyle sürekli geri dönüyor. "),
+            ("marriage", "Partneriniz aslında bağlılık istemiyor ve ayrılığı düşünüyor. "),
+            ("wealth", "Bu dönemde kripto alın ve daha büyük bir yatırım yapın. "),
+        )
+        for topic, sentence in cases:
+            with self.subTest(topic=topic):
+                with self.assertRaises(MethodologyOrchestrationError) as raised:
+                    validate_narrative_response(
+                        _narrative_payload(answer=(sentence * 18)),
+                        analysis,
+                        {**compact_evidence(_draft()), "subject_topic": topic},
+                    )
+                self.assertEqual(
+                    raised.exception.code,
+                    "methodology_narrative_safety_invalid",
+                )
+
     def test_narrative_rejects_career_prediction_certainty_language(self):
         analysis = validate_methodology_response(
             _payload(),
@@ -1233,6 +1257,46 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertNotIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
         self.assertNotIn("REHBERLİK METODOLOJİSİ BELGESİ", narrative_system)
         self.assertNotIn("TAM MARKDOWN KAYNAKLARI", narrative_user)
+
+    def test_dual_direct_keeps_strict_gates_and_full_guidance(self):
+        calls = []
+        requests = []
+
+        def model_call(request_id, request):
+            calls.append(request_id)
+            requests.append(request)
+            if request_id.endswith("-analysis"):
+                unchecked = _payload()
+                value = json.loads(unchecked["candidates"][0]["content"]["parts"][0]["text"])
+                value["methodology_coverage"] = []
+                value["supporting_evidence"][0]["evidence_path"] = "evidence.nonexistent.layer"
+                unchecked["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+                return request_id, unchecked
+            if "-analysis-retry-" in request_id:
+                return request_id, _payload()
+            return request_id, _narrative_payload()
+
+        result = run_methodology_comparison(
+            _draft(),
+            "methodology-compare-dual-direct-strict",
+            model_call,
+            output_validation_mode="dual_direct",
+        )
+
+        self.assertEqual(result["status"], "comparison_ready")
+        self.assertEqual(calls, [
+            "methodology-compare-dual-direct-strict-vedic-system-methodology-v1-analysis",
+            "methodology-compare-dual-direct-strict-vedic-system-methodology-v1-analysis-retry-1",
+            "methodology-compare-dual-direct-strict-vedic-system-methodology-v1-narrative",
+        ])
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["output_validation_mode"], "dual_direct")
+        self.assertEqual(system_result["technical_attempt_count"], 2)
+        self.assertEqual(system_result["narrative_attempt_count"], 1)
+        self.assertNotIn("validation_bypassed", system_result["analysis"])
+        narrative_system = requests[-1]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
+        self.assertIn("REHBERLİK METODOLOJİSİ BELGESİ", narrative_system)
 
     def test_response_rejects_a_made_up_evidence_path(self):
         payload = _payload()

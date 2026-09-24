@@ -33752,7 +33752,7 @@ def api_v2_beta_chat_compare():
                 vertex_request,
                 editorial_mode="raw",
             ))
-            if chat_editorial_mode in {"raw", "dual_direct"}
+            if chat_editorial_mode in {"raw", "dual_direct", "guided_direct"}
             else call_vertex_bridge
         )
         comparison = run_methodology_comparison(

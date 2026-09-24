@@ -635,7 +635,10 @@ def _narrative_request(
         "opening_summary alanında cevabın ana sonucunu teknik kanıt listesine girmeden kısa ve anlaşılır biçimde özetle; "
         "bu alanda gezegen, ev, burç, nakshatra, dasha veya transit adı hiç kullanma. "
         "answer alanında bu özeti aynen tekrarlamadan ayrıntılı yoruma geç. İlk paragrafta kullanıcının asıl sorusuna "
-        "doğrudan ve koşullu cevap ver. Kanıtla başlama. Ana metinde astrolojik dayanak gerekiyorsa rehberlik "
+        "doğrudan ve koşullu cevap ver. Kullanıcı neden veya zamanlama mantığını soruyorsa, doğrulanmış kanıtın "
+        "gösterdiği mekanizmayı belirsizlik sınırıyla açıkla; yalnız sonuç cümlesi verme. Kullanıcı somut bir adım "
+        "soruyorsa, kendi kontrolünde olan küçük, düşük riskli ve geri alınabilir en az bir eylem öner. "
+        "Kanıtla başlama. Ana metinde astrolojik dayanak gerekiyorsa rehberlik "
         "metodolojisinin izin verdiği en fazla tek kısa ve sade dayanak cümlesini sonuçtan sonra kullan; "
         "astrolojik terim gerekmiyorsa hiç kullanma. Gezegenin ev numarası, burcu, nakshatrası/padası, dasha adı "
         "veya transit mekanizmasını varsayılan ana yoruma taşıma. SAV/BAV, "
@@ -1283,6 +1286,9 @@ def _validate_sensitive_narrative_language(text, evidence):
     patterns = [
         r"\b(?:kesinlikle|garantili|hayatınız boyunca|muazzam)\b",
         r"\bkesin\s+(?:sonuç|başarı|kazanç|gelir)\b",
+        r"\b(?:karmanız|karman|kaderiniz|kaderin)\b",
+        r"\bkarmik\s+(?:bor[cç]\w*|ceza\w*|ders\w*|sınav\w*|yük\w*)\b",
+        r"\b(?:travmanız|depresyondasınız|anksiyeteniz|bağımlısınız)\b",
         r"\b(?:destined|fated|inevitable|guaranteed)\b",
         r"\bhighly\s+(?:active|activated|supported)\b",
         r"\bthe\s+path\s+to\s+tangible\s+gains\s+lies\b",
@@ -1304,6 +1310,9 @@ def _validate_sensitive_narrative_language(text, evidence):
             r"\b(?:oldukça|çok)\s+yüksek\s+(?:kazanç|gelir|servet)",
             r"\bfinansal\s+(?:kayıp|kriz)",
             r"\b(?:zengin|yüksek gelir)\s+ol(?:acaksınız|acak)",
+            r"\b(?:yatırım\s+yapmalısınız|borç\s+almalısınız|kredi\s+çekmelisiniz)\b",
+            r"\b(?:hisse|kripto|bitcoin|altın|döviz|fon)[^.!?\n]{0,60}"
+            r"\b(?:alın|satın|yatırım\s+yapın)\b",
         ])
     if topic == "career":
         patterns.extend([
@@ -1326,6 +1335,8 @@ def _validate_sensitive_narrative_language(text, evidence):
         ])
     if topic == "marriage":
         patterns.extend([
+            r"\b(?:partneriniz|eşiniz|karşınızdaki kişi)[^.!?\n]{0,100}"
+            r"\b(?:istiyor|istemiyor|düşünüyor|hissediyor|sadık|niyeti)\b",
             r"\b(?:ilişki|ilişkiler|evlilik|partner|eş|iletişim|süreç|dönem)[^.!?\n]{0,140}"
             r"(?:meydana getirecek|meydana getirecektir|gerçekleşecek|gerçekleşecektir|"
             r"kaçınılmaz|en üst seviyeye çık(?:abilir|acaktır))\b",
@@ -1796,7 +1807,12 @@ def _run_candidate(
     base_request_id = f"{comparison_id}-{candidate['id']}"
     validation_mode = methodology_validation_mode()
     output_mode = str(output_validation_mode or "checked").strip().lower()
-    raw_output_mode = output_mode in {"raw", "dual_direct"}
+    # ``raw`` is the explicit diagnostic escape hatch used only by controlled
+    # comparison tests.  ``dual_direct`` keeps the provider-side Turkish
+    # editor disabled, but it must still pass the same technical and narrative
+    # validators as the normal checked path.
+    raw_output_mode = output_mode == "raw"
+    direct_output_mode = output_mode in {"dual_direct", "guided_direct"}
     request, technical_prompt_sha256 = _model_request(
         candidate,
         evidence,
@@ -2033,7 +2049,9 @@ def _run_candidate(
                 "usage": _combined_usage(technical_payload, narrative_payload),
                 "analysis": analysis,
                 "validation_mode": validation_mode,
-                "output_validation_mode": output_mode if raw_output_mode else "checked",
+                "output_validation_mode": (
+                    output_mode if raw_output_mode or direct_output_mode else "checked"
+                ),
             }
         except Exception as exc:
             if not isinstance(exc, MethodologyOrchestrationError) and not hasattr(exc, "code"):
