@@ -1169,6 +1169,26 @@ def _evidence_rows(value, evidence):
     return rows
 
 
+def _verified_evidence_rows(value, evidence):
+    """Keep valid citations while failing closed if none support the answer."""
+
+    if not isinstance(value, list):
+        raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
+    rows = []
+    pruned = False
+    for item in value:
+        try:
+            row = _evidence_rows([item], evidence)[0]
+            row = _validated_relationship_claim(row, evidence)
+        except MethodologyOrchestrationError as exc:
+            if exc.code != "methodology_model_evidence_invalid":
+                raise
+            pruned = True
+            continue
+        rows.append(row)
+    return rows, pruned
+
+
 def _string_list(value):
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise MethodologyOrchestrationError("methodology_model_list_invalid", 502)
@@ -1452,12 +1472,19 @@ def _validate_sensitive_narrative_language(text, evidence):
             r"\bstrong\s+capacity\s+for\b",
             r"\b(?:yüksek|oldukça güçlü|güçlü bir)\s+(?:bir\s+)?(?:ihtimal|olasılık|potansiyel)\b",
             r"\b(?:ihtimaliniz|olasılığınız|potansiyeliniz)\s+(?:son derece|oldukça|çok)?\s*yüksek\b",
+            r"\belde\s+edeceğiniz[^.!?\n]{0,100}\b(?:kazanç|gelir|başarı)\b",
+            r"\bgökyüzü[^.!?\n]{0,100}\btarafından\s+destekleniyorsunuz\b",
+            r"\bgökyüzü[^.!?\n]{0,100}\bsize[^.!?\n]{0,100}\bsunuyor\b",
             r"\b(?:işe gireceksiniz|iş bulacaksınız|yeni bir işe gireceksiniz)\b",
             r"\b(?:kariyer|iş|sözleşme|kazanç|statü)[^.!?\n]{0,100}"
             r"(?:güçlü bir şekilde|yüksek bir ihtimal|güçlü bir kapı|somut bir kazanç|"
             r"güçlü bir başlangıç|güçlü bir adım|kalıcı ve verimli|en verimli zaman|"
             r"güçlendirecek|aralayacak|getirecektir|gerçekleşecektir|olacaktır|müjdeliyor|"
             r"kapınızı çalacak|sağlayacaktır)\b",
+        ])
+    if topic == "wellbeing":
+        patterns.extend([
+            r"\b(?:yaşamsal\s+)?enerjinizi[^.!?\n]{0,80}\bcanlandıracaktır\b",
         ])
     if topic == "marriage":
         patterns.extend([
@@ -1671,20 +1698,29 @@ def validate_methodology_response(payload, evidence):
     confidence = str(value.get("confidence") or "").strip().lower()
     if not summary or confidence not in CONFIDENCE_LEVELS:
         raise MethodologyOrchestrationError("methodology_model_summary_invalid", 502)
-    supporting_evidence = _evidence_rows(value.get("supporting_evidence"), evidence)
-    challenging_evidence = _evidence_rows(value.get("challenging_evidence"), evidence)
+    supporting_evidence, supporting_pruned = _verified_evidence_rows(
+        value.get("supporting_evidence"), evidence
+    )
+    challenging_evidence, challenging_pruned = _verified_evidence_rows(
+        value.get("challenging_evidence"), evidence
+    )
+    if analysis_status == "COMPLETE" and not supporting_evidence:
+        raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
     supporting_evidence = [
         _validated_strength_claim(row, evidence) for row in supporting_evidence
     ]
     challenging_evidence = [
         _validated_strength_claim(row, evidence) for row in challenging_evidence
     ]
-    supporting_evidence = [
-        _validated_relationship_claim(row, evidence) for row in supporting_evidence
-    ]
-    challenging_evidence = [
-        _validated_relationship_claim(row, evidence) for row in challenging_evidence
-    ]
+    if supporting_pruned or challenging_pruned:
+        # The free-form summary may repeat the unsupported claim whose citation
+        # was removed. Rebuild it only from rows whose path and relationship
+        # type were verified, so pruning cannot leak an invented claim onward.
+        summary = " ".join(
+            row["claim"] for row in [*supporting_evidence, *challenging_evidence]
+        ).strip()
+        if not summary:
+            raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
     summary, supporting_evidence = _ensure_wellbeing_timing_evidence(
         summary,
         supporting_evidence,
@@ -1711,6 +1747,11 @@ def validate_methodology_response(payload, evidence):
         [*supporting_evidence, *challenging_evidence],
         evidence,
     )
+    limitations = _string_list(value.get("limitations"))
+    if supporting_pruned or challenging_pruned:
+        limitations.append(
+            "Modelin doğrulanamayan kanıt satırları kullanıcı yanıtına alınmadı."
+        )
     return {
         "question_intent": {
             "interpreted_question": interpreted_question,
@@ -1724,7 +1765,7 @@ def validate_methodology_response(payload, evidence):
         "challenging_evidence": challenging_evidence,
         "missing_layers": _string_list(value.get("missing_layers")),
         "confidence": confidence,
-        "limitations": _string_list(value.get("limitations")),
+        "limitations": limitations,
     }
 
 

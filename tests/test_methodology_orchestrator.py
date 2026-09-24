@@ -1313,6 +1313,47 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "methodology_model_evidence_invalid")
 
+    def test_response_prunes_one_bad_citation_and_rebuilds_summary_from_verified_rows(self):
+        payload = _payload(summary="Bu özet geçersiz kanıtı da tekrar ediyor.")
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"].append({
+            "claim": "Uydurma destek",
+            "evidence_path": "evidence.nonexistent.layer",
+        })
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+
+        validated = validate_methodology_response(payload, {
+            "topic": "career",
+            "subject_topic": "career",
+            "topic_packet": {"supporting_factors": [{"code": "career-support"}]},
+        })
+
+        self.assertEqual(len(validated["supporting_evidence"]), 1)
+        self.assertNotIn("Uydurma", validated["summary"])
+        self.assertEqual(validated["summary"], "Destek var Sınır var")
+        self.assertIn("doğrulanamayan kanıt", validated["limitations"][-1])
+
+    def test_response_prunes_unsupported_relationship_when_other_evidence_survives(self):
+        payload = _payload(summary="Transit Jüpiter natal Mars ile tam kavuşumdadır.")
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"].append({
+            "claim": "Transit Jüpiter natal Mars ile tam kavuşumdadır.",
+            "evidence_path": "evidence.topic_packet.contact",
+        })
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+
+        validated = validate_methodology_response(payload, {
+            "topic": "career",
+            "subject_topic": "career",
+            "topic_packet": {
+                "supporting_factors": [{"code": "career-support"}],
+                "contact": {"contact_type": "degree_orb", "orb": 1.2},
+            },
+        })
+
+        self.assertEqual(len(validated["supporting_evidence"]), 1)
+        self.assertNotIn("kavuşum", validated["summary"])
+
     def test_response_binds_descriptive_leaf_to_nearest_real_parent(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
@@ -1585,6 +1626,34 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 analysis,
                 evidence,
             )
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
+    def test_career_narrative_rejects_promised_financial_gain_language(self):
+        evidence = compact_evidence(_draft())
+        analysis = validate_methodology_response(_payload(), evidence)
+        answer = (
+            "Bu zorlu döngülerin arkasında elde edeceğiniz çok güçlü bir sosyal ve finansal "
+            "kazanç potansiyeli saklı duruyor. Gökyüzü tarafından destekleniyorsunuz ve bu "
+            "koşullar size gereken enerjiyi sunuyor.\n\n"
+            "Bu hafta tıkanıklık yaratan iki engeli yazıp küçük bir plan hazırlayabilirsiniz. " * 5
+        )
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(_narrative_payload(answer=answer), analysis, evidence)
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
+    def test_wellbeing_narrative_rejects_certain_energy_outcome(self):
+        draft = {**_draft(), "topic": "wellbeing", "subject_topic": "wellbeing"}
+        evidence = compact_evidence(draft)
+        analysis = validate_methodology_response(_payload(), evidence)
+        answer = (
+            "Sorumluluklarınızı geçici olarak hafifletmek ve dinlenme alanı yaratmak, "
+            "yaşamsal enerjinizi yeniden canlandıracaktır.\n\n"
+            "Her gün on beş dakika sessiz kalıp sonrasında nasıl hissettiğinizi not edebilirsiniz. " * 6
+        )
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(_narrative_payload(answer=answer), analysis, evidence)
         self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
 
     def test_shadbala_claim_is_verified_and_bound_to_ratio_summary(self):
