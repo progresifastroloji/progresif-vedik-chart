@@ -791,6 +791,9 @@ def _technical_repair_request(request, payload, error_code):
             "EVIDENCE_PATH KATALOĞU içinden karakter karakter aynen kopyala. "
             "Belirli alt yol kesin değilse katalogda bulunan en yakın gerçek üst "
             "yolu kullan; iddiayı destekleyen bir yol yoksa o iddiayı kaldır. "
+            "degree_orb veya same_sign kaydını kavuşum, açı ya da drishti diye adlandırma; "
+            "Graha Yuddha yalnız ilgili kanıt açıkça true ise söylenebilir. Bu koşulu karşılamayan "
+            "ilişki iddiasını ve kanıt satırını tamamen kaldır. "
             "Kanıt paketinde olmayan teknik gerçek, tarih, derece veya hüküm ekleme. "
             "methodology_coverage adımlarını ve diğer zorunlu alanları eksiksiz koru.\n\n"
             f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
@@ -1067,7 +1070,7 @@ def _fallback_methodology_analysis(evidence, error_code):
         "missing_layers": [str(error_code)],
         "confidence": "low",
         "limitations": [
-            "Teknik model yanıtı iki denemede doğrulanamadı.",
+            "Teknik model yanıtı üç denemede doğrulanamadı.",
             "Ana metin yalnızca genel ve geri alınabilir karar desteği sunar.",
         ],
         "validation_fallback": True,
@@ -1111,6 +1114,22 @@ def _canonical_evidence_path(evidence, evidence_path):
         suffix = evidence_path[len(topic_prefix):]
         candidate = f"{topic_evidence_prefix}{suffix}"
         if _evidence_path_exists(evidence, candidate):
+            return candidate
+
+    # The model occasionally selects a valid branch but appends a descriptive
+    # leaf name that is not part of the JSON contract. Binding that citation to
+    # the nearest real parent is no weaker than a model-provided branch-level
+    # citation, while a wholly invented first-level branch still fails closed.
+    segments = evidence_path.split(".")
+    while len(segments) > 2:
+        removed = segments.pop()
+        if removed.isdigit():
+            return None
+        candidate = ".".join(segments)
+        if (
+            _evidence_path_exists(evidence, candidate)
+            and bool(_evidence_path_value(evidence, candidate))
+        ):
             return candidate
     return None
 
@@ -1941,7 +1960,8 @@ def _run_candidate(
     provider_request_id = None
     provider_upstream_status = None
     current_technical_request = request
-    for attempt_index in range(1 if raw_output_mode else 2):
+    technical_attempt_limit = 1 if raw_output_mode else 3
+    for attempt_index in range(technical_attempt_limit):
         request_id = (
             f"{base_request_id}-analysis"
             if attempt_index == 0
@@ -1970,10 +1990,15 @@ def _run_candidate(
                 if isinstance(exc, MethodologyOrchestrationError)
                 else getattr(exc, "code", "methodology_model_failed")
             )
-            if not raw_output_mode and attempt_index == 0 and (
+            retryable_response = (
                 code in RETRYABLE_RESPONSE_ERRORS
-                or _is_retryable_provider_error(exc, code)
-            ):
+                and attempt_index < technical_attempt_limit - 1
+            )
+            retryable_provider = (
+                _is_retryable_provider_error(exc, code)
+                and attempt_index == 0
+            )
+            if not raw_output_mode and (retryable_response or retryable_provider):
                 if code in RETRYABLE_RESPONSE_ERRORS and isinstance(payload, dict):
                     current_technical_request = _technical_repair_request(
                         request,

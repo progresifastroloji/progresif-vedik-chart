@@ -1313,6 +1313,26 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "methodology_model_evidence_invalid")
 
+    def test_response_binds_descriptive_leaf_to_nearest_real_parent(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"][0]["evidence_path"] = (
+            "evidence.topic_packet.supporting_factors.0.descriptive_leaf"
+        )
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic": "career",
+            "subject_topic": "career",
+            "topic_packet": {"supporting_factors": [{"code": "career-support"}]},
+        }
+
+        validated = validate_methodology_response(payload, evidence)
+
+        self.assertEqual(
+            validated["supporting_evidence"][0]["evidence_path"],
+            "evidence.topic_packet.supporting_factors.0",
+        )
+
     def test_response_accepts_only_existing_list_index_paths(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
