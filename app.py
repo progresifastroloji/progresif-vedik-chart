@@ -31260,6 +31260,11 @@ def _beta_chart_summary(chart):
             "sign_tr": lagna.get("sign_tr"),
             "longitude": lagna.get("longitude"),
             "degree": lagna.get("degree_str"),
+            "nakshatra": {
+                "name": (lagna.get("nakshatra") or {}).get("name"),
+                "pada": (lagna.get("nakshatra") or {}).get("pada"),
+                "lord": (lagna.get("nakshatra") or {}).get("lord"),
+            },
             "reference_frame": lagna.get("reference_frame") or "birth_lagna",
             "is_birth_ascendant": lagna.get("is_birth_ascendant", True),
             "confidence": lagna.get("interpretation_confidence"),

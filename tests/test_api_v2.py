@@ -3312,6 +3312,8 @@ class ChartApiV2Test(unittest.TestCase):
         self.assertEqual(data["chart_summary"]["schema_version"], "vedic-pwa-chart-summary-v2")
         self.assertEqual(data["chart_summary"]["display_name"], "Beta Kisi")
         self.assertGreaterEqual(len(data["chart_summary"]["planets"]), 9)
+        self.assertTrue(data["chart_summary"]["lagna"]["nakshatra"]["name"])
+        self.assertIn(data["chart_summary"]["lagna"]["nakshatra"]["pada"], (1, 2, 3, 4))
         nakshatra = data["chart_summary"]["nakshatra_analysis"]
         self.assertEqual(nakshatra["schema_version"], "vedic-pwa-nakshatra-v1")
         self.assertGreaterEqual(len(nakshatra["entries"]), 9)
