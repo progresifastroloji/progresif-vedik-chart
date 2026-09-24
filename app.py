@@ -30449,6 +30449,7 @@ def _pwa_transit_pack(
     start_date=None,
     transit_time="12:00",
     period="three_month",
+    end_date=None,
 ):
     birth = chart.get("birth") or {}
     current_date = datetime.now().date()
@@ -30471,6 +30472,8 @@ def _pwa_transit_pack(
         "start_date": str(start_date or current_date.isoformat()),
         "transit_time": str(transit_time or "12:00"),
     }
+    if period == "range" and end_date:
+        payload["end_date"] = str(end_date)
     # Important sky events are an upstream, pre-recorded source. The PWA
     # runtime may carry them forward, but never derives eclipse times or
     # natal contacts here.
@@ -30617,6 +30620,8 @@ def _pwa_get_or_create_transit_runtime_cache(
         person_name,
         "PWA",
         start_date=range_start,
+        period="range",
+        end_date=range_end,
     )
     _pwa_write_transit_runtime_cache(
         owner_user_id,
@@ -32415,6 +32420,8 @@ def _beta_build_chat_draft(
                 person.get("name") or person.get("id") or "PWA User",
                 "PWA",
                 start_date=range_start,
+                period="range",
+                end_date=range_end,
             )
         selected_pack = _beta_select_transit_pack(transit_pack, range_start, range_end)
         instant_pack = (

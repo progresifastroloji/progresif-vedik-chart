@@ -1016,6 +1016,8 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         )
         self.assertEqual(len(evidence["transits"]["daily_timing"]), 2)
         self.assertLess(len(_canonical_json(request).encode("utf-8")), MAX_PROMPT_BYTES)
+        self.assertEqual(transit_pack.call_args.kwargs["period"], "range")
+        self.assertEqual(transit_pack.call_args.kwargs["end_date"], "2026-08-02")
 
 
 if __name__ == "__main__":

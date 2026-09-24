@@ -103,6 +103,29 @@ class QuestionClassifierTest(unittest.TestCase):
             "career",
         )
 
+    def test_healthy_relationship_language_is_not_routed_to_health(self):
+        question = (
+            "İlişkilerimde tekrar eden örüntü nedir ve bunu daha sağlıklı "
+            "yönetmek için ne yapabilirim?"
+        )
+
+        self.assertEqual(detect_explicit_topic(question), "marriage")
+
+    def test_explicit_six_month_request_keeps_the_full_requested_horizon(self):
+        result = enforce_explicit_time_scope(
+            _classification(
+                primary_topic="career",
+                time_scope="range",
+                target_start="2026-09-25",
+                target_end=None,
+            ),
+            "Önümüzdeki altı ayda kariyerime ne zaman odaklanmalıyım?",
+            "2026-09-25T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["target_start"], "2026-09-25")
+        self.assertEqual(result["target_end"], "2027-03-24")
+
     def test_eclipse_question_forces_stored_event_layers_without_calculation(self):
         def model_call(request_id, _request):
             return request_id, _model_payload(_classification(

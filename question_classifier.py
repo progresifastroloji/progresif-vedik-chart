@@ -113,7 +113,11 @@ TOPIC_PATTERNS = {
         r"(?<!\w)maddi\s+güven\w*", r"(?<!\w)maddi\s+guven\w*",
     ),
     "health": (
-        r"(?<!\w)sağlık\w*", r"(?<!\w)saglik\w*", r"(?<!\w)hastalı\w*",
+        # ``sağlıklı yönetmek`` describes how to handle another life area; it
+        # is not a medical question. Match the health noun and its inflected
+        # ``sağlığ-`` form without swallowing the adjective ``sağlıklı``.
+        r"(?<!\w)sağlık(?!lı)\w*", r"(?<!\w)sağlığ\w*",
+        r"(?<!\w)saglik(?!li)\w*", r"(?<!\w)saglig\w*", r"(?<!\w)hastalı\w*",
         r"(?<!\w)hastali\w*", r"(?<!\w)beden\w*", r"(?<!\w)fiziksel\w*",
         r"(?<!\w)ameliyat\w*", r"(?<!\w)rahatsızlı\w*", r"(?<!\w)rahatsizli\w*",
     ),
@@ -273,10 +277,11 @@ def enforce_explicit_time_scope(value, question, now_iso):
     if not isinstance(value, dict):
         return value
     weekly_range = _explicit_weekly_range(question, now_iso)
-    if not weekly_range:
+    forward_range = _explicit_forward_month_range(question, now_iso)
+    if not weekly_range and not forward_range:
         return value
     normalized = dict(value)
-    start, end = weekly_range
+    start, end = weekly_range or forward_range
     normalized["time_scope"] = "range"
     normalized["timing_required"] = True
     normalized["target_start"] = start
@@ -289,6 +294,35 @@ def enforce_explicit_time_scope(value, question, now_iso):
             set(evidence) | _required_evidence_for(primary_topic, "range")
         )
     return normalized
+
+
+def _explicit_forward_month_range(question, now_iso):
+    """Return an exact forward calendar range for explicit N-month requests."""
+
+    text = _question_text(question)
+    number_words = {
+        "bir": 1, "iki": 2, "üç": 3, "uc": 3, "dört": 4, "dort": 4,
+        "beş": 5, "bes": 5, "altı": 6, "alti": 6,
+    }
+    match = re.search(
+        r"\b(?:önümüzdeki|onumuzdeki|gelecek)\s+"
+        r"(?P<count>[1-6]|bir|iki|üç|uc|dört|dort|beş|bes|altı|alti)\s+ay(?:da|de)?\b",
+        text,
+    )
+    if not match:
+        return None
+    raw_count = match.group("count")
+    month_count = int(raw_count) if raw_count.isdigit() else number_words[raw_count]
+    start = datetime.fromisoformat(str(now_iso).replace("Z", "+00:00")).date()
+    month_index = start.month - 1 + month_count
+    target_year = start.year + month_index // 12
+    target_month = month_index % 12 + 1
+    # The end is exclusive at the same day-of-month, then shifted back a day.
+    # Clamping handles dates such as 31 January without inventing a day.
+    next_month = date(target_year + (target_month == 12), (target_month % 12) + 1, 1)
+    last_day = (next_month - timedelta(days=1)).day
+    exclusive_end = date(target_year, target_month, min(start.day, last_day))
+    return start.isoformat(), (exclusive_end - timedelta(days=1)).isoformat()
 
 
 def _required_evidence_for(primary_topic, time_scope):

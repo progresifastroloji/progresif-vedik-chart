@@ -1506,6 +1506,67 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             "methodology_model_timing_evidence_invalid",
         )
 
+    def test_timing_response_rejects_unverified_turkish_calendar_date(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["question_intent"]["timing_required"] = True
+        value["summary"] = "12 Ekim 2026 kariyer için en uygun dönemdir."
+        value["supporting_evidence"][0] = {
+            "claim": "Transit kayıtları incelendi.",
+            "evidence_path": "evidence.transits.daily_timing",
+        }
+        value["challenging_evidence"][0] = {
+            "claim": "Zaman aralığının sınırları dikkate alındı.",
+            "evidence_path": "evidence.transits.daily_timing",
+        }
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic": "transit",
+            "subject_topic": "career",
+            "question_route": {"time_scope": "range"},
+            "transits": {"daily_timing": [{"date": "2026-10-13"}]},
+        }
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_methodology_response(payload, evidence)
+        self.assertEqual(raised.exception.code, "methodology_model_timing_evidence_invalid")
+
+    def test_relationship_type_cannot_be_invented_from_degree_orb_contact(self):
+        payload = _payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["supporting_evidence"][0] = {
+            "claim": "Transit Jüpiter natal Mars ile tam kavuşumdadır.",
+            "evidence_path": "evidence.topic_packet.contact",
+        }
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value)
+        evidence = {
+            "topic": "career",
+            "subject_topic": "career",
+            "topic_packet": {
+                "contact": {"contact_type": "degree_orb", "orb": 1.2},
+            },
+        }
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_methodology_response(payload, evidence)
+        self.assertEqual(raised.exception.code, "methodology_model_evidence_invalid")
+
+    def test_wealth_narrative_rejects_automatic_investment_instruction(self):
+        draft = {**_draft(), "topic": "wealth", "subject_topic": "wealth"}
+        evidence = compact_evidence(draft)
+        analysis = validate_methodology_response(_payload(), evidence)
+
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            validate_narrative_response(
+                _narrative_payload(answer=(
+                    "Gelirinizin sabit bir oranını korunaklı birikim araçlarına aktarın ve "
+                    "otomatik bir birikim talimatı oluşturun. " * 12
+                )),
+                analysis,
+                evidence,
+            )
+        self.assertEqual(raised.exception.code, "methodology_narrative_safety_invalid")
+
     def test_shadbala_claim_is_verified_and_bound_to_ratio_summary(self):
         payload = _payload()
         value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])

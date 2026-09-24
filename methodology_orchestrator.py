@@ -456,6 +456,8 @@ def _model_request(candidate, evidence, conversation_context=None, response_lang
         "evidence.selected_varga varsa, yalnız seçili vargayı ve onun yanındaki D1 kanıtını kullan; "
         "eksik veya başka bir vargayı onun yerine koyma. D1 ana vaattir, seçili varga yalnız teyit veya sınırdır. "
         "Seçili varga finans kapsamındaysa yatırım tavsiyesi, kesin gelir/servet tutarı veya garanti sonuç üretme. "
+        "Finans konusunda ürün, araç, oran, alım-satım veya otomatik yatırım/birikim talimatı verme; yalnız bütçe takibi, "
+        "harcama gözlemi ve gerektiğinde yetkili bir uzmana danışma gibi düşük riskli seçeneklerle sınırla. "
         "SOHBET BAĞLAMI aynı açık sayfadaki önceki soru-cevaplarıdır; devam ifadelerini çözmek için "
         "kullan fakat astrolojik kanıt sayma. Geçmiş cevaptaki teknik iddiaları yalnız KANIT PAKETİ "
         "doğruluyorsa kullan. Yalnız güncel soruyu yanıtla. "
@@ -463,6 +465,8 @@ def _model_request(candidate, evidence, conversation_context=None, response_lang
         "timing_required yalnız topic=transit ise true olmalı. "
         "Shadbala gezegen sıralamasında yalnız evidence.strength_summary içindeki strength_ratio kullanılır; "
         "legacy_raw_total gezegenler arası güç karşılaştırması değildir. "
+        "degree_orb veya same_sign kaydını kavuşum, açı ya da drishti diye adlandırma. Graha Yuddha yalnız kanıt yolundaki "
+        "kayıt açıkça true ise söylenebilir. Kanıt yolunun varlığı iddianın ilişki türünü doğrulamaz. "
         "mental_wellbeing veya wellbeing sorularında psikolojik/psikiyatrik teşhis, "
         "kişilik bozukluğu hükmü, klinik durum var/yok hükmü ya da kriz güvencesi üretme; yalnız sağlanan "
         "astrolojik örüntüyü teşhis dışı dille açıkla. "
@@ -591,7 +595,9 @@ def _narrative_request(
             "Sen Vedic AI sohbet anlatıcısısın. Yalnız doğrulanmış Aşama 1 verisini kullan; "
             "astrolojik hesap, yeni teknik iddia veya kaynakta olmayan olay üretme. Kullanıcının "
             "sorusunu doğal ve anlaşılır biçimde yanıtla; sağlık, hukuk, finans veya gelecek sonucu "
-            "garanti etme. Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
+            "garanti etme. Finans konusunda ürün, araç, oran, alım-satım veya otomatik yatırım/birikim talimatı verme. "
+            "Doğrulanmış analizde açıkça bulunmayan gün, ay, yıl, kavuşum, açı veya gezegen savaşı ekleme. "
+            "Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
             "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
             "counter_indicators array, missing_data array, limitations array}; memory_update yalnız "
@@ -627,6 +633,8 @@ def _narrative_request(
         "Tam Markdown kaynakları verilmişse onları Aşama 1 hükmünü doğru anlamlandırmak için kullan; ana yanıttaki "
         "teknik görünürlüğü rehberlik metodolojisinin sınırında tut. Kaynaklarda veya Aşama 1 kanıtında bulunmayan "
         "yeni teknik veri, olay, derece veya tarih üretme. "
+        "Doğrulanmış Aşama 1 içinde açıkça yer almayan gün, ay veya yıl adını yazma. İstenen zaman aralığının bir bölümü "
+        "kanıt kapsamı dışındaysa bunu dürüstçe sınırla; uygun ya da başarılı dönem garantisi verme. "
         "conversation_context aynı açık sayfadaki önceki soru-cevaplarıdır; anlatımın devamlılığını "
         "korumak için kullan fakat oradan yeni astrolojik teknik iddia çıkarma. Yalnız güncel soruyu yanıtla. "
         "personal_memory_summary sunucu tarafından hazırlanan gizli kişiselleştirme özetidir; kanıt değildir ve "
@@ -650,6 +658,8 @@ def _narrative_request(
         "Önemli gökyüzü olayı veya tutulma istenmişse yalnız doğrulanmış transit kayıtlarındaki tarih, saat, derece, nakshatra, pada ve natal temasları anlat; "
         "bunlardan herhangi biri kaynakta yoksa hesaplama yapma ve eksik olduğunu açıkça söyle. "
         "false ise tarih veya gelecek garantisi üretme. Teknik kayıt listesini, evidence_path değerlerini, "
+        "Finans konusunda belirli ürün, yatırım aracı, oran, alım-satım veya otomatik birikim/yatırım talimatı verme; "
+        "öneriyi bütçe gözlemi gibi düşük riskli bir alışkanlıkla sınırla. "
         "İngilizce kariyer yanıtında destined, fated, inevitable, ideal time, perfect time, highly active, highly rewarding, "
         "best suited, natural catalyst veya highly recommended "
         "ifadelerini kullanma; güçlü kanıtta da koşullu ve kullanıcı iradesini koruyan dil kullan. "
@@ -736,6 +746,9 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "meslek/olay ekleme. Para, sağlık, hukuk ve ilişki konularında garanti, kesin sonuç, "
             "kayıp/kriz hükmü veya teşhis dili kullanma. Doğrulanmış analiz eksikse bunu açıkça "
             "söyle ve yalnız küçük, geri alınabilir bir gözlem/plan adımı öner. opening_summary içinde "
+            "Para yanıtında yatırım ürünü, aracı, oranı, otomatik birikim/yatırım talimatı veya alım-satım önerme. "
+            "Zamanlama yanıtında yalnız doğrulanmış analizde açıkça bulunan tarih ve ayları kullan; en uygun dönem, "
+            "kesin başarı veya sonucu pekiştirecek dönem hükmü kurma. "
             "gezegen, ev, burç, nakshatra, dasha veya transit adı hiç kullanma. answer içinde bu tür "
             "görünür astrolojik dayanak içeren en fazla bir cümle kullan; diğer teknik kanıtları tekrarlama. "
             "İngilizce yanıtta "
@@ -1078,6 +1091,16 @@ def _evidence_path_exists(evidence, evidence_path):
     return True
 
 
+def _evidence_path_value(evidence, evidence_path):
+    current = evidence
+    for key in evidence_path.split(".")[1:]:
+        if isinstance(current, dict):
+            current = current[key]
+        else:
+            current = current[int(key)]
+    return current
+
+
 def _canonical_evidence_path(evidence, evidence_path):
     if _evidence_path_exists(evidence, evidence_path):
         return evidence_path
@@ -1147,6 +1170,36 @@ def _validated_strength_claim(row, evidence):
     return {**row, "evidence_path": "evidence.strength_summary"}
 
 
+def _validated_relationship_claim(row, evidence):
+    """Prevent a broad evidence path from being upgraded into a new aspect."""
+
+    claim = row["claim"].replace("İ", "i").casefold()
+    source_text = _canonical_json(
+        _evidence_path_value(evidence, row["evidence_path"])
+    ).replace("İ", "i").casefold()
+    relationship_negated = bool(re.search(
+        r"(?:kavuşum\w*|kavusum\w*|conjunction\w*)[^.!?\n]{0,30}\b(?:değil|degil|yok|bulunmuyor)\b",
+        claim,
+    ))
+    if not relationship_negated and re.search(
+        r"\b(?:tam\s+)?(?:kavuşum\w*|kavusum\w*|conjunction\w*)\b",
+        claim,
+    ):
+        if not re.search(r"\b(?:kavuşum|kavusum|conjunction)\b", source_text):
+            raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
+    if re.search(r"\b(?:graha\s+yuddha|gezegen\s+savaşı|gezegen\s+savasi)\b", claim):
+        expected_state = "false" if re.search(
+            r"(?:graha\s+yuddha|gezegen\s+savaşı|gezegen\s+savasi)[^.!?\n]{0,30}\b(?:değil|degil|yok|bulunmuyor)\b",
+            claim,
+        ) else "true"
+        if not re.search(
+            rf'"(?:in_graha_yuddha|graha_yuddha)"\s*:\s*{expected_state}',
+            source_text,
+        ):
+            raise MethodologyOrchestrationError("methodology_model_evidence_invalid", 502)
+    return row
+
+
 def _validate_timing_claim_tokens(summary, evidence_rows, evidence):
     """Reject explicit dates/degrees that do not exist in supplied evidence."""
 
@@ -1158,6 +1211,55 @@ def _validate_timing_claim_tokens(summary, evidence_rows, evidence):
     source_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", source_text))
     claimed_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", answer_text))
     if not claimed_dates.issubset(source_dates):
+        raise MethodologyOrchestrationError(
+            "methodology_model_timing_evidence_invalid",
+            502,
+        )
+
+    month_numbers = {
+        "ocak": 1, "şubat": 2, "subat": 2, "mart": 3, "nisan": 4,
+        "mayıs": 5, "mayis": 5, "haziran": 6, "temmuz": 7,
+        "ağustos": 8, "agustos": 8, "eylül": 9, "eylul": 9,
+        "ekim": 10, "kasım": 11, "kasim": 11, "aralık": 12, "aralik": 12,
+    }
+    source_months = {(int(value[:4]), int(value[5:7])) for value in source_dates}
+    normalized_answer = answer_text.replace("İ", "i").casefold()
+    month_pattern = "|".join(sorted(map(re.escape, month_numbers), key=len, reverse=True))
+    localized_dates = set()
+    for day_value, month_value, year_value in re.findall(
+        rf"\b(\d{{1,2}})\s+({month_pattern})\s+(20\d{{2}})\b",
+        normalized_answer,
+    ):
+        try:
+            localized_dates.add(date(
+                int(year_value), month_numbers[month_value], int(day_value)
+            ).isoformat())
+        except ValueError as exc:
+            raise MethodologyOrchestrationError(
+                "methodology_model_timing_evidence_invalid",
+                502,
+            ) from exc
+    if not localized_dates.issubset(source_dates):
+        raise MethodologyOrchestrationError(
+            "methodology_model_timing_evidence_invalid",
+            502,
+        )
+    claimed_months = set()
+    for sentence in re.split(r"[.!?\n]+", normalized_answer):
+        months = re.findall(rf"\b({month_pattern})\b", sentence)
+        if not months:
+            continue
+        years = {int(value) for value in re.findall(r"\b(20\d{2})\b", sentence)}
+        if years:
+            claimed_months.update(
+                (year, month_numbers[month]) for year in years for month in months
+            )
+        elif not all(any(source_month == month_numbers[month] for _, source_month in source_months) for month in months):
+            raise MethodologyOrchestrationError(
+                "methodology_model_timing_evidence_invalid",
+                502,
+            )
+    if not claimed_months.issubset(source_months):
         raise MethodologyOrchestrationError(
             "methodology_model_timing_evidence_invalid",
             502,
@@ -1304,6 +1406,9 @@ def _validate_sensitive_narrative_language(text, evidence):
         r"\b(?:is|are)\s+natural\s+catalysts?\s+for\b",
         r"\bit\s+is\s+highly\s+recommended\s+to\b",
         r"\bhave\s+a\s+strong\s+capacity\s+to\s+gain\s+through\b",
+        r"\bdaha\s+büyük\s+kazanımlar\s+elde\s+edece(?:ğiniz|ksiniz)\b",
+        r"\bbaşarınızı\s+pekiştirecektir\b",
+        r"\b(?:en\s+uygun|en\s+hareketli|kesin\s+olarak\s+uygun)\s+(?:ve\s+\w+\s+)?dönem\b",
     ]
     if topic == "wealth":
         patterns.extend([
@@ -1313,6 +1418,8 @@ def _validate_sensitive_narrative_language(text, evidence):
             r"\b(?:yatırım\s+yapmalısınız|borç\s+almalısınız|kredi\s+çekmelisiniz)\b",
             r"\b(?:hisse|kripto|bitcoin|altın|döviz|fon)[^.!?\n]{0,60}"
             r"\b(?:alın|satın|yatırım\s+yapın)\b",
+            r"\b(?:gelir|kazanç|maaş|para)[^.!?\n]{0,100}\bsabit\s+(?:bir\s+)?oran(?:ı|ını)\b[^.!?\n]{0,100}\b(?:birikim|yatırım)\s+araçlarına\s+aktar",
+            r"\botomatik\s+(?:bir\s+)?birikim\s+talimat",
         ])
     if topic == "career":
         patterns.extend([
@@ -1552,6 +1659,12 @@ def validate_methodology_response(payload, evidence):
     ]
     challenging_evidence = [
         _validated_strength_claim(row, evidence) for row in challenging_evidence
+    ]
+    supporting_evidence = [
+        _validated_relationship_claim(row, evidence) for row in supporting_evidence
+    ]
+    challenging_evidence = [
+        _validated_relationship_claim(row, evidence) for row in challenging_evidence
     ]
     summary, supporting_evidence = _ensure_wellbeing_timing_evidence(
         summary,
