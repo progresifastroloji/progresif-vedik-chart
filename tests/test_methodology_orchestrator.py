@@ -1213,7 +1213,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertTrue(analysis["validation_bypassed"])
         self.assertEqual(analysis["opening_summary"], "Bu özet iki cümlede kalır.")
 
-    def test_chat_raw_output_mode_pauses_semantic_gates_and_retries(self):
+    def test_chat_raw_output_mode_pauses_semantic_gates_without_short_output(self):
         calls = []
         requests = []
 
@@ -1254,6 +1254,14 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         narrative_user = requests[1]["contents"][0]["parts"][0]["text"]
         self.assertIn("VEDIC_TR_NARRATIVE_V1", narrative_system)
         self.assertIn("DOĞRULANMIŞ AŞAMA 1", narrative_user)
+        self.assertIn("sabit paragraf, cümle veya karakter sınırı uygulama", narrative_system)
+        self.assertIn("bilgi kaybına yol açan bir kısaltma yapmadan", narrative_user)
+        self.assertIn("simple_view.body", narrative_user)
+        self.assertIn("pro_view.body", narrative_user)
+        self.assertEqual(
+            requests[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            "MEDIUM",
+        )
         self.assertNotIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
         self.assertNotIn("REHBERLİK METODOLOJİSİ BELGESİ", narrative_system)
         self.assertNotIn("TAM MARKDOWN KAYNAKLARI", narrative_user)

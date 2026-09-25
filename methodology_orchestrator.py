@@ -559,7 +559,7 @@ def _narrative_request(
     guidance=None,
     response_language="tr",
     personal_memory_summary="",
-    minimal_output=False,
+    direct_dual_output=False,
 ):
     """Build the client-facing call from validated analysis and active sources."""
 
@@ -590,7 +590,7 @@ def _narrative_request(
     }
     if personal_memory_summary:
         narrative_input["personal_memory_summary"] = str(personal_memory_summary).strip()[:PERSONAL_MEMORY_MAX_CHARS]
-    if minimal_output:
+    if direct_dual_output:
         system_text = (
             "Sen Vedic AI sohbet anlatıcısısın. Yalnız doğrulanmış Aşama 1 verisini kullan; "
             "astrolojik hesap, yeni teknik iddia veya kaynakta olmayan olay üretme. Kullanıcının "
@@ -602,13 +602,19 @@ def _narrative_request(
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
             "counter_indicators array, missing_data array, limitations array}; memory_update yalnız "
             "kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. Sade görünümde teknik terimleri "
-            "olabildiğince açıklama veya çıkar. Pro görünümde yalnız Aşama 1 kaydında gerçekten kullanılan "
-            "göstergeleri adlarıyla belirt; evidence_path, dosya yolu, gizli alan veya yeni hesaplama yazma."
+            "olabildiğince açıklama veya çıkar. Sade görünüm sorunun cevabını, nedenini, dengeleyen koşulları "
+            "ve uygulanabilir küçük adımı doğal bir akışla yeterli derinlikte anlatsın. Pro görünüm aynı soruyu "
+            "teknik mantığıyla genişletsin; yalnız Aşama 1 kaydında gerçekten kullanılan göstergeleri adlarıyla "
+            "belirtsin ve ilgili destek, karşı gösterge, eksik veri ve sınırlamaları atlamasın. Hiçbir görünüm için "
+            "sabit paragraf, cümle veya karakter sınırı uygulama ve cevabı kısa tutmaya çalışma. evidence_path, "
+            "dosya yolu, gizli alan veya yeni hesaplama yazma."
         )
         user_text = (
             "Aşağıdaki doğrulanmış Aşama 1 kaydından iki görünümlü kullanıcı cevabı üret. "
             "Teknik denetim, puanlama, kalite editörü veya otomatik yeniden yazım yapma; "
-            "cevabı doğrudan üret. simple_view.body ve pro_view.body doğal paragraf dizileri olsun. "
+            "cevabı doğrudan ve bilgi kaybına yol açan bir kısaltma yapmadan üret. simple_view.body ve "
+            "pro_view.body doğal paragraf dizileri olsun. Her iki görünüm de kullanıcının sorusunu tam olarak "
+            "yanıtlasın; yalnız özet veya gösterge listesi verme. "
             "answer, simple_view.body metninin birleşik geriye dönük kopyası olsun.\n\n"
             f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
         )
@@ -619,7 +625,7 @@ def _narrative_request(
                 "temperature": 0.35,
                 "maxOutputTokens": NARRATIVE_MAX_OUTPUT_TOKENS,
                 "responseMimeType": "application/json",
-                "thinkingConfig": {"thinkingLevel": "MINIMAL"},
+                "thinkingConfig": {"thinkingLevel": "MEDIUM"},
             },
         }
         raw = _canonical_json(request).encode("utf-8")
@@ -2149,7 +2155,7 @@ def _run_candidate(
         guidance,
         response_language,
         personal_memory_summary,
-        minimal_output=raw_output_mode,
+        direct_dual_output=raw_output_mode,
     )
     current_narrative_request = narrative_request
     narrative_payload = None
