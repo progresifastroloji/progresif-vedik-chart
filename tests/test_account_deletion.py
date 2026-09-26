@@ -60,6 +60,10 @@ class AccountDeletionTest(unittest.TestCase):
                 (f"comparison-{profile_id}", profile_id, f"chart-{profile_id}"),
             )
             conn.execute(
+                "INSERT INTO beta_chat_jobs (id, owner_user_id, profile_id, chart_id, question, request_hash, request_json, status, response_json, created_at, updated_at) VALUES (?, ?, ?, ?, 'question', 'hash', '{}', 'answered', '{}', '2026-08-02', '2026-08-02')",
+                (f"job-{profile_id}", user_id, profile_id, f"chart-{profile_id}"),
+            )
+            conn.execute(
                 "INSERT INTO beta_question_routes (id, profile_id, chart_id, owner_user_id, question, mode, status, legacy_json, model_json, selected_json, error_code, created_at) VALUES (?, ?, ?, ?, 'question', 'shadow', 'model_shadowed', '{}', '{}', '{}', NULL, '2026-08-02')",
                 (f"route-{profile_id}", profile_id, f"chart-{profile_id}", user_id),
             )
@@ -97,6 +101,7 @@ class AccountDeletionTest(unittest.TestCase):
             ("beta_feedback", "profile_id"),
             ("beta_usage_events", "profile_id"),
             ("beta_methodology_comparisons", "profile_id"),
+            ("beta_chat_jobs", "profile_id"),
             ("beta_question_routes", "profile_id"),
         ):
             self.assertEqual(self._table_count(table, column, USER_ID), 0)

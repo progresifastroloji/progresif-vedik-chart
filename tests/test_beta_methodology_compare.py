@@ -24,9 +24,12 @@ from app import (
     _beta_load_json,
     _beta_now,
     _beta_options,
+    _pwa_transit_pack,
     _beta_public_methodology_response,
     _build_transit_pack_markdown,
     _beta_compact_transit_evidence,
+    _beta_claim_chat_job,
+    _beta_process_chat_job,
     _normalize_important_sky_events,
 )
 from methodology_orchestrator import (
@@ -42,6 +45,7 @@ from question_classifier import QuestionClassificationError
 
 PROFILE_ID = "33333333-3333-4333-8333-333333333333"
 CHART_ID = "chart-methodology-test"
+OWNER_USER_ID = "11111111-1111-4111-8111-111111111111"
 
 
 def _model_payload():
@@ -527,6 +531,105 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertIn("technical_summary", stored_analysis)
         usage = self.client.get(f"/api/v2/beta/usage?profile_id={PROFILE_ID}").get_json()
         self.assertEqual(usage["counts"]["methodology_comparisons"], 1)
+
+    @patch("app._ensure_beta_chat_job_worker")
+    @patch("app.full_source_context_mode", return_value=False)
+    @patch("app._pwa_get_or_create_transit_runtime_cache")
+    @patch("app.call_vertex_bridge")
+    def test_async_job_returns_immediately_then_replays_one_result(
+        self, bridge_call, transit_cache, _full_source_mode, _worker
+    ):
+        bridge_call.side_effect = lambda request_id, _request: (
+            request_id,
+            _analysis_or_narrative_payload(request_id),
+        )
+        transit_cache.side_effect = lambda _owner, _profile, _chart_id, _mode, chart, name, start, end: (
+            _pwa_transit_pack(
+                chart,
+                name,
+                "PWA",
+                start_date=start,
+                period="range",
+                end_date=end,
+            ),
+            "test_runtime_cache",
+            False,
+        )
+        with closing(_beta_db()) as conn:
+            conn.execute(
+                "UPDATE beta_charts SET owner_user_id = ? WHERE id = ?",
+                (OWNER_USER_ID, CHART_ID),
+            )
+            conn.commit()
+        payload = {
+            "owner_user_id": OWNER_USER_ID,
+            "comparison_id": "async-methodology-job-1",
+            "profile_id": PROFILE_ID,
+            "chart_id": CHART_ID,
+            "question": "Kariyer açısından güçlü yanlarım neler?",
+            "language": "tr",
+            "conversation_context": [],
+            "personal_memory_summary": "",
+        }
+
+        first = self.client.post("/api/v2/beta/chat/jobs", json=payload)
+        resumed_payload = {**payload, "personal_memory_summary": "Güncel kişisel özet"}
+        replay_while_queued = self.client.post("/api/v2/beta/chat/jobs", json=resumed_payload)
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(first.get_json()["status"], "queued")
+        self.assertEqual(replay_while_queued.status_code, 202)
+        with closing(_beta_db()) as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM beta_chat_jobs").fetchone()[0],
+                1,
+            )
+
+        job = _beta_claim_chat_job()
+        self.assertIsNotNone(job)
+        self.assertEqual(job["status"], "processing")
+        _beta_process_chat_job(job)
+
+        status = self.client.get(
+            "/api/v2/beta/chat/jobs/async-methodology-job-1",
+            query_string={"owner_user_id": OWNER_USER_ID},
+        )
+        replay_after_answer = self.client.post("/api/v2/beta/chat/jobs", json=payload)
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.get_json()["status"], "answered")
+        self.assertTrue(status.get_json()["comparison"]["ok"])
+        self.assertEqual(replay_after_answer.status_code, 200)
+        self.assertEqual(replay_after_answer.get_json()["status"], "answered")
+        self.assertEqual(bridge_call.call_count, 2)
+        usage = self.client.get(f"/api/v2/beta/usage?profile_id={PROFILE_ID}").get_json()
+        self.assertEqual(usage["usage"]["heavy"]["used"], 1)
+
+    @patch("app._ensure_beta_chat_job_worker")
+    def test_async_job_status_rejects_another_owner(self, _worker):
+        with closing(_beta_db()) as conn:
+            conn.execute(
+                "UPDATE beta_charts SET owner_user_id = ? WHERE id = ?",
+                (OWNER_USER_ID, CHART_ID),
+            )
+            conn.commit()
+        response = self.client.post(
+            "/api/v2/beta/chat/jobs",
+            json={
+                "owner_user_id": OWNER_USER_ID,
+                "comparison_id": "async-methodology-job-owner",
+                "profile_id": PROFILE_ID,
+                "chart_id": CHART_ID,
+                "question": "Kariyer göstergelerim neler?",
+            },
+        )
+        self.assertEqual(response.status_code, 202)
+
+        forbidden = self.client.get(
+            "/api/v2/beta/chat/jobs/async-methodology-job-owner",
+            query_string={"owner_user_id": "22222222-2222-4222-8222-222222222222"},
+        )
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(forbidden.get_json()["error_code"], "chat_job_ownership_mismatch")
 
     @patch("app.call_vertex_bridge")
     def test_endpoint_raw_mode_is_explicit_and_chat_only(self, bridge_call):
