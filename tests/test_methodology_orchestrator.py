@@ -11,6 +11,7 @@ from methodology_orchestrator import (
     MethodologyOrchestrationError,
     _model_request,
     _narrative_request,
+    _narrative_repair_request,
     compact_evidence,
     full_markdown_test_mode,
     load_guidance_methodology,
@@ -122,6 +123,31 @@ def _narrative_payload(answer=None, opening_summary=None):
 
 
 class MethodologyOrchestratorTest(unittest.TestCase):
+    def test_gemini_38_generation_config_uses_supported_fields(self):
+        candidate = load_methodology_candidates()[0]
+        evidence = compact_evidence(_draft())
+        analysis = validate_methodology_response(_payload(), evidence)
+
+        technical, _ = _model_request(candidate, evidence)
+        narrative, _ = _narrative_request(candidate, evidence, analysis)
+        direct, _ = _narrative_request(
+            candidate, evidence, analysis, direct_dual_output=True
+        )
+        repaired = _narrative_repair_request(narrative, _narrative_payload())
+
+        for request, expected_level in (
+            (technical, "LOW"),
+            (narrative, "LOW"),
+            (direct, "MEDIUM"),
+            (repaired, "LOW"),
+        ):
+            generation_config = request["generationConfig"]
+            self.assertNotIn("temperature", generation_config)
+            self.assertEqual(
+                generation_config["thinkingConfig"]["thinkingLevel"],
+                expected_level,
+            )
+
     def test_personal_memory_update_is_conservative_and_optional(self):
         self.assertEqual(
             normalize_personal_memory_update({

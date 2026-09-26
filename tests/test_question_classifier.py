@@ -208,6 +208,12 @@ class QuestionClassifierTest(unittest.TestCase):
             calls[0][1]["generationConfig"]["responseMimeType"],
             "application/json",
         )
+        generation_config = calls[0][1]["generationConfig"]
+        self.assertNotIn("temperature", generation_config)
+        self.assertEqual(
+            generation_config["thinkingConfig"]["thinkingLevel"],
+            "LOW",
+        )
 
     def test_classifier_repairs_bounded_evidence_omissions(self):
         def model_call(request_id, _request):

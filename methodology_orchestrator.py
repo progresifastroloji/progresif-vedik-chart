@@ -536,10 +536,9 @@ def _model_request(candidate, evidence, conversation_context=None, response_lang
         "systemInstruction": {"parts": [{"text": system_text}]},
         "contents": [{"role": "user", "parts": [{"text": user_text}]}],
         "generationConfig": {
-            "temperature": 0.2,
             "maxOutputTokens": TECHNICAL_MAX_OUTPUT_TOKENS,
             "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingLevel": "MINIMAL"},
+            "thinkingConfig": {"thinkingLevel": "LOW"},
         },
     }
     raw = _canonical_json(request).encode("utf-8")
@@ -622,7 +621,6 @@ def _narrative_request(
             "systemInstruction": {"parts": [{"text": system_text + ("\nVEDIC_TR_NARRATIVE_V1" if response_language == "tr" else "")}]},
             "contents": [{"role": "user", "parts": [{"text": user_text}]}],
             "generationConfig": {
-                "temperature": 0.35,
                 "maxOutputTokens": NARRATIVE_MAX_OUTPUT_TOKENS,
                 "responseMimeType": "application/json",
                 "thinkingConfig": {"thinkingLevel": "MEDIUM"},
@@ -707,10 +705,9 @@ def _narrative_request(
         "systemInstruction": {"parts": [{"text": system_text + ("\nVEDIC_TR_NARRATIVE_V1" if response_language == "tr" else "")}]},
         "contents": [{"role": "user", "parts": [{"text": user_text}]}],
         "generationConfig": {
-            "temperature": 0.35,
             "maxOutputTokens": NARRATIVE_MAX_OUTPUT_TOKENS,
             "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingLevel": "MINIMAL"},
+            "thinkingConfig": {"thinkingLevel": "LOW"},
         },
     }
     raw = _canonical_json(request).encode("utf-8")
@@ -774,9 +771,6 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             f"ÖNCEKİ REDDEDİLEN JSON:\n{previous}"
         ),
     })
-    generation_config = repaired.get("generationConfig")
-    if isinstance(generation_config, dict):
-        generation_config["temperature"] = 0.2
     return repaired
 
 

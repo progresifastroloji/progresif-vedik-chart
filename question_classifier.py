@@ -675,10 +675,9 @@ def build_request(question, now_iso, conversation_context=None):
         "systemInstruction": {"parts": [{"text": system_text}]},
         "contents": [{"role": "user", "parts": [{"text": user_text}]}],
         "generationConfig": {
-            "temperature": 0,
             "maxOutputTokens": 768,
             "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingLevel": "MINIMAL"},
+            "thinkingConfig": {"thinkingLevel": "LOW"},
         },
     }
 
