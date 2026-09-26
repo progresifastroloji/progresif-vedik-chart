@@ -51,13 +51,13 @@ def _bridge_config():
     bridge_url = os.environ.get("VEDIC_VERTEX_BRIDGE_URL", "").strip().rstrip("/")
     secret = os.environ.get("VEDIC_MACHINE_HMAC_SECRET", "")
     try:
-        timeout_seconds = float(os.environ.get("VEDIC_VERTEX_BRIDGE_TIMEOUT_SECONDS", "45"))
+        timeout_seconds = float(os.environ.get("VEDIC_VERTEX_BRIDGE_TIMEOUT_SECONDS", "240"))
     except ValueError as exc:
         raise VertexBridgeClientError("vertex_bridge_config_invalid", 503) from exc
 
     if not bridge_url.startswith("https://") or len(secret) < 32:
         raise VertexBridgeClientError("vertex_bridge_unavailable", 503)
-    if not 1 <= timeout_seconds <= 120:
+    if not 1 <= timeout_seconds <= 240:
         raise VertexBridgeClientError("vertex_bridge_config_invalid", 503)
     return bridge_url, secret, timeout_seconds
 

@@ -98,6 +98,29 @@ class VertexBridgeClientTest(unittest.TestCase):
             "VEDIC_VERTEX_BRIDGE_URL": TEST_URL,
             "VEDIC_MACHINE_HMAC_SECRET": TEST_SECRET,
         },
+        clear=True,
+    )
+    def test_default_timeout_covers_slow_gemini_responses(self):
+        captured = {}
+
+        def opener(_request, timeout):
+            captured["timeout"] = timeout
+            return _FakeResponse(b'{"candidates":[]}')
+
+        call_vertex_bridge(
+            "slow-gemini-response",
+            {"contents": [{"role": "user", "parts": [{"text": "TAMAM"}]}]},
+            opener=opener,
+        )
+
+        self.assertEqual(captured["timeout"], 240)
+
+    @patch.dict(
+        os.environ,
+        {
+            "VEDIC_VERTEX_BRIDGE_URL": TEST_URL,
+            "VEDIC_MACHINE_HMAC_SECRET": TEST_SECRET,
+        },
         clear=False,
     )
     def test_invalid_request_is_rejected_before_network(self):
