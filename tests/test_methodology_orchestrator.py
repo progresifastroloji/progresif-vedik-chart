@@ -1747,6 +1747,75 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("evidence.topic_packet.evidence.houses.0.occupants", prompt)
         self.assertNotIn('"evidence.topic_packet.houses.0.occupants"', prompt)
 
+    def test_routed_non_timing_request_uses_bounded_model_projection(self):
+        candidate = load_methodology_candidates()[0]
+        evidence = {
+            "topic": "wellbeing",
+            "question_route": {"timing_required": False},
+            "chart_summary": {
+                "lagna": {"sign": "Aries"},
+                "planets": [{"name": "Moon"}],
+                "vargas": {"D9": {"marker": "DROP-CHART-VARGAS"}},
+                "vedic_spine": {"marker": "DROP-DUPLICATE-SPINE"},
+            },
+            "vedic_spine": {"anchors": [{"marker": "KEEP-SPINE"}]},
+            "topic_packet": {
+                "evidence": {
+                    "vargas": {"D9": {"lagna": "Taurus"}},
+                    "planets": [{
+                        "name": "Moon",
+                        "varga_status": {
+                            "D1": {"marker": "KEEP-D1"},
+                            "D9": {"marker": "KEEP-D9"},
+                            "D10": {"marker": "DROP-D10"},
+                        },
+                    }],
+                },
+            },
+            "natal_sections": [
+                {"id": "planet_quick_read", "content": "KEEP-QUICK-READ"},
+                {"id": "planet_role_blocks", "content": "DROP-ROLE-BLOCKS"},
+            ],
+            "transits": {
+                "contract_version": "vedic-compact-transit-evidence-v2",
+                "period": {"range_start": "2026-09-27", "range_end": "2026-12-27"},
+                "daily_timing": [{"marker": "DROP-DAILY-TIMING"}],
+                "slow_planet_snapshots": [{"marker": "DROP-SLOW-SNAPSHOTS"}],
+            },
+        }
+
+        request, _ = _model_request(candidate, evidence)
+        prompt = request["contents"][0]["parts"][0]["text"]
+
+        self.assertIn("KEEP-SPINE", prompt)
+        self.assertIn("KEEP-D1", prompt)
+        self.assertIn("KEEP-D9", prompt)
+        self.assertIn("KEEP-QUICK-READ", prompt)
+        self.assertNotIn("DROP-CHART-VARGAS", prompt)
+        self.assertNotIn("DROP-DUPLICATE-SPINE", prompt)
+        self.assertNotIn("DROP-D10", prompt)
+        self.assertNotIn("DROP-ROLE-BLOCKS", prompt)
+        self.assertNotIn("DROP-DAILY-TIMING", prompt)
+        self.assertNotIn("DROP-SLOW-SNAPSHOTS", prompt)
+        self.assertIn("evidence.topic_packet.evidence.planets", prompt)
+        self.assertNotIn("evidence.topic_packet.evidence.planets.0.varga_status.D9", prompt)
+
+    def test_routed_timing_request_keeps_selected_transit_evidence(self):
+        candidate = load_methodology_candidates()[0]
+        evidence = {
+            "topic": "transit",
+            "question_route": {"timing_required": True},
+            "transits": {
+                "daily_timing": [{"date": "2026-09-27", "marker": "KEEP-TIMING"}],
+            },
+        }
+
+        request, _ = _model_request(candidate, evidence)
+        prompt = request["contents"][0]["parts"][0]["text"]
+
+        self.assertIn("KEEP-TIMING", prompt)
+        self.assertIn("evidence.transits.daily_timing", prompt)
+
     def test_long_time_series_catalog_is_bounded_and_keeps_array_root(self):
         candidate = load_methodology_candidates()[0]
         evidence = {

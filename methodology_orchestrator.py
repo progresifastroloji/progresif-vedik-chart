@@ -425,6 +425,128 @@ def _evidence_path_catalog(evidence):
     return sorted(paths)
 
 
+MODEL_PROMPT_NATAL_SECTION_IDS = {
+    "birth_time_confidence",
+    "lagna",
+    "d1_planets",
+    "main_indicators",
+    "planet_quick_read",
+    "vimshottari_current",
+    "active_planets",
+    "topic_summaries",
+}
+MODEL_PROMPT_CHART_SUMMARY_KEYS = {
+    "schema_version",
+    "display_name",
+    "birth",
+    "ayanamsa",
+    "lagna",
+    "planets",
+    "active_dasha_path",
+    "active_dasha_periods",
+}
+MODEL_PROMPT_TRANSIT_METADATA_KEYS = {
+    "contract_version",
+    "period",
+    "time_scope",
+    "selection",
+    "source",
+    "three_month_recalculated_for_question",
+    "event_data_status",
+    "event_count",
+    "event_data_policy",
+    "calculation_policy",
+    "interpretation_limits",
+    "natal_reference",
+}
+
+
+def _model_prompt_evidence(evidence):
+    """Return a loss-bounded projection for the technical model request.
+
+    The complete evidence object remains the validator and audit authority.
+    This projection removes duplicated rendered sections, unrelated varga
+    copies, and non-timing transit tables from the provider request only.
+    """
+
+    prompt_evidence = json.loads(_canonical_json({
+        key: value
+        for key, value in evidence.items()
+        if key not in {"_full_markdown_source_content", "_full_markdown_test_content"}
+    }))
+
+    chart_summary = prompt_evidence.get("chart_summary")
+    if isinstance(chart_summary, dict):
+        prompt_evidence["chart_summary"] = {
+            key: value
+            for key, value in chart_summary.items()
+            if key in MODEL_PROMPT_CHART_SUMMARY_KEYS
+        }
+
+    natal_sections = prompt_evidence.get("natal_sections")
+    if isinstance(natal_sections, list):
+        prompt_evidence["natal_sections"] = [
+            section
+            for section in natal_sections
+            if isinstance(section, dict)
+            and section.get("id") in MODEL_PROMPT_NATAL_SECTION_IDS
+        ]
+
+    topic_packet = prompt_evidence.get("topic_packet")
+    topic_evidence = topic_packet.get("evidence") if isinstance(topic_packet, dict) else None
+    if isinstance(topic_evidence, dict):
+        relevant_vargas = {"D1"}
+        if isinstance(topic_evidence.get("vargas"), dict):
+            relevant_vargas.update(topic_evidence["vargas"].keys())
+        for planet in topic_evidence.get("planets") or []:
+            if not isinstance(planet, dict) or not isinstance(planet.get("varga_status"), dict):
+                continue
+            planet["varga_status"] = {
+                code: value
+                for code, value in planet["varga_status"].items()
+                if code in relevant_vargas
+            }
+
+    route = prompt_evidence.get("question_route")
+    if (
+        isinstance(route, dict)
+        and route.get("timing_required") is False
+        and prompt_evidence.get("topic") != "transit"
+    ):
+        transits = prompt_evidence.get("transits")
+        if isinstance(transits, dict):
+            prompt_evidence["transits"] = {
+                key: value
+                for key, value in transits.items()
+                if key in MODEL_PROMPT_TRANSIT_METADATA_KEYS
+            }
+
+    return prompt_evidence
+
+
+def _model_evidence_path_catalog(evidence):
+    """List auditable branch roots without repeating the full JSON shape."""
+
+    if not isinstance(evidence.get("question_route"), dict):
+        return _evidence_path_catalog(evidence)
+
+    paths = []
+    for key, value in evidence.items():
+        prefix = f"evidence.{key}"
+        paths.append(prefix)
+        if not isinstance(value, dict):
+            continue
+        for child_key, child in value.items():
+            child_prefix = f"{prefix}.{child_key}"
+            paths.append(child_prefix)
+            if key == "topic_packet" and child_key == "evidence" and isinstance(child, dict):
+                paths.extend(
+                    f"{child_prefix}.{grandchild_key}"
+                    for grandchild_key in child
+                )
+    return sorted(set(paths))
+
+
 def _model_request(candidate, evidence, conversation_context=None, response_language="tr"):
     response_language = normalize_response_language(response_language)
     full_markdown_content = evidence.get("_full_markdown_source_content")
@@ -433,13 +555,9 @@ def _model_request(candidate, evidence, conversation_context=None, response_lang
     ordered_sources = bool(
         (evidence.get("full_markdown_sources") or {}).get("ordered")
     )
-    prompt_evidence = {
-        key: value
-        for key, value in evidence.items()
-        if key not in {"_full_markdown_source_content", "_full_markdown_test_content"}
-    }
+    prompt_evidence = _model_prompt_evidence(evidence)
     evidence_json = _canonical_json(prompt_evidence)
-    evidence_path_catalog_json = _canonical_json(_evidence_path_catalog(prompt_evidence))
+    evidence_path_catalog_json = _canonical_json(_model_evidence_path_catalog(prompt_evidence))
     system_text = (
         "Yalnız aşağıdaki tek ve aktif Vedik/Jyotisha sistem metodolojisini uygula. "
         "Başka metodoloji, Batı/Tropical astroloji veya hesap uydurma kullanma. "
@@ -524,8 +642,8 @@ def _model_request(candidate, evidence, conversation_context=None, response_lang
         "Uzun zaman serilerindeki birden fazla satırı destekleyen iddia için dizinin kök yolunu "
         "(örneğin evidence.transits.daily_timing) kullan. "
         "Konu paketindeki houses, planets, lordships, yogas, vargas ve active_dasha alanları "
-        "evidence.topic_packet.evidence altında bulunur; örneğin "
-        "evidence.topic_packet.evidence.houses.0.occupants. "
+        "evidence.topic_packet.evidence altında bulunur. Uzun tablo veya nesnede katalogdaki "
+        "en dar gerçek dal kökünü kullan; katalogda olmayan alt alanı kendin ekleme. "
         "Alan yolunu aşağıdaki geçerli yol kataloğundan eksiksiz kopyala; katalog dışında yol üretme.\n\n"
         f"GEÇERLİ EVIDENCE_PATH KATALOĞU:\n{evidence_path_catalog_json}\n\n"
         f"SOHBET BAĞLAMI (KANIT DEĞİLDİR):\n{_canonical_json(conversation_context or [])}\n\n"
