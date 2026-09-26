@@ -15,6 +15,7 @@ from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from ipaddress import ip_address
 from pathlib import Path
+from threading import Event, Lock, Thread
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -155,6 +156,11 @@ app.config["MAX_CONTENT_LENGTH"] = int(
     os.environ.get("PROGRESIF_MAX_REQUEST_BYTES", 10 * 1024 * 1024)
 )
 
+BETA_CHAT_JOB_LEASE_SECONDS = 15 * 60
+_BETA_CHAT_JOB_WAKE = Event()
+_BETA_CHAT_JOB_THREAD_LOCK = Lock()
+_BETA_CHAT_JOB_THREAD = None
+
 KNOWN_BIRTH_PLACE_COORDINATES = (
     ("Antalya Merkez, Türkiye", 36.8969, 30.7133),
     ("Bursa Merkez, Türkiye", 40.1885, 29.0610),
@@ -285,6 +291,8 @@ def healthz():
     artifact_storage_persistent = bool(RAILWAY_VOLUME_ROOT)
     storage_ready = not running_on_railway or artifact_storage_persistent
     service_ready = catalog_ready and storage_ready
+    if service_ready and running_on_railway:
+        _ensure_beta_chat_job_worker()
     status_code = 200 if service_ready else 503
     return jsonify({
         "ok": service_ready,
@@ -29726,6 +29734,22 @@ def _beta_init_db(conn):
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS beta_chat_jobs (
+            id TEXT PRIMARY KEY,
+            owner_user_id TEXT NOT NULL,
+            profile_id TEXT,
+            chart_id TEXT NOT NULL,
+            question TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            request_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            response_json TEXT NOT NULL DEFAULT '{}',
+            error_code TEXT,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            lease_expires_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS beta_question_routes (
             id TEXT PRIMARY KEY,
             profile_id TEXT,
@@ -29764,11 +29788,188 @@ def _beta_init_db(conn):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS beta_question_routes_owner_user_id_idx ON beta_question_routes(owner_user_id)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS beta_chat_jobs_status_updated_idx ON beta_chat_jobs(status, updated_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS beta_chat_jobs_owner_user_id_idx ON beta_chat_jobs(owner_user_id)"
+    )
     conn.commit()
 
 
 def _beta_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _beta_chat_job_request_hash(payload):
+    identity = {
+        key: payload.get(key)
+        for key in (
+            "owner_user_id",
+            "comparison_id",
+            "profile_id",
+            "chart_id",
+            "question",
+            "language",
+            "varga_code",
+        )
+    }
+    canonical = json.dumps(
+        identity,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _beta_chat_job_public(row):
+    status = str(row["status"] or "failed")
+    result = {
+        "ok": True,
+        "status": status,
+        "comparison_id": row["id"],
+        "attempt_count": int(row["attempt_count"] or 0),
+    }
+    if status == "answered":
+        result["comparison"] = _beta_load_json(row["response_json"])
+    elif status == "failed":
+        result["error_code"] = str(row["error_code"] or "methodology_orchestration_failed")
+    return result
+
+
+def _beta_claim_chat_job():
+    now = datetime.now().astimezone()
+    now_text = now.isoformat(timespec="seconds")
+    lease_text = (now + timedelta(seconds=BETA_CHAT_JOB_LEASE_SECONDS)).isoformat(
+        timespec="seconds"
+    )
+    with closing(_beta_db()) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT *
+            FROM beta_chat_jobs
+            WHERE status = 'queued'
+               OR (status = 'processing' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?)
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (now_text,),
+        ).fetchone()
+        if row is None:
+            conn.commit()
+            return None
+        conn.execute(
+            """
+            UPDATE beta_chat_jobs
+            SET status = 'processing',
+                attempt_count = attempt_count + 1,
+                lease_expires_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (lease_text, now_text, row["id"]),
+        )
+        conn.commit()
+        return conn.execute(
+            "SELECT * FROM beta_chat_jobs WHERE id = ?",
+            (row["id"],),
+        ).fetchone()
+
+
+def _beta_process_chat_job(job_row):
+    job_id = str(job_row["id"])
+    payload = _beta_load_json(job_row["request_json"])
+    if int(job_row["attempt_count"] or 0) > 1:
+        with closing(_beta_db()) as conn:
+            conn.execute(
+                "DELETE FROM beta_methodology_comparisons WHERE id = ? AND status = 'in_progress'",
+                (job_id,),
+            )
+            conn.commit()
+
+    try:
+        with app.test_request_context(
+            "/api/v2/beta/chat/compare",
+            method="POST",
+            json=payload,
+        ):
+            route_result = api_v2_beta_chat_compare()
+        if isinstance(route_result, tuple):
+            response, status_code = route_result
+        else:
+            response, status_code = route_result, getattr(route_result, "status_code", 200)
+        response_payload = response.get_json() if hasattr(response, "get_json") else None
+        if not isinstance(response_payload, dict):
+            response_payload = {
+                "ok": False,
+                "status": "comparison_failed",
+                "error_code": "methodology_orchestration_failed",
+            }
+        answered = bool(
+            status_code == 200
+            and response_payload.get("ok")
+            and response_payload.get("completed_count", 0) > 0
+        )
+        error_code = None if answered else str(
+            response_payload.get("error_code") or "methodology_orchestration_failed"
+        )
+        with closing(_beta_db()) as conn:
+            conn.execute(
+                """
+                UPDATE beta_chat_jobs
+                SET status = ?, response_json = ?, error_code = ?,
+                    lease_expires_at = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    "answered" if answered else "failed",
+                    _beta_json(response_payload),
+                    error_code,
+                    _beta_now(),
+                    job_id,
+                ),
+            )
+            conn.commit()
+    except Exception:
+        app.logger.exception("Kalıcı sohbet işi beklenmedik hatayla durdu")
+        with closing(_beta_db()) as conn:
+            conn.execute(
+                """
+                UPDATE beta_chat_jobs
+                SET status = 'failed', error_code = 'methodology_orchestration_failed',
+                    lease_expires_at = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (_beta_now(), job_id),
+            )
+            conn.commit()
+
+
+def _beta_chat_job_worker_loop():
+    while True:
+        job = _beta_claim_chat_job()
+        if job is None:
+            _BETA_CHAT_JOB_WAKE.wait(timeout=2)
+            _BETA_CHAT_JOB_WAKE.clear()
+            continue
+        _beta_process_chat_job(job)
+
+
+def _ensure_beta_chat_job_worker():
+    global _BETA_CHAT_JOB_THREAD
+    if app.config.get("TESTING"):
+        return
+    with _BETA_CHAT_JOB_THREAD_LOCK:
+        if _BETA_CHAT_JOB_THREAD is not None and _BETA_CHAT_JOB_THREAD.is_alive():
+            return
+        _BETA_CHAT_JOB_THREAD = Thread(
+            target=_beta_chat_job_worker_loop,
+            name="vedic-chat-job-worker",
+            daemon=True,
+        )
+        _BETA_CHAT_JOB_THREAD.start()
 
 
 def _beta_public_methodology_response(comparison):
@@ -29995,6 +30196,7 @@ def _delete_beta_user_records(conn, user_id):
     }
     profile_ids.add(user_id)
     counts = {
+        "chat_jobs": 0,
         "question_routes": 0,
         "methodology_comparisons": 0,
         "feedback": 0,
@@ -30004,6 +30206,11 @@ def _delete_beta_user_records(conn, user_id):
         "usage_events": 0,
     }
     statements = (
+        (
+            "chat_jobs",
+            "DELETE FROM beta_chat_jobs WHERE profile_id = ? OR owner_user_id = ?",
+            (user_id, user_id),
+        ),
         (
             "question_routes",
             "DELETE FROM beta_question_routes WHERE profile_id = ? OR owner_user_id = ?",
@@ -33863,6 +34070,147 @@ def api_v2_beta_chat_compare():
             "status": "comparison_failed",
             "error_code": "methodology_orchestration_failed",
         }), 500
+
+
+@app.route("/api/v2/beta/chat/jobs", methods=["POST"])
+def api_v2_beta_chat_jobs_start():
+    """Persist a chat request and return before the long model work begins."""
+
+    try:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Geçerli sohbet işi gerekli")
+        comparison_id = _beta_comparison_id(data.get("comparison_id"))
+        owner_user_id = _account_deletion_user_id(data.get("owner_user_id"))
+        question = str(data.get("question") or "").strip()
+        profile_id = str(data.get("profile_id") or "").strip()
+        chart_id = str(data.get("chart_id") or "").strip()
+        if not question or len(question) > 2_000:
+            raise ValueError("Geçerli question gerekli")
+        if not profile_id or not chart_id:
+            raise ValueError("profile_id ve chart_id gerekli")
+
+        normalized = dict(data)
+        normalized["comparison_id"] = comparison_id
+        normalized["owner_user_id"] = owner_user_id
+        normalized["profile_id"] = profile_id
+        normalized["chart_id"] = chart_id
+        normalized["question"] = question
+        request_hash = _beta_chat_job_request_hash(normalized)
+        created_at = _beta_now()
+
+        with closing(_beta_db()) as conn:
+            existing = conn.execute(
+                "SELECT * FROM beta_chat_jobs WHERE id = ?",
+                (comparison_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["owner_user_id"] != owner_user_id
+                    or existing["request_hash"] != request_hash
+                ):
+                    return jsonify({
+                        "ok": False,
+                        "status": "invalid_request",
+                        "error_code": "comparison_id_collision",
+                    }), 409
+                payload = _beta_chat_job_public(existing)
+                status_code = 200 if existing["status"] in {"answered", "failed"} else 202
+                return jsonify(payload), status_code
+
+            chart = conn.execute(
+                """
+                SELECT profile_id, owner_user_id
+                FROM beta_charts
+                WHERE id = ?
+                """,
+                (chart_id,),
+            ).fetchone()
+            if (
+                chart is None
+                or str(chart["profile_id"] or "") != profile_id
+                or str(chart["owner_user_id"] or "") != owner_user_id
+            ):
+                return jsonify({
+                    "ok": False,
+                    "status": "ownership_mismatch",
+                    "error_code": "beta_chart_ownership_mismatch",
+                }), 403
+
+            conn.execute(
+                """
+                INSERT INTO beta_chat_jobs (
+                    id, owner_user_id, profile_id, chart_id, question,
+                    request_hash, request_json, status, response_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', '{}', ?, ?)
+                """,
+                (
+                    comparison_id,
+                    owner_user_id,
+                    profile_id,
+                    chart_id,
+                    question,
+                    request_hash,
+                    _beta_json(normalized),
+                    created_at,
+                    created_at,
+                ),
+            )
+            conn.commit()
+
+        _ensure_beta_chat_job_worker()
+        _BETA_CHAT_JOB_WAKE.set()
+        return jsonify({
+            "ok": True,
+            "status": "queued",
+            "comparison_id": comparison_id,
+            "attempt_count": 0,
+        }), 202
+    except (KeyError, TypeError, ValueError) as exc:
+        return jsonify({
+            "ok": False,
+            "status": "invalid_request",
+            "error_code": "chat_job_invalid",
+            "error": str(exc),
+        }), 400
+
+
+@app.route("/api/v2/beta/chat/jobs/<comparison_id>", methods=["GET"])
+def api_v2_beta_chat_jobs_status(comparison_id):
+    """Return one owned job state without starting another model call."""
+
+    try:
+        comparison_id = _beta_comparison_id(comparison_id)
+        owner_user_id = _account_deletion_user_id(request.args.get("owner_user_id"))
+        with closing(_beta_db()) as conn:
+            row = conn.execute(
+                "SELECT * FROM beta_chat_jobs WHERE id = ?",
+                (comparison_id,),
+            ).fetchone()
+        if row is None:
+            return jsonify({
+                "ok": False,
+                "status": "not_found",
+                "error_code": "chat_job_not_found",
+            }), 404
+        if row["owner_user_id"] != owner_user_id:
+            return jsonify({
+                "ok": False,
+                "status": "ownership_mismatch",
+                "error_code": "chat_job_ownership_mismatch",
+            }), 403
+        _ensure_beta_chat_job_worker()
+        if row["status"] in {"queued", "processing"}:
+            _BETA_CHAT_JOB_WAKE.set()
+        return jsonify(_beta_chat_job_public(row))
+    except (TypeError, ValueError) as exc:
+        return jsonify({
+            "ok": False,
+            "status": "invalid_request",
+            "error_code": "chat_job_invalid",
+            "error": str(exc),
+        }), 400
 
 
 @app.route("/api/v2/beta/question-route/diagnostic", methods=["POST"])
