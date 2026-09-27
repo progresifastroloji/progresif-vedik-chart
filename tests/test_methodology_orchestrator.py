@@ -156,6 +156,9 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", direct_system)
         self.assertIn("Farkında olmayabileceğiniz parça", direct_system)
         self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", direct_system)
+        self.assertIn("ZORUNLU CÜMLE KAPISI", direct_system)
+        self.assertIn("başkalarının yükünü üstlendiniz", direct_system)
+        self.assertIn("zorlayacaktır", direct_system)
 
     def test_personal_memory_update_is_conservative_and_optional(self):
         self.assertEqual(
@@ -371,6 +374,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("BÜTÜNLÜKLÜ SENTEZ YÖNTEMİ", guidance["document"])
         self.assertIn("Farkında olmayabileceğiniz parça", guidance["document"])
         self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", guidance["document"])
+        self.assertIn("ZORUNLU CÜMLE KAPISI", guidance["document"])
+        self.assertIn("her ikinci şahıs cümlesini yeniden denetle", guidance["document"])
         self.assertIn("SAV/BAV", guidance["document"])
         self.assertIn("Uygulanabilir Rehberlik", guidance["document"])
         self.assertIn("Başlık, alt başlık, numaralı liste", guidance["document"])

@@ -166,7 +166,7 @@ GUIDANCE_MANIFEST = {
     "version": "1.7.0",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "3980ddc4b2e9459a39255cc10effc6964c5cbe18747dc3ef952407e0a12b244c",
+    "sha256": "1d20d6a6d146d6187b9f52cc60601c3b611e3931f9e6a48ef6ec203b4d964ede",
 }
 
 
