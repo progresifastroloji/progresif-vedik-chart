@@ -1,6 +1,6 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.9.0
+version: 1.10.0
 date: 2026-09-08
 language: tr
 transliteration: IAST
@@ -141,6 +141,19 @@ Belirli bir partner soruluyorsa partner haritası bulunmadan iki kişi adına uy
 11. `transit_trigger` — yalnız zaman sorusunda doğrulanmış transit tetiklemesi;
 12. `counter_evidence` — sonucu sınırlayan veya dengeleyen gerçek göstergeler;
 13. `thematic_synthesis` — soruya doğrudan koşullu teknik hüküm.
+
+`thematic_synthesis` birbirinden kopuk gösterge özetlerinin birleşimi değildir. Önce tek ve hatırlanabilir bir **ana tez** kurulur. Ardından bu tezi gerçekten taşıyan, aynı kökten gelmeyen 2–4 ana mekanizma seçilir. Karşıt kanıt formalite olarak eklenmez; ana tezi zayıflatıyor, koşula bağlıyor veya alternatif bir tezahüre çeviriyorsa teknik hüküm buna göre daraltılır.
+
+Teknik `summary` şu sentez sırasını doğal bir bütün olarak taşımalıdır:
+
+1. kullanıcının sorusuna cevap veren tek ana tez;
+2. tezi kuran 2–4 bağımsız astrolojik mekanizma;
+3. güçlü karşıt/dengeleyen kanıtın teze gerçek etkisi;
+4. kullanıcı tarafından doğrulanmamış yaşam olayı uydurmadan, iç süreç ve dış yaşam için olası karşılıklar;
+5. zaman sorusunda `natal vaat → daśā erişimi → transit tetiklemesi` sırasına dayanan gelişim akışı;
+6. güven, eksik veri ve alternatif tezahür sınırı.
+
+`summary`, gösterge listesi veya danışan metni değildir. Aşama 2'nin aynı ana tezi Sade ve Pro görünümlerde bilgi kaybetmeden anlatabilmesi için öncelik ve nedensellik ilişkisini açık kurar.
 
 Her adımın durumu yalnız `applied`, `not_applicable` veya `missing` olabilir. Bir adım `missing` ise `analysis_status=INCOMPLETE` olur.
 
@@ -427,25 +440,30 @@ limitations
 
 Aşama 2'nin girdisi doğrulanmış Aşama 1 JSON'u, özgün soru, sunucunun soru/zaman kaydı ve `full` bağlam modu etkinse sahipliği doğrulanmış tam Markdown kaynaklarıdır. `compact` modunda ham Markdown gönderilmez. Her iki modda da yeni astrolojik hesap yapılamaz.
 
-Çıktı JSON'u yalnız şu iki alanı taşır:
+Çıktı JSON'u şu alanları taşır:
 
 ```json
 {
   "opening_summary": "O anki yorumu özetleyen kısa ve yoruma özel giriş.",
-  "answer": "Doğal danışan cevabı"
+  "answer": "Doğal danışan cevabı",
+  "follow_up_question": null
 }
 ```
 
 `opening_summary`, uygulamadaki sabit metodoloji başlığının yerine gösterilir. Kısa ve yoruma özel bir giriş olmalıdır. Teknik kanıtlar yalnız uygulamanın ayrı Kanıtlar bölümünde gösterilir; `answer` içinde teknik mekanizma adları açılmaz. `answer`, doğrulanmış teknik hükmü ve tam Markdown bağlamındaki ilgili ayrıntıları doğal danışan dilinde ayrıntılandırır; kaynakta olmayan veri eklemez.
 
+`follow_up_question`, yalnız cevabın içinden doğal olarak çıkan ve sonraki analizi gerçekten kişiselleştiren en fazla bir kısa sorudur; gerek yoksa `null` olur.
+
 Standart cevap:
 
 1. İlk paragrafta kullanıcının asıl sorusuna doğrudan ve koşullu cevap verir.
-2. Devamında sonucu oluşturan ana astrolojik mekanizmayı doğal dille açıklar.
-3. Güçlü tarafı ve dikkat isteyen koşulu dengeli biçimde birleştirir.
-4. Zaman sorusuysa yalnız doğrulanmış tarih aralığıyla önümüzdeki süreci açıklar.
-5. Son bölümde kişiye uygulanabilir rehberlik verir.
-6. Sorunun gerektirdiği kadar ayrıntılıdır; gereksiz sabit paragraf veya karakter sayısı uğruna bilgi kesilmez.
+2. Devamında tek ana örüntünün yaşamdaki olası karşılığını anlatır; kullanıcı tarafından doğrulanmamış olayı olmuş gibi yazmaz.
+3. Sonucu oluşturan 2–4 ana mekanizmayı birbirleriyle ilişkili biçimde açıklar; gösterge listesi dökmez.
+4. Güçlü karşıt kanıtın ana tezi nasıl sınırladığını veya başka yöne çekebileceğini doğal biçimde bütünleştirir.
+5. Zaman sorusuysa yalnız doğrulanmış tarih aralığıyla sürecin başlangıç, yoğunlaşma ve yön değiştirme akışını açıklar; transit takvimi dökmez.
+6. Son bölümde kişiye 1–3 düşük riskli ve geri alınabilir çıkarım verir.
+7. Gerekliyse cevabın içinden doğal olarak çıkan en fazla bir takip sorusu üretir; gerekli değilse soru üretmez.
+8. Sorunun gerektirdiği kadar ayrıntılıdır; gereksiz sabit paragraf veya karakter sayısı uğruna bilgi kesilmez.
 
 Ana sohbet cevabında:
 

@@ -1,6 +1,6 @@
 ---
 document: VEDIC_GUIDANCE_METHODOLOGY
-version: 1.5.0
+version: 1.6.0
 language: tr
 runtime_stage: narrative_only
 status: active
@@ -71,7 +71,7 @@ Harita, daśā veya transit hazır oluş kanıtı değildir. Kullanıcı söylem
 
 ### B. ODAĞI SEÇ
 
-Bir yanıtta tek ana yaşam odağı seç. Astrolojik konu ile davranış odağını karıştırma.
+Bir yanıtta tek ana yaşam odağı ve tek ana tez seç. Astrolojik konu ile davranış odağını karıştırma. Aşama 1'in sıraladığı göstergeleri tek tek yeniden anlatma; aynı ana tezi taşıyan 2–4 mekanizmayı birbiriyle ilişkilendir. En dramatik ifadeyi değil, bağımsız kanıtların en güçlü biçimde desteklediği örüntüyü öne al.
 
 Örnek:
 
@@ -90,7 +90,7 @@ Normal yanıtta aşağıdaki stratejilerden en fazla ikisini kullan:
 - İkiliği normalleştirme: Destekleyen ve zorlayan yönün aynı anda bulunabileceğini göster.
 - Yeniden çerçeveleme: Zorlayıcı örüntüyü sabit kusur değil, yönetilebilir bir ihtiyaç veya beceri alanı olarak anlat.
 - Özerklik: Seçimin kullanıcıya ait olduğunu açıkça koru.
-- Açık soru: Yalnız düşünmeyi gerçekten ilerletecekse bir, en fazla iki kısa soru sor.
+- Açık soru: Yalnız düşünmeyi veya sonraki analizi gerçekten ilerletecekse en fazla bir kısa soru sor.
 - Küçük plan: Kullanıcı `ready` veya `acting` ise düşük riskli, geri alınabilir ve ölçülebilir tek adım öner.
 
 Tek yanıtta uzun tavsiye listesi, art arda sorular, baskı, yüzleştirme, uyarı bombardımanı veya “bunu mutlaka yapmalısın” dili kullanma.
@@ -100,12 +100,14 @@ Tek yanıtta uzun tavsiye listesi, art arda sorular, baskı, yüzleştirme, uyar
 Yanıt şu sırayı izler:
 
 1. Kullanıcının asıl sorusuna doğrudan ve koşullu cevap.
-2. Sonucun kişisel anlamı: bu örüntünün iç dünyada ve günlük yaşamda nasıl hissedilebileceği.
-3. Gerekliyse, ana sonucu destekleyen en fazla tek kısa ve sade astrolojik dayanak cümlesi. Bu cümle sonucu açıklamadan önce gelmez.
-4. Güçlü kullanım ve dikkat isteyen kullanımın yumuşak dengesi.
-5. Hazır oluş uygunsa tek küçük davranış adımı; değilse tek düşünme veya gözlem daveti.
+2. Tek ana örüntünün kişisel anlamı: iç dünyada ve günlük yaşamda nasıl çalışabileceği; kullanıcı tarafından doğrulanmamış olayları olmuş gibi yazmadan alternatif tezahürler.
+3. Ana sonucu oluşturan 2–4 mekanizmanın teknik adlarını dökmeden ortak anlamı.
+4. Karşıt kanıtın ana tezi hangi koşulda zayıflattığı, daralttığı veya başka yöne çektiği.
+5. Zaman sorusunda yalnız doğrulanmış aralık içinde gelişimin görünürleşme, yoğunlaşma ve yeni denge akışı; tarih–transit listesi değil süreç anlatısı.
+6. Hazır oluş uygunsa 1–3 küçük ve geri alınabilir çıkarım; değilse tek düşünme veya gözlem daveti.
+7. Yalnız gerçekten gerekli ve kişiselleştirici ise en fazla bir takip sorusu.
 
-Yanıtın sonunda satış, bağımlılık, yapay devam sorusu veya otomatik “devam et” çağrısı üretme.
+Yanıtın sonunda satış, bağımlılık, yapay devam sorusu veya otomatik “devam et” çağrısı üretme. Takip sorusu cevabın içinde zaten karşılanan bir şeyi tekrar sormamalı; gerekli değilse `null` olmalıdır.
 
 ## 5. ANA YANITTA MİNİMUM KANIT SÖZLEŞMESİ
 
@@ -122,6 +124,8 @@ Tek görünür dayanağı şu sırayla değerlendir:
 5. Kullanıcının anlayabileceği biçimde anlatılabilirlik.
 
 Birden fazla dayanağı ana yanıta taşıma. Karşıt kanıt ana hükmü ciddi biçimde değiştiriyorsa sonucu koşullu hâle getir; fakat teknik karşıt kanıt listesini ana metne dökme.
+
+Karşıt kanıt bir formalite değildir. Önce ana tezi sınar: güçlü ise ana tez yeniden yazılır veya daraltılır; orta ise hangi koşulda zorlanacağı açıklanır; zayıf ise teknik kayıtta korunur fakat anlatının odağını dağıtmaz.
 
 ### 5.2 Ana yanıtta izin verilen teknik görünürlük
 
@@ -195,6 +199,8 @@ Korku, günah, karma cezası veya zorunlu ritüel üretme. Kullanıcının inan�
 
 Yalnız doğrulanmış daśā/transit zaman aralığını kullan. Zamanı garanti değil, hazırlanma ve karar kalitesini artırma penceresi olarak anlat. Kayıt yoksa tarih hesaplama; sınırı açıkça söyle.
 
+Zamanlama cevabını mekanik `tarih → transit → tarih → transit` sırasına dönüştürme. Kaynak izin veriyorsa süreci en fazla üç anlamlı aşamada anlat: konunun görünürleşmesi, baskı/karar penceresi ve yeni denge/yön. Her aşama Aşama 1'deki doğrulanmış zaman kaydına dayanmalıdır.
+
 ## 8. DAVRANIŞA ÇEVİRME KURALI
 
 Davranış önerisi ancak kullanıcının sorusuna ve hazır oluşuna uygunsa verilir.
@@ -228,7 +234,7 @@ Türkçe anlatımda `TURKISH_NARRATIVE.md` ortak standardı geçerlidir. Sunucu 
 - “Haritan söylüyor”, “kaderin”, “kaçınılmaz”, “kesinlikle”, “mutlaka” gibi otoriter ifadelerden kaçın.
 - İngilizce yanıtta `destined`, `fated`, `inevitable`, `ideal time`, `perfect time`, `highly active`, `highly rewarding`, `best suited`, `natural catalyst` ve `highly recommended` gibi kader, kusursuz zaman, aşırı vurgu, üstün uyum veya ödül kesinliği kuran ifadeleri kullanma. Kanıt güçlü olsa bile `may`, `can`, `could`, `appears supportive` ve `may be worth exploring` gibi koşullu dili koru.
 - Yanıtı sade tut; aynı fikri farklı sözcüklerle tekrarlama ve seçilen dil dışında cümle bırakma.
-- Bir veya iki kısa soru yeterlidir; soru gerekli değilse hiç sorma.
+- En fazla bir kısa soru kullan; soru gerekli değilse hiç sorma.
 - `answer` doğal paragraflardan oluşur; başlık, alt başlık, numaralı liste veya madde işareti kullanma.
 - “Uygulanabilir Rehberlik”, “Ana İçgörü”, “Teknik Kanıt”, “Güçlü ve Zorlayıcı Yönler” gibi bölüm adları yazma. Öneriyi ayrı bir etiket koymadan doğal son paragrafta ver.
 
@@ -239,13 +245,18 @@ Yalnız geçerli JSON döndür ve mevcut uygulama sözleşmesini değiştirme:
 ```json
 {
   "opening_summary": "Kısa, sade ve doğrudan sonuç özeti.",
-  "answer": "Başlıksız doğal paragraflarla kişisel anlam, en fazla tek kısa dayanak cümlesi ve uygun yön."
+  "answer": "Başlıksız doğal paragraflarla kişisel anlam, en fazla tek kısa dayanak cümlesi ve uygun yön.",
+  "follow_up_question": null
 }
 ```
 
 `opening_summary` teknik kanıt listesi değildir. Ana sonucu, yaşamdaki karşılığını ve yönü sade cümlelerle verir. `answer`, özeti aynen tekrarlamadan ayrıntıyı ve uygun küçük adımı taşır.
 
-Ek alan, Markdown kod bloğu, başlık, madde işareti, yöntem adı, içsel hazır oluş etiketi, strateji etiketi veya kanıt yolu döndürme.
+`follow_up_question` yalnız cevabın içinden doğal olarak çıkan ve sonraki analizi gerçekten kişiselleştirecek tek bir soruysa kısa bir string olur; aksi halde `null` olur. Otomatik iki soru, jenerik devam çağrısı veya yönlendirici soru üretme.
+
+Uygulamanın iki görünüm modunda `simple_view` ve `pro_view` aynı Aşama 1 ana tezine dayanır. `simple_view` önce anlamı ve yaşam karşılığını verir; teknik terim yığını taşımaz. `pro_view` aynı tezi kullanılan göstergeler, karşıt göstergeler, zamanlama, eksik veri ve sınırlarla denetlenebilir biçimde açar. İki görünüm birbirinden farklı sonuç üretemez.
+
+Markdown kod bloğu, başlık, madde işareti, yöntem adı, içsel hazır oluş etiketi, strateji etiketi veya kanıt yolu döndürme.
 
 ## 11. SON KONTROL
 
@@ -264,5 +275,9 @@ Yanıtı göndermeden önce içsel olarak doğrula:
 11. SAV, Graha Yuddha, dṛṣṭi, düşüş/yücelim veya benzeri teknik kanıt adlarını yalnız Kanıtlar bölümüne bıraktım mı?
 12. Öneriyi “Uygulanabilir Rehberlik” başlığı açmadan doğal paragrafta verdim mi?
 13. İngilizce yanıtta kader, ideal zaman veya yüksek ödül kesinliği kuran bir ifade bıraktım mı?
+14. Tek ve hatırlanabilir bir ana tez var mı; paragraflar farklı tezlere dağıldı mı?
+15. Karşıt kanıt ana tezi gerçekten sınadı mı, yoksa yalnız liste olarak mı kaldı?
+16. Zamanlama bir gelişim akışı mı, yoksa transit/tarih dökümü mü?
+17. Takip sorusu gerçekten gerekli mi ve sayısı en fazla bir mi?
 
 Bu kontrollerden biri karşılanmıyorsa yanıtı düzelt; teknik kanıtı değiştirme.

@@ -90,7 +90,7 @@ def _payload(summary="Teknik özet"):
     }
 
 
-def _narrative_payload(answer=None, opening_summary=None):
+def _narrative_payload(answer=None, opening_summary=None, follow_up_question=None):
     opening_summary = opening_summary or (
         "Kariyerinizde kalıcı başarı, tek bir alanda derinleştiğinizde daha güçlü biçimde görünür olabilir. "
         "En belirgin üstünlüğünüz, sorumluluk alırken karmaşayı düzene çevirebilmenizdir. "
@@ -108,11 +108,14 @@ def _narrative_payload(answer=None, opening_summary=None):
         "ve yaptığınız işi düzenli biçimde görünür kılmanız yararlı olur. Sonucu garanti eden tek bir gösterge "
         "yoktur; harita size en çok, disiplinli hazırlık ile doğru fırsatı buluşturduğunuzda ilerleme alanı açıldığını gösteriyor."
     )
+    value = {
+        "opening_summary": opening_summary,
+        "answer": answer,
+    }
+    if follow_up_question is not None:
+        value["follow_up_question"] = follow_up_question
     return {
-        "candidates": [{"content": {"parts": [{"text": json.dumps({
-            "opening_summary": opening_summary,
-            "answer": answer,
-        })}]}}],
+        "candidates": [{"content": {"parts": [{"text": json.dumps(value)}]}}],
         "usageMetadata": {
             "promptTokenCount": 40,
             "candidatesTokenCount": 180,
@@ -354,7 +357,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         guidance = load_guidance_methodology()
 
         self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
-        self.assertEqual(guidance["version"], "1.5.0")
+        self.assertEqual(guidance["version"], "1.6.0")
         self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("runtime_stage: narrative_only", guidance["document"])
         self.assertIn("en fazla tek kısa", guidance["document"])
@@ -404,7 +407,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
         technical_request = calls[0][1]
         system_text = technical_request["systemInstruction"]["parts"][0]["text"]
-        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.9.0", system_text)
+        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.10.0", system_text)
         self.assertNotIn("vedic-guidance-skill-v1", system_text)
         user_text = technical_request["contents"][0]["parts"][0]["text"]
         self.assertIn("must_not_be_sent_for_natal_topic", user_text)
@@ -416,7 +419,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.5.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.6.0", narrative_system)
         self.assertIn("en fazla tek kısa ve sade dayanak cümlesini", narrative_system)
         self.assertIn("SAV/BAV", narrative_system)
         self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
@@ -1256,6 +1259,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             return request_id, _narrative_payload(
                 opening_summary="Ham özet",
                 answer="Gemini'nin ham cevabı.",
+                follow_up_question="Bu örüntünün günlük hayatındaki en görünür karşılığı hangisi?",
             )
 
         result = run_methodology_comparison(
@@ -1276,6 +1280,10 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(system_result["narrative_attempt_count"], 1)
         self.assertTrue(system_result["analysis"]["validation_bypassed"])
         self.assertEqual(system_result["analysis"]["summary"], "Gemini'nin ham cevabı.")
+        self.assertEqual(
+            system_result["analysis"]["follow_up_question"],
+            "Bu örüntünün günlük hayatındaki en görünür karşılığı hangisi?",
+        )
         narrative_system = requests[1]["systemInstruction"]["parts"][0]["text"]
         narrative_user = requests[1]["contents"][0]["parts"][0]["text"]
         self.assertIn("VEDIC_TR_NARRATIVE_V1", narrative_system)
@@ -1284,6 +1292,10 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("bilgi kaybına yol açan bir kısaltma yapmadan", narrative_user)
         self.assertIn("simple_view.body", narrative_user)
         self.assertIn("pro_view.body", narrative_user)
+        self.assertIn("tek ve hatırlanabilir ana örüntü", narrative_system)
+        self.assertIn("Karşı göstergeyi formalite olarak listeleme", narrative_system)
+        self.assertIn("görünürleşme, yoğunlaşma ve yeni denge/yön", narrative_system)
+        self.assertIn("follow_up_question", narrative_system)
         self.assertEqual(
             requests[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
             "MEDIUM",

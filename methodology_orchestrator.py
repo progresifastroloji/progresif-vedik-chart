@@ -153,20 +153,20 @@ CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.9.0",
+        "version": "1.10.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "bffc6243da4f7484397adc3a87ffc03301c64be5d6415c1615860fa4b997cff6",
+        "sha256": "943e7866ecef937a8ca4ab866ae7f7c594b197a329aeba8f797e8fc25f16acc7",
     },
 )
 
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "46acf98144263441ed47dd88c08289bb6586a7db79a8278cb88b16b527869e4f",
+    "sha256": "88517860fff27e39aa0068d2c9b8bf6e4637a5a481d1e275e719c926a3e3598d",
 }
 
 
@@ -638,6 +638,12 @@ def _model_request(candidate, evidence, conversation_context=None, response_lang
         + ", ".join(REQUIRED_METHODOLOGY_STEPS)
         + ". status yalnız applied|not_applicable|missing olabilir. "
         "Zorunlu bir adım missing ise analysis_status INCOMPLETE olmalıdır. "
+        "summary tek ve hatırlanabilir bir ana tezle başlamalıdır. Tezi taşıyan aynı kökten gelmeyen 2–4 ana "
+        "mekanizmayı önem sırasıyla ilişkilendir; gösterge listesi dökme. challenging_evidence içindeki güçlü "
+        "karşıt kanıtın ana tezi zayıflatıyor, koşula bağlıyor veya alternatif tezahüre çeviriyorsa summary hükmünü "
+        "buna göre daralt. Kullanıcının açık bağlamında bulunmayan gerçek yaşam olayını olmuş gibi yazma. "
+        "Zaman sorusunda natal vaat, dasha erişimi ve transit tetiklemesini ayır; doğrulanmış tarih aralığını "
+        "mekanik takvim yerine görünürleşme, yoğunlaşma ve yeni denge/yön akışı olarak sentezle. "
         "Her evidence_path evidence. ile başlamalı ve paketteki gerçek alana işaret etmelidir. "
         "Uzun zaman serilerindeki birden fazla satırı destekleyen iddia için dizinin kök yolunu "
         "(örneğin evidence.transits.daily_timing) kullan. "
@@ -719,12 +725,22 @@ def _narrative_request(
             "Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
             "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
-            "counter_indicators array, missing_data array, limitations array}; memory_update yalnız "
+            "counter_indicators array, missing_data array, limitations array}, follow_up_question string|null; memory_update yalnız "
             "kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. Sade görünümde teknik terimleri "
-            "olabildiğince açıklama veya çıkar. Sade görünüm sorunun cevabını, nedenini, dengeleyen koşulları "
-            "ve uygulanabilir küçük adımı doğal bir akışla yeterli derinlikte anlatsın. Pro görünüm aynı soruyu "
-            "teknik mantığıyla genişletsin; yalnız Aşama 1 kaydında gerçekten kullanılan göstergeleri adlarıyla "
-            "belirtsin ve ilgili destek, karşı gösterge, eksik veri ve sınırlamaları atlamasın. Hiçbir görünüm için "
+            "çıkar; teknik oran, ev/lord listesi, Sanskritçe terim yığını veya art arda yerleşim dökümü verme. "
+            "Sade görünüm ilk paragrafta soruya doğrudan cevap veren tek ve hatırlanabilir ana örüntüyü söylesin. "
+            "Sonraki paragraflar aynı tezin yaşamdaki olası karşılığını, 2–4 ana mekanizmanın ortak anlamını, "
+            "karşıt kanıtın tezi hangi koşulda sınırladığını ve 1–3 düşük riskli çıkarımı doğal bir akışla anlatsın. "
+            "Kullanıcının açık bağlamında bulunmayan gelir kaybı, ilişki gerilimi, ertelenmiş konuşma, bilinçaltı süreç "
+            "veya başka bir yaşam olayını gerçekleşmiş gibi yazma. Kanıt güçlü olduğunda net konuş; fakat mecbur, "
+            "zorunlu, kaçınılmaz veya kesin sonuç dili kurma. Zaman sorusunda yalnız Aşama 1'de doğrulanmış tarihleri "
+            "kullan ve mümkünse süreci görünürleşme, yoğunlaşma ve yeni denge/yön biçiminde anlat; mekanik transit "
+            "takvimi dökme. Pro görünüm Sade görünümle aynı ana tezi teknik mantığıyla genişletsin; yalnız Aşama 1 "
+            "kaydında gerçekten kullanılan göstergeleri adlarıyla belirtsin ve ilgili destek, karşı gösterge, eksik "
+            "veri ve sınırlamaları atlamasın. Karşı göstergeyi formalite olarak listeleme; ana teze etkisini açıkla. "
+            "follow_up_question yalnız cevabın içinden doğal olarak çıkan ve sonraki analizi gerçekten kişiselleştirecek "
+            "tek bir kısa soruysa dolu olsun; gerek yoksa null döndür. Jenerik iki soru veya otomatik devam çağrısı üretme. "
+            "Hiçbir görünüm için "
             "sabit paragraf, cümle veya karakter sınırı uygulama ve cevabı kısa tutmaya çalışma. evidence_path, "
             "dosya yolu, gizli alan veya yeni hesaplama yazma."
         )
@@ -733,7 +749,7 @@ def _narrative_request(
             "Teknik denetim, puanlama, kalite editörü veya otomatik yeniden yazım yapma; "
             "cevabı doğrudan ve bilgi kaybına yol açan bir kısaltma yapmadan üret. simple_view.body ve "
             "pro_view.body doğal paragraf dizileri olsun. Her iki görünüm de kullanıcının sorusunu tam olarak "
-            "yanıtlasın; yalnız özet veya gösterge listesi verme. "
+            "yanıtlasın, aynı ana teze dayansın ve birbirleriyle çelişmesin; yalnız özet veya gösterge listesi verme. "
             "answer, simple_view.body metninin birleşik geriye dönük kopyası olsun.\n\n"
             f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
         )
@@ -763,8 +779,9 @@ def _narrative_request(
         "korumak için kullan fakat oradan yeni astrolojik teknik iddia çıkarma. Yalnız güncel soruyu yanıtla. "
         "Tonun sıcak, samimi ve yargılamayan olsun; kullanıcıya tepeden konuşma veya aşırı resmî kalma. "
         "Kullanıcının açıkça verdiği hedef veya bağlamı, cevabı daha insani ve ilgili kılmak için doğal biçimde kullan; "
-        "kişiyi tanıyormuş gibi hassas çıkarım yapma. Cevabın sonunda kullanıcıyı kendi deneyimini paylaşmaya davet eden "
-        "tek kısa ve doğal bir cümle kullanılabilir; bunu başlık, liste veya teknik soru biçimine sokma. "
+        "kişiyi tanıyormuş gibi hassas çıkarım yapma. follow_up_question yalnız cevabın içinden doğal olarak çıkan ve "
+        "sonraki analizi gerçekten kişiselleştirecek tek bir kısa soruysa dolu olsun; gerek yoksa null döndür. "
+        "Jenerik devam çağrısı veya birden fazla soru üretme. "
         "personal_memory_summary sunucu tarafından hazırlanan gizli kişiselleştirme özetidir; kanıt değildir ve "
         "kullanıcıya bundan söz etme. Yalnız kullanıcının açıkça söylediği, istikrarlı tercih/hedef/bağlamı doğal "
         "bir devamlılık için kullan; modelin çıkardığı astrolojik, psikolojik veya hassas bilgileri ekleme. "
@@ -811,7 +828,7 @@ def _narrative_request(
     )
     user_text = (
         "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON opening_summary ve "
-        "answer alanlarını zorunlu, memory_update alanını ise yalnız yeni ve açık kullanıcı bilgisi varsa içersin. "
+        "answer alanlarını zorunlu, follow_up_question alanını string|null, memory_update alanını ise yalnız yeni ve açık kullanıcı bilgisi varsa içersin. "
         "memory_update {summary, changed} biçiminde sunucuya özel alandır; yanıtta bu alanı veya gizli hafızayı anma. "
         "opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
         f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
@@ -1000,6 +1017,23 @@ def _relaxed_methodology_response(payload, evidence):
     }
 
 
+def _normalized_follow_up_question(value):
+    """Return one safe, optional conversation question without rewriting it."""
+
+    if value is None:
+        return ""
+    question = str(value).strip()
+    if (
+        not (12 <= len(question) <= 240)
+        or "\n" in question
+        or question.count("?") != 1
+        or not question.endswith("?")
+        or re.search(r"(?:evidence\.|methodology|kanıt yolu|json|sha-?256)", question, re.IGNORECASE)
+    ):
+        return ""
+    return question
+
+
 def _relaxed_narrative_response(payload):
     """Keep a parseable narrative response without semantic/length gates."""
 
@@ -1042,6 +1076,7 @@ def _relaxed_narrative_response(payload):
         "answer": simple_answer,
         "simple_view": simple,
         "pro_view": pro,
+        "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
         "validation_bypassed": True,
     }
@@ -1910,7 +1945,7 @@ def validate_narrative_response(payload, analysis, evidence):
     if (
         not isinstance(value, dict)
         or not {"opening_summary", "answer"}.issubset(value)
-        or set(value) - {"opening_summary", "answer", "memory_update"}
+        or set(value) - {"opening_summary", "answer", "follow_up_question", "memory_update"}
     ):
         raise MethodologyOrchestrationError("methodology_narrative_schema_invalid", 502)
     opening_summary = str(value.get("opening_summary") or "").strip()
@@ -2055,6 +2090,7 @@ def validate_narrative_response(payload, analysis, evidence):
     return {
         "opening_summary": opening_summary,
         "answer": answer,
+        "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
     }
 
@@ -2312,6 +2348,7 @@ def _run_candidate(
                     "headline": narrative["opening_summary"],
                     "body": [narrative["answer"]],
                 },
+                "follow_up_question": narrative.get("follow_up_question") or "",
                 "memory_update": narrative.get("memory_update"),
             }
             # The provider may describe indicators in the pro body but omit
