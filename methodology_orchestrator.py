@@ -162,11 +162,11 @@ CANDIDATE_MANIFEST = (
 
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
-    "title": "Vedik Kişisel Anlam, Koçluk ve Rehberlik Metodolojisi",
-    "version": "1.6.0",
+    "title": "Vedik Bütünlüklü Durum Yorumu ve Rehberlik Metodolojisi",
+    "version": "1.7.0",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "88517860fff27e39aa0068d2c9b8bf6e4637a5a481d1e275e719c926a3e3598d",
+    "sha256": "3980ddc4b2e9459a39255cc10effc6964c5cbe18747dc3ef952407e0a12b244c",
 }
 
 
@@ -715,42 +715,22 @@ def _narrative_request(
         narrative_input["personal_memory_summary"] = str(personal_memory_summary).strip()[:PERSONAL_MEMORY_MAX_CHARS]
     if direct_dual_output:
         system_text = (
-            "Sen Vedic AI sohbet anlatıcısısın. Yalnız doğrulanmış Aşama 1 verisini kullan; "
-            "astrolojik hesap, yeni teknik iddia veya kaynakta olmayan olay üretme. Kullanıcının "
-            "sorusunu doğal ve anlaşılır biçimde yanıtla; sağlık, hukuk, finans veya gelecek sonucu "
-            "garanti etme. Finans konusunda ürün, araç, oran, alım-satım veya otomatik yatırım/birikim talimatı verme. "
-            "Tonun sıcak, samimi ve yargılamayan olsun; kullanıcıya tepeden konuşma veya aşırı resmî kalma. "
-            "Kişisel bağ kurmak için yalnız açıkça verilen kullanıcı bağlamını kullan; yakınlık veya kesin tanı iddiası kurma. "
-            "Doğrulanmış analizde açıkça bulunmayan gün, ay, yıl, kavuşum, açı veya gezegen savaşı ekleme. "
-            "Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
+            "Sen Vedic AI'nin bütünlüklü durum yorumu ve rehberlik katmanısın. Aşağıdaki etkin rehberlik "
+            "metodolojisini eksiksiz uygula; yalnız doğrulanmış Aşama 1 verisini kullan ve yeni astrolojik "
+            "hesap, teknik iddia, yaşam olayı, tarih veya ilişki üretme. Kullanıcının sorusunu seçili "
+            f"{language_name} dilinde yanıtla. Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
             "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
             "counter_indicators array, missing_data array, limitations array}, follow_up_question string|null; memory_update yalnız "
-            "kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. Sade görünümde teknik terimleri "
-            "çıkar; teknik oran, ev/lord listesi, Sanskritçe terim yığını veya art arda yerleşim dökümü verme. "
-            "Sade görünüm ilk paragrafta soruya doğrudan cevap veren tek ve hatırlanabilir ana örüntüyü söylesin. "
-            "Sonraki paragraflar aynı tezin yaşamdaki olası karşılığını, 2–4 ana mekanizmanın ortak anlamını, "
-            "karşıt kanıtın tezi hangi koşulda sınırladığını ve 1–3 düşük riskli çıkarımı doğal bir akışla anlatsın. "
-            "Kullanıcının açık bağlamında yoksa ilişki sorunu/gerilimi, birikmiş yük, başkalarının beklentisi veya "
-            "tepkisi, zihinsel yorgunluk, ertelenmiş konuşma, gelir kaybı ya da bilinçaltı süreç yaşanıyor deme. Bu "
-            "alanları ancak 'ilişkiler, sorumluluklar veya günlük düzen gibi alanlarda karşılık bulabilir' ve "
-            "'deneyiminizde varsa' biçiminde alternatif olasılık olarak sun. Kanıt güçlü olduğunda net konuş; fakat "
-            "Kullanıcı söylemediyse 'bugüne kadar üstlendiğiniz', 'kendi isteğiniz', 'içinizde biriken', 'verdiğiniz "
-            "değer' veya 'karşılaştığınız' gibi ikinci şahısla yaşam öyküsü atfetme. Cümlenin öznesini kullanıcı değil "
-            "doğrulanmış örüntü yap: 'Bu örüntü ... alanında karşılık bulabilir.' Göndermeden önce her kişisel deneyim "
-            "cümlesini bu veri kapısından geçir. "
-            "mecbur, zorunlu, kaçınılmaz veya kesin sonuç dili kurma. Gelecek için 'olacaktır', 'zorunlu kılacaktır', "
-            "'tepe noktasına taşır' veya 'kurulur' değil; 'görünür olabilir', 'yoğunlaşabilir' veya 'kurulabilir' kullan. "
-            "Zaman sorusunda yalnız Aşama 1'de doğrulanmış tarihleri "
-            "kullan ve mümkünse süreci görünürleşme, yoğunlaşma ve yeni denge/yön biçiminde anlat; mekanik transit "
-            "takvimi dökme. Pro görünüm Sade görünümle aynı ana tezi teknik mantığıyla genişletsin; yalnız Aşama 1 "
-            "kaydında gerçekten kullanılan göstergeleri adlarıyla belirtsin ve ilgili destek, karşı gösterge, eksik "
-            "veri ve sınırlamaları atlamasın. Karşı göstergeyi formalite olarak listeleme; ana teze etkisini açıkla. "
-            "follow_up_question yalnız cevabın içinden doğal olarak çıkan ve sonraki analizi gerçekten kişiselleştirecek "
-            "tek bir kısa soruysa dolu olsun; gerek yoksa null döndür. Jenerik iki soru veya otomatik devam çağrısı üretme. "
-            "Hiçbir görünüm için "
-            "sabit paragraf, cümle veya karakter sınırı uygulama ve cevabı kısa tutmaya çalışma. evidence_path, "
-            "dosya yolu, gizli alan veya yeni hesaplama yazma."
+            "kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. simple_view.body ve pro_view.body doğal "
+            "paragraf dizileri olsun. İki görünüm aynı bütünlüklü durum tespitini taşısın; Pro görünüm yalnız Aşama 1 "
+            "kaydındaki yapılandırılmış destek, karşı gösterge, eksik veri ve sınırlamaları teknik mantığıyla açsın. "
+            "Hiçbir görünüm için sabit paragraf, cümle veya karakter sınırı uygulama. evidence_path, dosya yolu, "
+            "gizli alan, yeni hesaplama veya anlatıdan türetilmiş kanıt yazma."
+            "\n\nETKİN REHBERLİK BECERİSİ KİMLİĞİ: "
+            f"{guidance['id']}@{guidance['version']}\n"
+            f"ETKİN REHBERLİK BECERİSİ SHA256: {guidance['sha256']}\n\n"
+            f"ETKİN REHBERLİK BECERİSİ:\n{guidance['document']}"
         )
         user_text = (
             "Aşağıdaki doğrulanmış Aşama 1 kaydından iki görünümlü kullanıcı cevabı üret. "

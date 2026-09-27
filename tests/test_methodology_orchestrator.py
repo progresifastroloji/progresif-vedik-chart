@@ -151,6 +151,12 @@ class MethodologyOrchestratorTest(unittest.TestCase):
                 expected_level,
             )
 
+        direct_system = direct["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("vedic-guidance-skill-v1@1.7.0", direct_system)
+        self.assertIn("source_skill: synthesize-vedic-situation-guidance", direct_system)
+        self.assertIn("Farkında olmayabileceğiniz parça", direct_system)
+        self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", direct_system)
+
     def test_personal_memory_update_is_conservative_and_optional(self):
         self.assertEqual(
             normalize_personal_memory_update({
@@ -357,17 +363,19 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         guidance = load_guidance_methodology()
 
         self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
-        self.assertEqual(guidance["version"], "1.6.0")
+        self.assertEqual(guidance["version"], "1.7.0")
         self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("runtime_stage: narrative_only", guidance["document"])
+        self.assertIn("source_skill: synthesize-vedic-situation-guidance", guidance["document"])
         self.assertIn("en fazla tek kısa", guidance["document"])
-        self.assertIn("bütün karşıt kanıtlar", guidance["document"])
-        self.assertIn("yalnız kullanıcının açık sözlerinden", guidance["document"])
+        self.assertIn("BÜTÜNLÜKLÜ SENTEZ YÖNTEMİ", guidance["document"])
+        self.assertIn("Farkında olmayabileceğiniz parça", guidance["document"])
+        self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", guidance["document"])
         self.assertIn("SAV/BAV", guidance["document"])
         self.assertIn("Uygulanabilir Rehberlik", guidance["document"])
-        self.assertIn("başlık, alt başlık, numaralı liste", guidance["document"])
+        self.assertIn("Başlık, alt başlık, numaralı liste", guidance["document"])
         self.assertIn("genel tavsiyeyi kişisel varga yorumu gibi sunma", guidance["document"])
-        self.assertIn("D11 seçildiğinde kazanç/servet anlatısı üretme", guidance["document"])
+        self.assertIn("D11'i kazanç/servet kanıtı olarak kullanma", guidance["document"])
         self.assertIn("highly rewarding", guidance["document"])
 
     def test_analysis_runs_single_active_methodology_and_selects_it(self):
@@ -419,7 +427,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.6.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.7.0", narrative_system)
+        self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
         self.assertIn("en fazla tek kısa ve sade dayanak cümlesini", narrative_system)
         self.assertIn("SAV/BAV", narrative_system)
         self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
@@ -1292,13 +1301,15 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("bilgi kaybına yol açan bir kısaltma yapmadan", narrative_user)
         self.assertIn("simple_view.body", narrative_user)
         self.assertIn("pro_view.body", narrative_user)
-        self.assertIn("tek ve hatırlanabilir ana örüntü", narrative_system)
-        self.assertIn("Karşı göstergeyi formalite olarak listeleme", narrative_system)
-        self.assertIn("görünürleşme, yoğunlaşma ve yeni denge/yön", narrative_system)
-        self.assertIn("birikmiş yük", narrative_system)
-        self.assertIn("'görünür olabilir', 'yoğunlaşabilir'", narrative_system)
-        self.assertIn("'bugüne kadar üstlendiğiniz'", narrative_system)
-        self.assertIn("Cümlenin öznesini kullanıcı değil", narrative_system)
+        self.assertIn("aynı bütünlüklü durum tespitini", narrative_system)
+        self.assertIn("Karşı kanıtı formalite olarak ekleme", narrative_system)
+        self.assertIn("görünürleşme → sıkışma/zirve → gevşeme/yeni denge", narrative_system)
+        self.assertIn("Geliriniz kesildi", narrative_system)
+        self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", narrative_system)
+        self.assertIn("İkinci şahısla uydurma yaşam öyküsü kurma", narrative_system)
+        self.assertIn("Cümlenin öznesini doğrulanmış örüntü yap", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.7.0", narrative_system)
+        self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
         self.assertIn("follow_up_question", narrative_system)
         self.assertEqual(
             requests[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
