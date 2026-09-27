@@ -1295,6 +1295,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("tek ve hatırlanabilir ana örüntü", narrative_system)
         self.assertIn("Karşı göstergeyi formalite olarak listeleme", narrative_system)
         self.assertIn("görünürleşme, yoğunlaşma ve yeni denge/yön", narrative_system)
+        self.assertIn("birikmiş yük", narrative_system)
+        self.assertIn("'görünür olabilir', 'yoğunlaşabilir'", narrative_system)
         self.assertIn("follow_up_question", narrative_system)
         self.assertEqual(
             requests[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
