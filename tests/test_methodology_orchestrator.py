@@ -1297,6 +1297,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("görünürleşme, yoğunlaşma ve yeni denge/yön", narrative_system)
         self.assertIn("birikmiş yük", narrative_system)
         self.assertIn("'görünür olabilir', 'yoğunlaşabilir'", narrative_system)
+        self.assertIn("'bugüne kadar üstlendiğiniz'", narrative_system)
+        self.assertIn("Cümlenin öznesini kullanıcı değil", narrative_system)
         self.assertIn("follow_up_question", narrative_system)
         self.assertEqual(
             requests[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
