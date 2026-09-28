@@ -83,7 +83,9 @@ def _payload(summary="Teknik özet"):
         "candidates": [{"content": {"parts": [{"text": json.dumps(analysis)}]}}],
         "usageMetadata": {
             "promptTokenCount": 100,
+            "cachedContentTokenCount": 10,
             "candidatesTokenCount": 50,
+            "thoughtsTokenCount": 20,
             "totalTokenCount": 150,
         },
         "modelVersion": "test-model",
@@ -118,7 +120,9 @@ def _narrative_payload(answer=None, opening_summary=None, follow_up_question=Non
         "candidates": [{"content": {"parts": [{"text": json.dumps(value)}]}}],
         "usageMetadata": {
             "promptTokenCount": 40,
+            "cachedContentTokenCount": 5,
             "candidatesTokenCount": 180,
+            "thoughtsTokenCount": 30,
             "totalTokenCount": 220,
         },
         "modelVersion": "test-model",
@@ -455,6 +459,11 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
         self.assertGreater(len(system_result["analysis"]["summary"]), 700)
         self.assertEqual(system_result["usage"]["total_tokens"], 370)
+        self.assertEqual(system_result["usage"]["cached_content_tokens"], 15)
+        self.assertEqual(system_result["usage"]["thoughts_tokens"], 50)
+        self.assertEqual(len(system_result["usage_calls"]), 2)
+        self.assertEqual(system_result["usage_calls"][0]["call_type"], "technical")
+        self.assertEqual(system_result["usage_calls"][1]["call_type"], "narrative")
 
     def test_selected_english_language_reaches_both_model_prompts(self):
         calls = []
@@ -805,7 +814,16 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "comparison_ready")
-        self.assertEqual(result["methodology_results"][0]["technical_attempt_count"], 2)
+        system_result = result["methodology_results"][0]
+        self.assertEqual(system_result["technical_attempt_count"], 2)
+        self.assertEqual(len(system_result["usage_calls"]), 3)
+        self.assertEqual(
+            [item["request_id"] for item in system_result["usage_calls"][:2]],
+            [
+                "methodology-technical-evidence-repair-vedic-system-methodology-v1-analysis",
+                "methodology-technical-evidence-repair-vedic-system-methodology-v1-analysis-retry-1",
+            ],
+        )
 
     def test_incomplete_technical_analysis_does_not_call_narrative_model(self):
         calls = []

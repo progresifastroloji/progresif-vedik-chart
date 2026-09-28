@@ -2087,13 +2087,24 @@ def _usage(payload):
     usage = payload.get("usageMetadata") or {}
     return {
         "prompt_tokens": usage.get("promptTokenCount"),
+        "cached_content_tokens": usage.get("cachedContentTokenCount"),
         "response_tokens": usage.get("candidatesTokenCount"),
+        "thoughts_tokens": usage.get("thoughtsTokenCount"),
         "total_tokens": usage.get("totalTokenCount"),
         "model_version": payload.get("modelVersion"),
     }
 
 
-def _combined_usage(technical_payload, narrative_payload):
+def _usage_call(payload, request_id, call_type, attempt):
+    return {
+        "request_id": request_id,
+        "call_type": call_type,
+        "attempt": attempt,
+        **_usage(payload),
+    }
+
+
+def _combined_usage(technical_payload, narrative_payload, usage_calls=None):
     technical = _usage(technical_payload)
     narrative = _usage(narrative_payload)
 
@@ -2104,11 +2115,14 @@ def _combined_usage(technical_payload, narrative_payload):
 
     return {
         "prompt_tokens": add("prompt_tokens"),
+        "cached_content_tokens": add("cached_content_tokens"),
         "response_tokens": add("response_tokens"),
+        "thoughts_tokens": add("thoughts_tokens"),
         "total_tokens": add("total_tokens"),
         "model_version": narrative.get("model_version") or technical.get("model_version"),
         "technical": technical,
         "narrative": narrative,
+        "usage_calls": list(usage_calls or []),
     }
 
 
@@ -2148,6 +2162,7 @@ def _run_candidate(
     provider_error_code = None
     provider_request_id = None
     provider_upstream_status = None
+    usage_calls = []
     current_technical_request = request
     technical_attempt_limit = 1 if raw_output_mode else 3
     for attempt_index in range(technical_attempt_limit):
@@ -2161,6 +2176,7 @@ def _run_candidate(
             returned_request_id, payload = model_call(request_id, current_technical_request)
             if returned_request_id != request_id or not isinstance(payload, dict):
                 raise MethodologyOrchestrationError("methodology_model_response_invalid", 502)
+            usage_calls.append(_usage_call(payload, request_id, "technical", attempt_index + 1))
             analysis = (
                 _relaxed_methodology_response(payload, evidence)
                 if validation_mode == "bypass" or raw_output_mode
@@ -2220,6 +2236,7 @@ def _run_candidate(
                 "prompt_sha256": technical_prompt_sha256,
                 "latency_ms": max(round((clock() - started) * 1000), 0),
                 "validation_mode": validation_mode,
+                "usage_calls": usage_calls,
                 "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_model_failed",
             }
 
@@ -2269,7 +2286,8 @@ def _run_candidate(
             "technical_prompt_sha256": technical_prompt_sha256,
             "narrative_prompt_sha256": None,
             "latency_ms": max(round((clock() - started) * 1000), 0),
-            "usage": _combined_usage(technical_payload or {}, {}),
+            "usage": _combined_usage(technical_payload or {}, {}, usage_calls),
+            "usage_calls": usage_calls,
             "analysis": {
                 **technical_analysis,
                 "technical_summary": technical_analysis["summary"],
@@ -2314,6 +2332,7 @@ def _run_candidate(
             )
             if returned_request_id != narrative_request_id or not isinstance(narrative_payload, dict):
                 raise MethodologyOrchestrationError("methodology_narrative_response_invalid", 502)
+            usage_calls.append(_usage_call(narrative_payload, narrative_request_id, "narrative", attempt_index + 1))
             narrative = (
                 _relaxed_narrative_response(narrative_payload)
                 if validation_mode == "bypass" or raw_output_mode
@@ -2374,7 +2393,8 @@ def _run_candidate(
                 "technical_prompt_sha256": technical_prompt_sha256,
                 "narrative_prompt_sha256": narrative_prompt_sha256,
                 "latency_ms": max(round((clock() - started) * 1000), 0),
-                "usage": _combined_usage(technical_payload, narrative_payload),
+                "usage": _combined_usage(technical_payload, narrative_payload, usage_calls),
+                "usage_calls": usage_calls,
                 "analysis": analysis,
                 "validation_mode": validation_mode,
                 "output_validation_mode": (
@@ -2441,7 +2461,8 @@ def _run_candidate(
                     "technical_prompt_sha256": technical_prompt_sha256,
                     "narrative_prompt_sha256": narrative_prompt_sha256,
                     "latency_ms": max(round((clock() - started) * 1000), 0),
-                    "usage": _combined_usage(technical_payload or {}, {}),
+                    "usage": _combined_usage(technical_payload or {}, {}, usage_calls),
+                    "usage_calls": usage_calls,
                     "analysis": analysis,
                     "validation_mode": validation_mode,
                     "narrative_fallback": True,
@@ -2496,7 +2517,8 @@ def _run_candidate(
                         "technical_prompt_sha256": technical_prompt_sha256,
                         "narrative_prompt_sha256": narrative_prompt_sha256,
                         "latency_ms": max(round((clock() - started) * 1000), 0),
-                        "usage": _combined_usage(technical_payload, narrative_payload),
+                        "usage": _combined_usage(technical_payload, narrative_payload, usage_calls),
+                        "usage_calls": usage_calls,
                         "analysis": analysis,
                         "validation_mode": validation_mode,
                         "narrative_fallback": True,
@@ -2519,6 +2541,7 @@ def _run_candidate(
                 "narrative_prompt_sha256": narrative_prompt_sha256,
                 "latency_ms": max(round((clock() - started) * 1000), 0),
                 "validation_mode": validation_mode,
+                "usage_calls": usage_calls,
                 "error": code if str(code).startswith(("methodology_", "vertex_")) else "methodology_narrative_failed",
             }
 
