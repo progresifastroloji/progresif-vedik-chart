@@ -1,528 +1,399 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.10.0
-date: 2026-09-08
+version: 1.11.0
 language: tr
-transliteration: IAST
 runtime_profile: compact_natal_v1
 analysis_contract: vedic-system-analysis-v5
+source_origin: Vedic_AI_Astrolojik_Analiz_Metodolojisi_Guncel.txt
 ---
 
-# Vedik Analiz Sistem Metodolojisi
+# 2. Astrolojik Analiz Metodolojisi
 
-Bu dosya Vedik AI sohbetinin tek aktif analiz metodolojisidir. Model astrolojik hesap yapmaz; yalnız sunucunun doğruladığı Vedik Chart API verisini yorumlar.
+Astrolojik analizde tek bir gösterge üzerinden sonuç üretme.
 
-## 0. Bu metodoloji nasıl kullanılır?
+Analizin temel sırası:
 
-### 0.1 Sunucuda bulunan dosyalar
+**karakter → karakterin konuyla ilişkisi → konudaki fiiliyat → Dasha ile aktivasyon → transit ile güncel tetiklenme**
 
-| Kod | Sunucu/Supabase dosyası | Kullanım |
-|---|---|---|
-| `natal_interpretation` | `natal-interpretation.md` | 33 bölümlü natal veri kaynağı. İndirme adı `<isim>-Natal-Yorum-Paketi.md` olabilir. |
-| `transit_three_month` | `transit-three-month.md` | Kayıtlı üç aylık transit kaynağı. Yalnız zaman sorularında ilgili günler seçilir. |
-| `canonical_snapshot` | `canonical-snapshot.json` | Sunucu içi kanonik hesap kaydıdır. Tamamı modele gönderilmez. |
-| `manifest` | `manifest.json` | Dosya kodu, sahiplik, bölüm aralığı, boyut ve SHA-256 doğrulamasıdır. Astrolojik yorum kaynağı değildir. |
+şeklindedir.
 
-API'nin konu paketi üreticileri kariyer, sağlık, aile/ebeveynlik, eğitim/uzmanlaşma, taşınma/yurtdışı/yerleşim, finans, ilişki/evlilik, karakter, ruhsal yön, yıllık döngü/Varṣaphala ve hukuki süreç alanlarını kapsar. Gezegen rolleri ile seans hazırlığı ise bağımsız kullanıcı konusu değil, bu analizleri destekleyen teknik dosyalardır. Sohbet yönlendiricisi kullanıcının güncel sorusunu bu alanların tamamında sınıflandırır; yalnız kariyer veya önceki sohbet konusu varsayılmaz.
+Analiz sırasında astrolojik verileri kullanıcıya sıralamak için değil, kişiyi ve sorulan konuyu doğru anlamak için kullan.
 
+---
 
-### 0.2 Modele ne gönderilir?
+## 2.1 Karakter Çekirdeği
 
-Çalışma zamanı iki bağlam modunu destekler. `compact` modunda sunucu, soruya göre aşağıdaki doğrulanmış kesitlerden küçük bir kanıt paketi kurar. `full` modunda sahipliği ve SHA-256 bütünlüğü doğrulanmış Markdown kaynaklarının tamamı ayrıca modele verilir; model bu dosyaları ayrıntılı bağlam olarak kullanabilir.
+Sorunun öznesi kişinin kendisi, karakteri, davranışları, tercihleri, eğilimleri veya tekrar eden yaşam örüntüleriyse önce kişinin karakter çekirdeğini değerlendir.
 
-- `chart_summary`: haritanın gerekli temel özeti;
-- `data_quality`: doğum saati beyanı ve açık/kapalı teknik katmanlar;
-- `active_dasha`: güncel daśā zinciri;
-- `strength_summary`: oran temelli güç özeti;
-- `natal_sections`: `natal-interpretation.md` içinden seçilmiş bölümler;
-- `topic_packet`: kanonik chart JSON'undan soruya göre üretilmiş çalışma zamanı kesiti;
-- `selected_varga`: kullanıcı harita ekranından bir varga seçtiğinde, yalnız sunucunun doğruladığı D1 ve seçili varga konumları ile yorum güveni;
-- `transits`: yalnız zaman sorularında `transit-three-month.md` içinden seçilmiş günler ve gerekiyorsa tek anlık görüntü.
+Karakter analizinde temel olarak:
 
-`topic_packet` fiziksel bir dosya değildir. Eski konu Markdown dosyalarının adı veya devamı değildir.
+- Yükselen
+- Yükselen nakşatrası
+- Yükselen nakşatra lordu
+- Yükselen nakşatra lordunun bulunduğu ev
+- Yükselen lordu
+- Yükselen lordunun bulunduğu ev
+- Yükselen lordunun nakşatrası
+- Yükselen lordunun nakşatra lordu
+- Yükselen lordunun nakşatra lordunun bulunduğu ev
 
-`full` modunda `natal-interpretation.md` tam metni; zaman sorularında ayrıca `transit-three-month.md` tam metni gönderilir. Tam dosya ile kanıt JSON'u arasında uyuşmazlık varsa kanonik, sahipliği doğrulanmış ve daha güncel çalışma zamanı kanıtı esas alınır; dosyada bulunmayan hesap veya olay üretilmez.
+incelenir.
 
-### 0.3 Çalışma akışı
+Ay tarafında:
 
-```text
-Kullanıcı sorusu
-→ Gemini soru sınıflandırması: konu + zaman kapsamı
-→ Sunucu: sahiplik, manifest ve veri kapısı kontrolü
-→ Sunucu: natal/transit kaynaklarından gerekli kesitleri seçer
-→ Aşama 1: bu metodolojiyle teknik analiz JSON'u
-→ Sunucu: JSON şeması, kanıt yolları ve zaman iddialarını doğrular
-→ Aşama 2: doğrulanmış teknik analiz ve etkin bağlam modundaki kaynaklardan doğal danışan cevabı
-→ Ana sohbet: yalnız danışan cevabı
-→ Teknik dayanak alanı: en fazla üç kısa destek ve bir kritik sınır
-```
+- Ay’ın bulunduğu ev
+- Ay’ın nakşatrası
+- Ay’ın bulunduğu evin lordu
+- Ay’ın bulunduğu ev lordunun nakşatrası
+- Ay’ın nakşatra lordu
+- Ay’ın nakşatra lordunun bulunduğu ev
 
-Kural kayıt defterleri ve eski metodoloji adayları çalışma zamanında modele topluca gönderilmez. Bu nedenle modelden kural kimliği, kayıt statüsü veya kaynak defteri çıktısı üretmesi istenmez.
+incelenir.
 
-## 1. Dört katmanın güncel anlamı
+Bunlarla birlikte genel karakter analizinde:
 
-Sistem dört açık katman kullanır:
+- gezegenlerin drishti ağı,
+- gezegenler arasındaki ilişkiler,
+- önemli kavuşumlar,
+- ev lordları arasındaki ilişkiler,
+- lord ve dispozitör zincirleri,
+- nakşatra lordu zincirleri,
+- yogalar,
+- tekrar eden ev, gezegen ve nakşatra temaları
 
-| Katman | Güncel anlam | Çalışan sistemdeki karşılığı |
-|---|---|---|
-| **Hesaplanmış veri** | API'nin ürettiği konum, ev, varga, daśā ve transit değerleri | Kanıt paketindeki gerçek alanlar |
-| **Teknik kanıt** | Tek bir teknik gözlem ve onu doğrulayan gerçek yol | `supporting_evidence` veya `challenging_evidence`: `claim + evidence_path` |
-| **Teknik hüküm** | Birden fazla kanıtın soruya göre birleştirildiği koşullu sonuç | Aşama 1 `summary` ve `methodology_coverage` |
-| **Danışan anlatısı** | Doğrulanmış teknik hükmün uygulamada seçilen dilde açıklanması | Aşama 2 `opening_summary` ve `answer` alanları |
+birlikte değerlendirilir.
 
-Danışan anlatısı yeni, kaynakta bulunmayan gezegen, ev, açı, dṛṣṭi, dispozitör, yoga, doṣa, varga, daśā, transit, derece veya tarih ekleyemez; ancak tam Markdown bağlamı etkinse kaynakta bulunan teknik ayrıntıları açıklayabilir.
+Amaç tek tek göstergeleri açıklamak değil, kişinin karakterinde tekrar eden ana örüntüyü ortaya çıkarmaktır.
 
-## 2. Veri kapısı
+---
 
-Analizden önce sunucu tarafından uygulanır. Tek yetkili kaynak API'nin `data_quality` kaydıdır. Doğum saati yorum güveni müşterinin uygulamada seçtiği beyan ve sunucunun varga güven matrisiyle belirlenir.
+## 2.2 Sorulan Konuyu Belirle
 
-| Müşteri beyanı | Kullanılabilen katmanlar | Sınır |
-|---|---|---|
-| **Eminim** / `exact` | Bu ürün sözleşmesinde rektifikasyonla doğrulanmış saat demektir. Doğum Lagnası, evler, Bhāva Chalit, Upapada, KP, özel lagnalar ve sunucunun mevcut bütün vargaları `high` | Tam yorum yapılabilir; yine de hesaplama doğrulaması, karşı kanıt ve konu sınırları korunur |
-| **Yaklaşık biliyorum** / `approximate` | D1 gezegen burçları kullanılabilir; doğum Lagnası ve evler `medium` değerlendirilir. D2/D3/D4/D7/D9/D10/D12 `medium`; D6/D11/D16/D20/D24 `low`; D30/D60 `very_low` | `medium` katman koşullu destek verir. `low/very_low` seçili vargada kişisel yorum yapılmaz; dar zamanlama kurulmaz |
-| **Hiç bilmiyorum** / `unknown` | Yalnız D1 gezegen burçları ve Ay temelli çerçeve `medium` düzeyde kullanılabilir | Gerçek doğum Lagnası, doğum evleri, Bhāva Chalit ve bütün ikincil vargalar hüküm dışıdır; yerel `12:00` yalnız hesaplama referansıdır |
+Karakter çekirdeğinden sonra kullanıcının gerçekte hangi yaşam alanı hakkında konuştuğunu belirle.
 
-`exact` işareti bu uygulamada sıradan bir saat kesinliği beyanı değildir; rektifikasyonlu kabul sözleşmesidir ve mevcut vargalar için tam güven verir. Ayrı uzman rektifikasyon servisindeki yaşam olayları yalnız o servisin teknik incelemesinde kullanılır; ana sohbet aynı olayları yeniden kanıt olarak istemez.
+Örneğin:
 
-Varga güveni ile formül güveni ayrıdır. `high`, doğum saatinin yorum kullanımına izin verir; kullanılan bölümleme kuralının dış kaynakla doğrulandığını tek başına kanıtlamaz. `calculation_validation`, `source_rule` ve `reference_frame` ayrıca korunur.
+- ilişki,
+- kariyer,
+- para,
+- aile,
+- ev ve yaşam alanı,
+- eğitim,
+- çocuk,
+- sağlık,
+- sosyal çevre,
+- yaratıcılık,
+- manevi yaşam
 
-Yaklaşık veya bilinmeyen saatte sunucu ileride belirli bir zaman aralığı için sınır kararlılığı sağlarsa yalnız kararlı olduğu açıkça kanıtlanan yerleşim kullanılabilir. Model kendisi sınır hesabı yapamaz, düşük güveni yükseltemez ve varga Lagnasını tahmin edemez.
+gibi.
 
-Veri paketi eksikse model boşluğu doldurmaz. İlgili katman `missing`, analiz `INCOMPLETE` ve sınırlama açık yazılır.
+Aynı konuşmada birden fazla konu bulunabilir. Kullanıcının asıl sorusunun hangi konuya dayandığını bağlamdan ayır.
 
-## 3. Soru ve zaman sınıflandırması
+---
 
-Gemini'nin ilk çağrısı yalnız soruyu sınıflandırır; astrolojik analiz yapmaz ve dosya seçmez. İzinli ana konular:
+## 2.3 D1’de Sorulan Konunun Vaadi
 
-- `general`: genel harita veya birden fazla yaşam alanı;
-- `character`: karakter, yetenek, güçlü ve zorlayıcı örüntüler;
-- `career`: iş, meslek, kariyer ve kamusal rol;
-- `marriage`: romantik ilişki, evlilik ve resmî birliktelik;
-- `wealth`: gelir, para, kaynak ve maddi güven;
-- `health`: beden, canlılık ve bakım; teşhis dışı;
-- `family`: aile, ebeveynlik, çocuklar, kardeşler, bakım ve aile düzeni;
-- `education`: eğitim, sınav, öğrenim, beceri ve uzmanlaşma;
-- `relocation`: taşınma, yurtdışı, yerleşim, konut ve mülk bağlamı;
-- `legal`: sözleşme, resmî süreç, uyuşmazlık, yükümlülük ve miras; hukuk tavsiyesi dışı;
-- `spiritual`: ruhsal yön, pratik, anlam ve dharma; epistemik sınırla;
-- `wellbeing`: günlük/anlık ruh hâli, motivasyon ve içsel deneyim; teşhis dışı;
-- `varshaphala`: yıllık harita ve yıllık yaşam alanı döngüsü; kesin olay kehaneti dışı.
+Her konu analizinde ilk temel harita D1’dir.
 
-Güncel soruda açıkça belirtilen konu, eski sohbetin konusundan önce gelir. Kullanıcı yeni sorusunda ilişki, kariyer veya başka bir alan söylemediyse geçmiş cevap bu etiketi güncel soruya taşıyamaz. Birden fazla yaşam alanı aynı soruda açıkça isteniyorsa `general` seçilir ve alanlar ayrı koşullarla ele alınır.
+D1’i genel ve soyut biçimde yorumlama.
 
-İzinli zaman kapsamları:
+**Sorulan konunun D1’deki vaadini ara.**
 
-| Kapsam | Kullanılan veri |
-|---|---|
-| `none` | Natal kesitler ve güncel daśā; transit yok |
-| `daily` | Kayıtlı üç aylık dosyadan ilgili tam gün; Ay ve Panchanga zorunlu |
-| `instant` | İlgili tam gün + soru saatine ait tek anlık transit görüntüsü |
-| `range` | Kayıtlı dosyadan yalnız doğrulanmış tarih aralığı |
+İlgili konuda:
 
-“Olur mu?”, “evlenebilir miyim?”, “önümüzdeki süreç” ve “ne zaman?” gibi gelecek yönelimli sorular zaman kapsamı ister. Tarih verilmemişse mevcut kayıtlı transit ufku kullanılır ve tarih aralığı cevapta belirtilir.
+- konu evi,
+- konu evinin lordu,
+- konu evinde bulunan gezegenler,
+- konu evine gelen drishtiler,
+- konu ev lordunun yaptığı ve aldığı drishtiler,
+- konu ev lordunun bulunduğu ev,
+- konu ev lordunun burcu,
+- konu ev lordunun nakşatrası,
+- konu ev lordunun nakşatra lordu,
+- dispozitör ve lord zincirleri,
+- konuya ait karakalar,
+- konuyla ilişkili yogalar,
+- konuyla bağlantılı diğer evler
 
+birlikte değerlendirilir.
 
-Belirli bir partner soruluyorsa partner haritası bulunmadan iki kişi adına uyum, partner zihni veya garanti sonuç üretilmez. Yalnız kullanıcının kendi ilişki kapasitesi ve görülebilen koşullar açıklanır.
+Tek bir ev, lord veya gezegen üzerinden kesin sonuç çıkarma.
 
-## 4. Aşama 1 zorunlu analiz sırası
+---
 
-`methodology_coverage` aşağıdaki 13 adımı tam bir kez ve bu sırada taşır:
+## 2.4 D9 ile Vaadi Kontrol Et
 
-1. `question_and_scope` — özgün soru, seçilmiş ana konu ve zaman kapsamı;
-2. `topic_package` — konuya gerekli yüzeylerin seçimi;
-3. `data_gate` — açık, düşük güvenli ve kapalı teknikler;
-4. `vedic_spine` — Lagna, Ay, Güneş, nakṣatra ve lord zincirleri ile temel ilişkiler;
-5. `d1_natal_promise` — D1'de soruya ilişkin temel vaat;
-6. `bhava_lord_karaka` — ilgili bhāva, lordu ve doğal kāraka;
-7. `dispositor_and_nakshatra` — rāśi dispozitörü ve nakṣatra lordu zincirleri;
-8. `strength_capacity_delivery` — rol, kapasite ve sonucun teslim koşulları;
-9. `relevant_varga` — yalnız ilgili ve veri kapısı açık varga;
-10. `dasha_access` — natal vaade güncel daśā erişimi;
-11. `transit_trigger` — yalnız zaman sorusunda doğrulanmış transit tetiklemesi;
-12. `counter_evidence` — sonucu sınırlayan veya dengeleyen gerçek göstergeler;
-13. `thematic_synthesis` — soruya doğrudan koşullu teknik hüküm.
+D1 ve D9 her kapsamlı analizde temel çift olarak değerlendirilir.
 
-`thematic_synthesis` birbirinden kopuk gösterge özetlerinin birleşimi değildir. Önce tek ve hatırlanabilir bir **ana tez** kurulur. Ardından bu tezi gerçekten taşıyan, aynı kökten gelmeyen 2–4 ana mekanizma seçilir. Karşıt kanıt formalite olarak eklenmez; ana tezi zayıflatıyor, koşula bağlıyor veya alternatif bir tezahüre çeviriyorsa teknik hüküm buna göre daraltılır.
+D1’de sorulan konuyla ilgili bir vaat görüldüğünde aynı yapının D9’daki durumunu kontrol et.
 
-Teknik `summary` şu sentez sırasını doğal bir bütün olarak taşımalıdır:
+Özellikle:
 
-1. kullanıcının sorusuna cevap veren tek ana tez;
-2. tezi kuran 2–4 bağımsız astrolojik mekanizma;
-3. güçlü karşıt/dengeleyen kanıtın teze gerçek etkisi;
-4. kullanıcı tarafından doğrulanmamış yaşam olayı uydurmadan, iç süreç ve dış yaşam için olası karşılıklar;
-5. zaman sorusunda `natal vaat → daśā erişimi → transit tetiklemesi` sırasına dayanan gelişim akışı;
-6. güven, eksik veri ve alternatif tezahür sınırı.
+- konu ev lordunun D9’daki burcu,
+- D9’da bulunduğu ev,
+- gücü ve dignity durumu,
+- aldığı ve verdiği drishtiler,
+- kurduğu gezegen ilişkileri,
+- dispozitörü,
+- lord ve nakşatra bağlantıları
 
-`summary`, gösterge listesi veya danışan metni değildir. Aşama 2'nin aynı ana tezi Sade ve Pro görünümlerde bilgi kaybetmeden anlatabilmesi için öncelik ve nedensellik ilişkisini açık kurar.
+incelenir.
 
-Her adımın durumu yalnız `applied`, `not_applicable` veya `missing` olabilir. Bir adım `missing` ise `analysis_status=INCOMPLETE` olur.
+D1’de görülen bir vaat D9 tarafından da destekleniyorsa vaadin gerçekleşme ihtimali güçlenir.
 
-Değişmez ilkeler:
+D9, D1’den bağımsız bir sonuç üretmek için değil, D1’de görülen yapının ne kadar sağlam olduğunu ve ne ölçüde desteklendiğini değerlendirmek için kullanılır.
 
-- D1 natal vaadi önce gelir.
-- Varga D1'i teyit eder veya sınırlar; D1'de olmayan vaadi yaratmaz.
-- Kullanıcı belirli bir vargayı seçtiğinde başka varga onun yerine kullanılmaz. Seçili varganın güveni `low` veya `very_low` ise kişisel yorum yapılmaz; yalnız doğum saati sınırı açıklanır.
-- Daśā natal vaade erişim sağlar.
-- Transit var olan vaadi tetikler; tek başına kader veya olay garantisi üretmez.
-- Tek göstergeyle nihai hüküm kurulmaz.
+---
 
-## 5. Teknik analiz kuralları
+## 2.5 Konu Vargasını İncele
 
-### 5.1 Graha
+D1 ve D9’dan sonra sorunun ait olduğu konu vargasını incele.
 
-Her ilgili graha şu yüzeylerle değerlendirilir:
+Örneğin:
 
-1. doğal kārakatva, guṇa ve tattva;
-2. Lagna'ya göre bütün işlevsel lordlukları;
-3. D1 bhāva ve rāśi yerleşimi;
-4. dignity, bala, avasthā, yanma ve retro kapasitesi;
-5. dṛṣṭi, kavuşum, parivartana ve dispozitör ağı;
-6. sorudaki doğal/işlevsel rolü;
-7. nakṣatra, pāda ve nakṣatra lordunun gerçek konumu.
+- kariyer için D10,
+- çocuk için D7,
+- mülk ve yerleşim için D4,
+- eğitim için D24,
+- ilişki ve evlilik için D9
 
-Doğal benefik/malefik etiketi sonuç değildir. Güçlü zorlayıcı graha zorlayıcı görevini güçlü verebilir; zayıf faydalı graha vaadi gecikmeli veya eksik verebilir.
+gibi.
 
-### 5.2 Bhāva
+Konu vargası üçüncü temel değerlendirme katmanıdır.
 
-Ana formül:
+Konu vargası:
 
-```text
-Bhāva + Bhāva lordu + doğal kāraka
-```
+- konunun nasıl gelişeceğini,
+- hangi yönde ilerleme eğilimi taşıdığını,
+- D1’deki vaadin bu özel yaşam alanında nasıl çalışacağını,
+- konunun hangi biçimde fiiliyata dönüşebileceğini
 
-Bhāvanın rāśisi, bulunan grahalar, bhāvaya/lorduna gelen dṛṣṭiler, lordun diğer lordlukları, dispozitör zinciri, güç, ilgili varga, daśā/transit erişimi ve karşı göstergeler birlikte okunur.
+anlamak için kullanılır.
 
-- Boş bhāva etkisiz değildir.
-- Tek zarar göstergesiyle kayıp hükmü verilmez.
-- Rāśi işlevi ile bhāva işlevi ayrılır.
-- Bhāvāt Bhāvam yalnız ikincil teyittir ve bir türetme seviyesiyle sınırlıdır.
-- `Kārako bhāva nāśāya` otomatik sonuç olarak kullanılmaz.
+---
 
-### 5.3 Dispozitör ve nakṣatra
+## 2.6 Konu Vargasının Kendi Yapısını Oku
 
-Rāśi dispozitörü ve nakṣatra lordu ayrı zincirlerdir. D1 ve D9 zincirleri de birbirine karıştırılmaz.
+Konu vargasında yalnızca D1’deki konu lordunun nereye düştüğüne bakma.
 
-Ay, Lagna, Lagna lordu, aktif daśā lordları ve konu taşıyıcı grahalar için nakṣatra, pāda, nakṣatra lordu ve lordun gerçek D1 konumu incelenir.
+Varganın kendi omurgasını da incele:
 
-Nakṣatra sınırı belirsizse tek hüküm kurulmaz. Devatā veya modern nakṣatra sembolizmi tek başına kişilik kanıtı değildir.
+- Varga yükseleni
+- Varga yükseleninin nakşatrası
+- Varga yükselen lordu
+- Varga yükselen lordunun bulunduğu ev
+- Varga yükselen lordunun gücü ve durumu
+- Konuyla ilgili ev
+- Konu evinin lordu
+- Konu evindeki gezegenler
+- Konu lordunun burcu ve gücü
+- Gezegenlerin drishti ağı
+- Lord ve dispozitör ilişkileri
+- Konuyla ilgili yogalar
 
-### 5.3a Vedik omurga (zorunlu)
+incelenir.
 
-Her analizde önce Lagna, Lagna lordu, Lagna nakṣatrası ve nakṣatra lordu; Ay, Güneş ve bunların burç/nakṣatra lordu zincirleri çıkarılır. Aktif daśā lordları ve konu kāraka grahaları bu omurgaya eklenir. Bu noktalar arasındaki kavuşum, graha dṛṣṭi, rāśi dṛṣṭi, parivartana/dispozitör, doğal-geçici-bileşik arkadaşlık ve nakṣatra lordu bağlantıları ayrı ilişki katmanları olarak kontrol edilir. API'nin `vedic_spine` kaydı yoksa ilgili analiz `INCOMPLETE` kabul edilir; model bu zinciri kendisi hesaplamaz.
+Ardından bu yapıyı tekrar D1 ile ilişkilendir.
 
-### 5.4 Güç, kapasite ve teslim
+Özellikle:
 
-Üç soru ayrılır:
+- Varga yükseleni ile D1 arasındaki ilişki,
+- Varga yükselen lordu ile D1 arasındaki ilişki,
+- konu lordunun D1, D9 ve konu vargasındaki tekrarları,
+- aynı burçta veya benzer güç durumunda tekrarlayan göstergeler
 
-1. **Rol:** Graha neyi taşımakla yükümlü?
-2. **Kapasite:** Bu görevi yerine getirecek gücü var mı?
-3. **Teslim:** Sonuç hangi koşul ve yaşam alanında görünür?
+önemlidir.
 
-Śaḍbala gezegenler arası karşılaştırmada yalnız gerekli rūpa oranı/`strength_ratio` üzerinden okunur. Ham/legacy toplam sıralama değildir. Rāhu ve Ketu için “hesaplanmaz (gölge gezegen)” denir.
+D1, D9 ve konu vargasında aynı tema tekrar ediyorsa vaat daha güçlü kabul edilir.
 
-Yüksek Śaḍbala konumsal zorluğu iptal etmez. Aṣṭakavarga natal hüküm veya daśā yerine geçmez; destek/yoğunluk göstergesidir. Avasthā aileleri tek puana zorla birleştirilmez.
+---
 
-Graha Yuddha için yakınlık kaydı klasik zafer/mağlubiyet hesabı değildir. Klasik görünür çap, parlaklık ve okul varyantları doğrulanana kadar `proximity_only` olarak tutulur; Yuddha Bala puanı veya kazanan/kaybeden hükmü Shadbala'ya uygulanmaz.
+## 2.7 Vaat Gücünü Katmanlandır
 
-### 5.5 Varga
+Vaat değerlendirmesini şu mantıkla yap:
 
-Varga, D1'den bağımsız ikinci bir doğum haritası değildir. Yalnız soruyla ilgiliyse, veri kapısı izin veriyorsa ve sunucu doğru bölümleme kuralını açıkça taşıyorsa kullanılır.
+**D1’de vaat varsa:** temel potansiyel vardır.
 
-#### 5.5.1 Kapsam ve görevler
+**D1 + D9 aynı yönde destekliyorsa:** potansiyel güçlenir.
 
-| Varga | Kullanım |
-|---|---|
-| D1 | Bütün natal vaadin temeli |
-| D2 | Gelir, kaynak ve maddi kapasite |
-| D3 | Öncelikle kardeşler; cesaret ve girişim yalnız D1'in 3. ev ağıyla desteklenirse ikincil kullanım |
-| D4 | İkamet, ev, mülk, yerleşim ve talih |
-| D6 | Sağlık sorusunda yalnız güçlü veri kapısıyla, teşhis dışı |
-| D7 | Çocuklar ve ebeveynlik; doğum, doğurganlık veya tıbbi sonuç üretmeden |
-| D9 | Evlilik/eş, dharma, ilişki kurma ve içsel olgunlaşma; D1'in teyidi |
-| D10 | Kariyer, faaliyet, konum ve kamusal başarı; gelir haritası değildir |
-| D11 | Rudrāṃśa; yıkım ve keskin dönüşler için ekol bağımlı, düşük ağırlıklı tanık. Kazanç/servet kanıtı değildir; ölüm veya felaket hükmü üretmez |
-| D12 | Ebeveyn ve soy |
-| D16 | Araç/konfor; hesaplama doğrulaması `internal_formula` ise açık sınırla |
-| D20 | Ruhsal pratik ve disiplin |
-| D24 | Eğitim, beceri ve uzmanlaşma |
-| D30 | Zorluk, olumsuz etkiler ve bilinçaltı örüntüler; teşhis ve felaket dili olmadan |
-| D60 | Bütün konular için çok ince destek; yalnız `exact` beyanında. Geçmiş yaşam veya karma hakkında ahlaki/kesin hüküm üretmez |
+**D1 + D9 + konu vargası aynı yönde destekliyorsa:** konuya ait vaat çok güçlü biçimde tekrar etmektedir.
 
-Klasik Ṣoḍaśavarga dizisinde bulunan fakat mevcut API'nin hesaplamadığı D27, D40 ve D45 model tarafından uydurulmaz. Görevleri sırasıyla güç-zayıflık, ince hayırlı/hayırsız etkiler ve bütün konularda ince değerlendirmedir. Veri gelene kadar `missing/not_available` kalırlar; tam Ṣoḍaśavarga veya tam Vimśopaka tamamlandı denmez.
+Bu aşamada henüz “ne zaman?” sorusuna geçme.
 
-D5 ve D8 gibi ek haritalar da mevcut API veri sözleşmesinde yoktur. Kullanıcı adını sorsa bile yerleşim üretilmez; yalnız genel bilgi verilecekse bunun kişisel harita yorumu olmadığı açık tutulur.
+Önce gerçekten bir vaat veya fiiliyat potansiyeli olup olmadığını belirle.
 
-#### 5.5.2 D1 ile varga okuma sırası
+---
 
-Her kişisel varga yorumunda aşağıdaki sıra uygulanır:
+## 2.8 Karakterin Konuyla İlişkisini Kur
 
-1. Sorunun yaşam alanını ve doğru vargayı belirle. Harita seçimi sorunun konusuyla çelişiyorsa bunu görünür kıl; seçili haritayı başka bir vargayla sessizce değiştirme.
-2. D1'de ilgili bhāva, bhāva lordu, doğal kāraka, yerleşimler, dṛṣṭiler, sambandha, dispozitör zinciri, güç ve karşı göstergelerle natal vaadi kur.
-3. Seçili vargada önce Varga Lagna ve lordunu, sonra soruya ait bhāva/lordu ve kārakayı değerlendir. Yalnız sunucunun verdiği evleri ve yerleşimleri kullan.
-4. Her grahanın D1'deki işlevsel rolü ile varga içindeki yerel rolünü ayrı tut. D1 dignitesi ile varga dignitesini birbirinin yerine kullanma.
-5. Seçili vargada ilgili noktaya gelen graha/rāśi dṛṣṭi, sambandha, argalā veya arūḍha kullanılacaksa bunların sunucu paketinde açıkça bulunmasını ve aynı ekole ait olmasını şart koş.
-6. D1 ve vargada tekrar eden bağımsız desteği, zorluğu ve çelişkiyi ayrı kaydet. Aynı yerleşimden türeyen ev, lord ve yoga kayıtlarını üç bağımsız kanıt gibi sayma.
-7. Son hükmü D1'in vaadi ile varganın konuya özel teslim koşulunu birleştirerek kur. Sonra gerekiyorsa daśā erişimini ve yalnız zaman sorusunda transit tetiklemesini ekle.
+Natal karakter analizini konu analizinden ayrı bırakma.
 
-Bir bhāvanın anlamı vargaya göre daralır. Örneğin 4. bhāva D4'te ev/mülk, D16'da araç/konfor, D24'te eğitim, D12'de anne ve ebeveyn soyu bağlamında değerlendirilir. D1 ev anlamını seçili vargaya aynen kopyalama.
+Şunu değerlendir:
 
-#### 5.5.3 D1-varga sonuç matrisi
+**Bu kişinin temel karakter yapısı bu yaşam alanıyla nasıl ilişki kuruyor?**
 
-| D1 | İlgili varga | İzin verilen sentez |
-|---|---|---|
-| Destekli | Destekli | Konu güçlü ve daha tutarlı biçimde desteklenir; yine garanti verilmez |
-| Destekli | Karışık/zorlayıcı | Natal kapasite vardır; teslim koşulları, gecikme veya sürtünme açıklanır |
-| Karışık | Destekli | Varga destek veya telafi gösterebilir; D1'de bulunmayan büyük vaat yaratılmaz |
-| Zorlayıcı | Destekli | Sınırlı telafi/potansiyel denebilir; kesin olumlu sonuç çıkarılmaz |
-| Zorlayıcı | Zorlayıcı | Destek düşüktür; “asla olmaz” veya kaçınılmaz olumsuzluk hükmü kurulmaz |
+Örneğin:
 
-Vargottama ve farklı vargalarda tekrarlanan dignite, yalnız teknik kayıtta gerçekten hesaplanmışsa destek sayılır. Vimśopaka Bala bir olay olasılığı, model güven yüzdesi veya konu önceliği değildir; kendi klasik güç şemasında ayrı tutulur.
+- kişi ilişkide nasıl davranıyor,
+- kariyer konusunda nasıl karar veriyor,
+- para karşısında hangi davranış örüntüsünü gösteriyor,
+- aile içinde hangi rolü üstlenmeye eğilimli,
+- bir sorun karşısında geri mi çekiliyor, mücadele mi ediyor, kontrol mü kuruyor,
+- fırsat geldiğinde nasıl fiiliyata geçiyor
 
-#### 5.5.4 Özel sınırlar
+gibi.
 
-- D2, D3, D8 ve D11 gibi birden fazla hesaplama yaklaşımı bulunan haritalarda `source_rule` yoksa kişisel yorum yapılmaz. Model yöntem seçmez veya bölüm hesabı yapmaz.
-- Para sorusunda ana zincir D1'in 2./11. ev ağı ve D2'dir. D10 yalnız meslekten gelir bağlantısını; D4 yalnız mülk/varlık bağlamını destekler. D11 finans kanıtına eklenmez.
-- D9 ilişki sorusunda D1'in 7. bhāva ağı ve gerçek D9 kanıtı olmadan genel ilişki tavsiyesi “D9 harita yorumu” diye sunulmaz.
-- D10 mesleğin çalışma biçimi, faaliyet ve kamusal teslimini gösterir; tek başına meslek adı, gelir düzeyi veya iş garantisi üretmez.
-- D6/D30 sağlık bağlamında yalnız eğilim ve bakım sınırı taşır; hastalık veya teşhis üretmez.
-- D40/D45/D60 gibi ince haritalar D1'i geçersiz kılamaz. D60 yalnız rektifikasyonlu `exact` saatte ve D1 ile aynı konu içinde destekleyici kullanılır.
+Konu analizinin amacı yalnızca “haritada bu potansiyel var” demek değildir.
 
-D1 ile başka bir varga arasında çapraz dṛṣṭi üretilmez. Kārakāṃśa ile D9 Lagna karıştırılmaz. D1 ve varga çelişkisi silinmez, teslim koşulu olarak açıklanır.
+Kişinin karakterinin bu potansiyelle nasıl birleştiğini anlamaktır.
 
-### 5.6 Yoga ve doṣa
+---
 
-Yoga adı tek başına analiz değildir. Oluşum koşulu, grahaların işlevi, güç/kapasite, bağlı bhāvalar, bhaṅga veya karşı göstergeler, ilgili varga ve daśā erişimi birlikte incelenir.
+## 2.9 Fiiliyatı Belirle
 
-Doṣa etiketi de tek başına sonuç değildir. Özellikle Maṅgala doṣa, ilgili evler, Mars'ın gücü, dispozitörü, dṛṣṭiler, dengeleyiciler, D9 ve zaman erişimiyle birlikte okunur.
+Karakter ve konu yapısını birleştirerek kişinin ilgili yaşam alanında nasıl davranma eğiliminde olduğunu belirle.
 
-### 5.7 Daśā
+Fiiliyat:
 
-Vimśottarī varsayılan zaman temelidir. Mahādaśā geniş dönem, Antardaśā kanaldır. Her iki lordun bütün bhāva portföyü, D1 konumu, güç/kapasitesi, birbirleriyle sambandhası ve sorunun natal vaadine erişimi incelenir.
+**karakter + konu evi ve lordları + D1 vaadi + D9 desteği + konu vargasındaki yapı**
 
-Başka daśā sistemi kullanılırsa okul etiketi ayrılır; bir sistem diğerinin kanıtı yerine geçmez.
+birlikte değerlendirilerek çıkarılır.
 
-### 5.8 Transit
+Aynı astrolojik vaat iki farklı kişide aynı davranışı oluşturmak zorunda değildir.
 
-- Natal vaat olmadan major olay üretilmez.
-- Daśā erişimi yoksa transit düşük öncelikli tetikleyicidir.
-- Hızlı transit tek başına major olay tarihi üretmez.
-- Günlük/anlık soruda Ay ve Panchanga mutlaka değerlendirilir.
-- Transit konumu Ay, Lagna ve ilgili natal göstergelerden ayrı referanslarla okunur.
-- Anlık soruda kayıtlı gün verisi “şu an” diye sunulmaz; ayrıca tek anlık görüntü gerekir.
-- Kayıtlı dosyanın dışındaki tarih veya derece uydurulmaz.
+Bu nedenle yorum her zaman kişinin karakter çekirdeğine geri bağlanmalıdır.
 
-### 5.9 Ekol ayrımı
+---
 
-Parāśarī ana çerçevedir. Jaimini, KP, Nādi ve diğer okul teknikleri açık etiketle paralel destek olarak kullanılabilir. Rāśi dṛṣṭi graha dṛṣṭiye çevrilmez. Okullar arası çelişki ortak kabul gibi sunulmaz.
+## 2.10 Dasha: Fiiliyatın Tezahür Zamanı
 
-## 6. Konuya göre zorunlu yüzeyler
+Dasha natal veya varga haritalarında bulunmayan bir vaadi yaratmaz.
 
-### `general`
+Dasha, haritalarda bulunan vaat ve fiiliyat potansiyelinin hangi dönemde aktif hale gelebileceğini gösterir.
 
-Vedik omurga (`vedic_spine`), Lagna/lord, Ay/Janma Nakṣatra, Güneş, işlevsel lordluklar, ana bhāva ağları, dispozitörler, güç, önemli yoga/doṣa, ilgili vargalar ve aktif daśā. Kullanıcı zaman sormadıysa transit eklenmez.
+Bu nedenle önce:
 
-### `character`
+**vaat ve fiiliyat**
 
-Vedik omurga, Lagna/lord, Ay/Nakṣatra, Güneş, Ātmakāraka, işlevsel graha rolleri, 1./3./5./9./10. ev ağları, dispozitör/nakṣatra zincirleri, Śaḍbala oranları, önemli yoga/doṣa, D9 ve gerekiyorsa D10/D24.
+tespit edilir.
 
-### `career`
+Daha sonra Dasha değerlendirilir.
 
-Vedik omurga, Lagna/lord, 10. ev/lord, 6./2./11. ev ağları, Güneş, Satürn, Merkür, Jüpiter, Mars, yoga/bhaṅga, D10; eğitim alt konusu varsa D24, gelir alt konusu varsa D2. Zaman sorusunda daśā ve doğrulanmış transit penceresi.
+Özellikle:
 
-### `marriage`
+- Mahadasha lordu,
+- Antardasha lordu,
+- gerektiğinde Pratyantardasha lordu
 
-Vedik omurga, Lagna/lord, 7. ev/lord, 2. ev/lord, 5. ev/lord, Venüs, Jüpiter, Ay, Mars, Güneş, dispozitör/nakṣatra zincirleri, graha/rāśi dṛṣṭileri, Maṅgala doṣa, D9, daśā ve zaman sorusunda transit. Partner haritası yoksa iki kişi adına hüküm kurulmaz.
+incelenir.
 
-### `wealth`
+Her Dasha lordunun:
 
-Vedik omurga, 2./11./5./9. ev ve lordları, Lagna, Jüpiter, Merkür, Venüs, Satürn, Dhana/Daridra ağları, D2; iş geliri için D10, mülk için D4. Yatırım tavsiyesi, kesin tutar veya garanti kazanç yoktur.
+- yönettiği evler,
+- bulunduğu ev,
+- burcu,
+- nakşatrası,
+- nakşatra lordu,
+- dispozitörü,
+- konu evine bağlantısı,
+- konu ev lorduna bağlantısı,
+- ilgili karakaya bağlantısı,
+- D1’deki durumu,
+- D9’daki durumu,
+- konu vargasındaki durumu
 
-### `health`
+birlikte değerlendirilir.
 
-Vedik omurga, Lagna/lord, Güneş, Ay, 6./8./12. ev, Mars, Satürn, Jüpiter, koruyucu göstergeler; veri kapısı uygunsa D6/D30. Hastalık teşhisi, ölüm/ömür, ilaç veya acil durum güvencesi üretilmez.
+Dasha yorumunu gezegen adından veya tek bir yerleşimden çıkarma.
 
-### `family`
+---
 
-Vedik omurga, 2./3./4./5./9. ev ağları, Güneş, Ay, Jüpiter, Satürn, Mars ve Venüs; D7 çocuk/ebeveynlik, D12 ebeveyn/soy, D4 ev düzeni ve D9 destek katmanı olarak kullanılır. Doğum, kayıp, ayrılık veya aile sonucu garanti edilmez.
+## 2.11 Nakşatra ve Dasha Birlikte Değerlendirilir
 
-### `education`
+Nakşatra ve Dasha birbirinden kopuk değerlendirilmez.
 
-Vedik omurga, 3./4./5./9./10. ev ağları, Merkür, Jüpiter, Güneş, Ay ve Satürn; D24 ana uzmanlaşma, D9/D10 destek katmanıdır. Kabul, sınav başarısı, diploma veya mesleki yeterlilik garanti edilmez.
+Özellikle:
 
-### `relocation`
+- Yükselen nakşatrası,
+- Yükselen lordunun nakşatrası,
+- Ay nakşatrası,
+- konu ev lordunun nakşatrası,
+- Dasha lordunun nakşatrası,
+- ilgili karakanın nakşatrası
 
-Vedik omurga, 3./4./9./12. ev ağları, Ay, Mars, Satürn, Jüpiter, Venüs, Rāhu ve Ketu; D4 ana yerleşim/mülk, D9 ve D12 destek katmanıdır. Ülke, şehir, adres, mülk edinimi veya kalıcılık sonucu üretilmez.
+ve bu nakşatraların lord zincirleri dikkate alınır.
 
-### `legal`
+Nakşatra kişinin ve göstergenin çalışma biçimini inceltir.
 
-Vedik omurga, 2./4./6./7./8./9./11./12. ev ağları, Satürn, Mars, Jüpiter, Merkür, Venüs, Rāhu ve Ketu; veri kapısına göre D4/D9/D10/D30 destekleri. Kusur, dava sonucu, ceza, sözleşme geçerliliği, miras hakkı veya kazanma/kaybetme hükmü üretilmez; profesyonel hukuk görüşü önerilir.
+Dasha ise bu yapının hangi dönemde aktif hale geldiğini anlamaya yardımcı olur.
 
-### `spiritual`
+---
 
-Vedik omurga, 5./9./12. ev ve lordları, Jüpiter, Ketu, Satürn, Ay, Güneş, Lagna, D20 ve D9. Geçmiş yaşam, mokṣa, ruhsal üstünlük veya guru emri olgu gibi sunulmaz.
+## 2.12 Transit: Güncel Tetikleme
 
-### `wellbeing`
+Transit de kendi başına vaat yaratmaz.
 
-Vedik omurga, Lagna/lord, Ay/Janma Nakṣatra, 1./4. ev, Ay'ın dispozitör ve nakṣatra lordu, aktif daśā ve koruyucu/zorlayıcı örüntüler. Günlük/anlık soruda kayıtlı gün, transit Ay, en az bir Panchanga bileşeni ve gerekiyorsa tek anlık görüntü kullanılır. Klinik veya psikiyatrik teşhis konmaz.
+Transit, natal ve varga haritalarında bulunan ve Dasha tarafından aktive edilmeye uygun olan yapının güncel olarak nasıl tetiklendiğini gösterir.
 
-### `varshaphala`
+Transit analizinde özellikle:
 
-Seçilen yıllık dönüş kaydı, Varṣa Lagna, Muntha, teknik yıl lordu adayı, aktif Mudda Daśā ve hazır yıllık yaşam alanı göstergeleri kullanılır. Starter Tajika/Saham katmanları final hüküm gibi sunulmaz; yıllık döngü kesin olay listesi veya garanti tarih üretmez.
+- Dasha lordları,
+- konu evi,
+- konu ev lordu,
+- ilgili karakalar,
+- Yükselen,
+- Ay,
+- önemli natal gezegenler ve noktalar
 
-## 7. Kanıt sözleşmesi
+üzerindeki transit etkileri değerlendirilir.
 
-Her destekleyici veya zorlayıcı teknik kayıt şu iki alanı taşır:
+Dasha daha geniş aktivasyon dönemini gösterir.
 
-```json
-{
-  "claim": "Kanıt paketine dayalı tek teknik gözlem",
-  "evidence_path": "evidence... ile başlayan gerçek yol"
-}
-```
+Transit ise:
 
-Kurallar:
+**“Neden şimdi?”**
 
-- `evidence_path` sunucunun verdiği geçerli yol kataloğundan aynen kopyalanır.
-- Katalogda olmayan yol veya veri için iddia kurulmaz.
-- Aynı teknik kökten türeyen iki cümle iki bağımsız kanıt sayılmaz.
-- Ana hüküm için en az bir ana gösterge ve ondan bağımsız bir destek aranır.
-- Karşı kanıt Aşama 1'de aranır ve hükmü gerçekten dengeler; kullanıcıya teknik liste olarak dökülmez.
-- Belirgin karşı kanıt yoksa bunun veri temelli kısa gerekçesi Aşama 1'de yazılır.
+sorusunun güncel katmanını oluşturur.
 
-Örnek bağımlılık:
+---
 
-- “Ay 1. evde” ve “Ay Lagna'da” tek teknik köktür.
-- “Mars 7. evden 1. eve bakıyor” ve “1. ev Mars dṛṣṭisi alıyor” tek teknik köktür.
-- “Satürn Lagna lordu” ile “Satürn 8. evde” farklı yüzeylerdir.
+## 2.13 Kullanıcının Kullandığı Zamana Göre Analiz Yap
 
-## 8. Güven ve eksik veri
+Kullanıcının cümlesindeki zaman yapısını dikkate al.
 
-Çalışan Aşama 1 sözleşmesi tek bir `confidence` alanı kabul eder: `low`, `medium` veya `high`.
+### Geniş zaman
 
-Bu değer şu üç unsur birlikte değerlendirilerek verilir:
+Kullanıcı:
 
-1. `data_quality` ve doğum saati kapısı;
-2. zorunlu 13 adımın kapsanması;
-3. ana hükmün gerçek ve bağımsız kanıt sayısı.
+- “Ben neden hep böyle yapıyorum?”
+- “İlişkilerde neden böyleyim?”
+- “Ben para konusunda neden böyle davranıyorum?”
 
-Kurallar:
+gibi geniş zaman kullanıyorsa natal karakter ve konu yapısı temel alınır.
 
-- Zorunlu adım `missing` ise `analysis_status=INCOMPLETE` ve güven `low` olur.
-- `exact` beyanında olay dosyası aranmaz.
-- `approximate` beyanında yalnız D2/D3/D4/D7/D9/D10/D12 `medium` destek olabilir; D6/D11/D16/D20/D24 `low`, D30/D60 `very_low` olduğu için kişisel hükme sokulmaz.
-- `unknown` beyanında yalnız D1 gezegen burçları ve Ay temelli çerçeve `medium` kullanılabilir; bütün ikincil vargalar hüküm dışıdır.
-- Yalnız tek göstergeye dayanan güçlü iddia `high` olamaz.
-- `limitations` hangi veri veya yöntem sınırının sonucu daralttığını açıkça yazar.
+Bu durumda:
 
-Eski çok eksenli güven şeması bu çalışma zamanı JSON sözleşmesinde kullanılmaz.
+**karakter çekirdeği + D1 + D9 + gerektiğinde konu vargası**
 
-## 9. Aşama 1 — teknik analiz JSON'u
+önceliklidir.
 
-Aşama 1 yalnız iç kayıt ve denetim içindir. Kullanıcıya ana sohbet cevabı olarak gösterilmez.
+### Şimdiki zaman
 
-Zorunlu alanlar:
+Kullanıcı:
 
-```text
-question_intent
-analysis_status
-methodology_coverage
-summary
-supporting_evidence
-challenging_evidence
-missing_layers
-confidence
-limitations
-```
+- “Bugün neden böyle hissediyorum?”
+- “Şu anda neden bu kadar isteksizim?”
+- “Son günlerde neden böyle davranıyorum?”
 
-`summary`, Aşama 2'nin kullanacağı ayrıntılı teknik hükümdür; kullanıcı cevabı değildir. Gerekli teknik ayrıntı, karşılaştırma ve koşulları bilgi kaybı yaratacak sabit cümle sayısına sıkıştırma. Teknik JSON geçersizse, kanıt yolu yoksa veya zaman iddiası gönderilen veriyle uyuşmuyorsa Aşama 2 çalıştırılmaz.
+gibi güncel bir durum
 
-## 10. Aşama 2 — danışan cevabı
 
-Aşama 2'nin girdisi doğrulanmış Aşama 1 JSON'u, özgün soru, sunucunun soru/zaman kaydı ve `full` bağlam modu etkinse sahipliği doğrulanmış tam Markdown kaynaklarıdır. `compact` modunda ham Markdown gönderilmez. Her iki modda da yeni astrolojik hesap yapılamaz.
+---
 
-Çıktı JSON'u şu alanları taşır:
+## Veri Seçimi İlkesi
 
-```json
-{
-  "opening_summary": "O anki yorumu özetleyen kısa ve yoruma özel giriş.",
-  "answer": "Doğal danışan cevabı",
-  "follow_up_question": null
-}
-```
+Analiz için mevcut bütün teknik dosyaları veya chart verisini otomatik olarak kullanma. Önce kullanıcının sorusunun türünü, yaşam alanını ve zaman kapsamını belirle. Metodolojinin gerektirdiği astrolojik katmanları tespit et ve yalnız bu analiz için gerekli doğrulanmış verileri kullan.
 
-`opening_summary`, uygulamadaki sabit metodoloji başlığının yerine gösterilir. Kısa ve yoruma özel bir giriş olmalıdır. Teknik kanıtlar yalnız uygulamanın ayrı Kanıtlar bölümünde gösterilir; `answer` içinde teknik mekanizma adları açılmaz. `answer`, doğrulanmış teknik hükmü ve tam Markdown bağlamındaki ilgili ayrıntıları doğal danışan dilinde ayrıntılandırır; kaynakta olmayan veri eklemez.
+Model eksik veriyi kendisi hesaplamaz veya uydurmaz. Gerekli katman mevcut değilse bunu eksik veri olarak işaretler.
 
-`follow_up_question`, yalnız cevabın içinden doğal olarak çıkan ve sonraki analizi gerçekten kişiselleştiren en fazla bir kısa sorudur; gerek yoksa `null` olur.
-
-Standart cevap:
-
-1. İlk paragrafta kullanıcının asıl sorusuna doğrudan ve koşullu cevap verir.
-2. Devamında tek ana örüntünün yaşamdaki olası karşılığını anlatır; kullanıcı tarafından doğrulanmamış olayı olmuş gibi yazmaz.
-3. Sonucu oluşturan 2–4 ana mekanizmayı birbirleriyle ilişkili biçimde açıklar; gösterge listesi dökmez.
-4. Güçlü karşıt kanıtın ana tezi nasıl sınırladığını veya başka yöne çekebileceğini doğal biçimde bütünleştirir.
-5. Zaman sorusuysa yalnız doğrulanmış tarih aralığıyla sürecin başlangıç, yoğunlaşma ve yön değiştirme akışını açıklar; transit takvimi dökmez.
-6. Son bölümde kişiye 1–3 düşük riskli ve geri alınabilir çıkarım verir.
-7. Gerekliyse cevabın içinden doğal olarak çıkan en fazla bir takip sorusu üretir; gerekli değilse soru üretmez.
-8. Sorunun gerektirdiği kadar ayrıntılıdır; gereksiz sabit paragraf veya karakter sayısı uğruna bilgi kesilmez.
-
-Ana sohbet cevabında:
-
-- metodoloji adı veya “VEDİK ANALİZ SİSTEM METODOLOJİSİ” başlığı yazılmaz;
-- sabit başlık yerine yalnız o yanıta ait `opening_summary` gösterilir;
-- `evidence_path`, `methodology_coverage`, JSON alanı, kural kimliği veya teknik kayıt listesi gösterilmez;
-- “karşı kanıt” başlığı açılmaz; dengeleyici bulgu doğal koşul olarak anlatılır;
-- ham yerleşim dökümüyle başlanmaz;
-- doğrulanmamış tarih, derece veya garanti sonuç eklenmez.
-
-Uygulamanın “Teknik dayanağı göster” alanı Aşama 2 tarafından yazılmaz. Sunucu, doğrulanmış Aşama 1 kayıtlarından en fazla üç kısa destekleyici dayanak ile bir kritik sınırı ayrıca seçer.
-
-
-## 11. Etik ve risk sınırları
-
-- ölüm, ağır hastalık, felaket, ayrılık veya evlilik için kesin hüküm yoktur;
-- sağlık, hukuk veya finans uzmanı gibi davranılmaz;
-- kişinin yerine karar verilmez;
-- korku, kadercilik veya bağımlılık üretilmez;
-- üçüncü kişilerin mahrem verisi rıza olmadan yorumlanmaz;
-- mantra, muska veya garanti sonuç vadeden remedial uygulama önerilmez;
-- astrolojik gösterge ahlaki değer veya insan kalitesiyle eşitlenmez;
-- haritadan mutlak dharma, kast veya varṇa sonucu üretilmez;
-- wellbeing/health sorusunda psikolojik, psikiyatrik veya tıbbi teşhis konmaz;
-- kriz veya acil risk ifadesinde astrolojik anlatı ikinci sıraya alınır. ANALİZE uygun, gerçek destek ve rehberlik  yönlendirmesi yapılır.
-
-## 12. Son kontrol
-
-### Aşama 1 verilmeden önce
-
-- [ ] Sunucunun `primary_topic` ve `time_scope` kararı aynen korundu mu?
-- [ ] Doğru natal bölümleri ve gerekiyorsa doğru transit günleri kullanıldı mı?
-- [ ] Veri kapısı uygulandı mı?
-- [ ] Zorunlu 13 adım tam ve doğru sırada mı?
-- [ ] D1 natal vaadi varga ve zamandan önce kuruldu mu?
-- [ ] Bhāva–lord–kāraka üçlüsü kuruldu mu?
-- [ ] Dispozitör ve nakṣatra zincirleri incelendi mi?
-- [ ] Güç karşılaştırmasında oran kullanıldı mı?
-- [ ] İlgili varga doğru nedenle ve yeterli güvenle kullanıldı mı?
-- [ ] Daśā erişimi ile transit tetiklemesi ayrıldı mı?
-- [ ] Her teknik kayıt gerçek `evidence_path` taşıyor mu?
-- [ ] Aynı kökten gelen kayıtlar bağımsız kanıt sayılmadı mı?
-- [ ] Karşı kanıt arandı ve hükme uygulandı mı?
-- [ ] Zaman sorusunda gerçek transit yolu ve tarih aralığı var mı?
-- [ ] Günlük/anlık wellbeing sorusunda Ay ve Panchanga kullanıldı mı?
-- [ ] Eksik zorunlu katman `INCOMPLETE` ve `low` olarak işaretlendi mi?
-- [ ] Teşhis, garanti ve üçüncü kişi zihin okuma dili engellendi mi?
-
-### Aşama 2 verilmeden önce
-
-- [ ] `opening_summary` kısa, anlaşılır ve o anki yorumu gerçekten özetliyor mu?
-- [ ] Tam Markdown etkinse kaynakta bulunan teknik terimler gerektiğinde açıklanmış mı?
-- [ ] İlk paragraf soruyu doğrudan cevaplıyor mu?
-- [ ] Aşama 1 dışında yeni teknik iddia veya tarih eklendi mi?
-- [ ] Standart cevap sorunun gerektirdiği ayrıntıyı taşıyor mu; bilgi sabit uzunluk uğruna kesilmemiş mi?
-- [ ] Varsa doğrulanmış önümüzdeki süreç anlatıldı mı?
-- [ ] Rehberlik ana sorudan kopmadan verildi mi?
-- [ ] Metodoloji adı, JSON alanları, teknik kayıt listesi ve kanıt yolları gizli mi?
-- [ ] Teknik dayanak alanı ana cevaptan ayrı mı?
-- [ ] Dil doğal, koşullu, teşhis dışı ve kadercilikten uzak mı?
-
-Aşama 2'ye geçişte uygulanabilir bütün kontroller olumlu olmalıdır. Bir kontrol konuya uygulanamıyorsa `not_applicable` olarak kaydedilir; uygulanabilir bir kontrol başarısızsa yanıt düzeltilmeden gönderilmez.
+Veri seçimi metodolojinin analiz sırasına hizmet eder; veri miktarı analizin derinliğini belirlemez. Aynı astrolojik bilginin farklı dosyalarda tekrar eden kopyalarını ayrıca kanıt gibi sayma.
