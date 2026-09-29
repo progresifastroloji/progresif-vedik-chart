@@ -30017,6 +30017,8 @@ def _beta_public_methodology_response(comparison):
 
     public = json.loads(json.dumps(comparison))
     public.pop("validation_mode", None)
+    if isinstance(public.get("context_trace"), dict):
+        public["context_trace"].pop("personal_memory", None)
     for result in public.get("methodology_results") or []:
         if isinstance(result, dict):
             result.pop("validation_mode", None)
@@ -30037,6 +30039,7 @@ def _beta_public_methodology_response(comparison):
         analysis.pop("technical_summary", None)
         analysis.pop("validation_bypassed", None)
         analysis.pop("memory_update", None)
+        analysis.pop("memory_candidates", None)
         analysis["missing_layers"] = (analysis.get("missing_layers") or [])[:1]
         analysis["limitations"] = (analysis.get("limitations") or [])[:1]
         result["internal_technical_record"] = "stored_server_side"
@@ -32572,6 +32575,7 @@ def _beta_build_chat_draft(
     require_mandatory_evidence=False,
     selected_varga=None,
     personal_memory_summary="",
+    personal_memory_context=None,
 ):
     response_language = normalize_response_language(response_language)
     selected_route = (routing or {}).get("selected") or _beta_legacy_question_route(question)
@@ -32746,6 +32750,7 @@ def _beta_build_chat_draft(
         "response_language": response_language,
         "conversation_context": conversation_context or [],
         "personal_memory_summary": str(personal_memory_summary or "").strip()[:1600],
+        "personal_memory_context": personal_memory_context if isinstance(personal_memory_context, dict) else {},
         "topic": topic,
         "subject_topic": subject_topic,
         "question_route": selected_route,
@@ -32772,6 +32777,15 @@ def _beta_build_chat_draft(
             "required_evidence": selected_route.get("required_evidence") or [],
             "selected_varga_code": (selected_varga or {}).get("selected", {}).get("code"),
             "conversation_turn_count": len(conversation_context or []),
+            "personal_memory": {
+                "enabled": bool(personal_memory_context),
+                "selected_topics": list(personal_memory_context.get("selected_topics") or [])[:8]
+                if isinstance(personal_memory_context, dict) else [],
+                "relevant_memory_count": len(personal_memory_context.get("relevant_memories") or [])
+                if isinstance(personal_memory_context, dict) else 0,
+                "active_topic_count": len(personal_memory_context.get("active_topics") or [])
+                if isinstance(personal_memory_context, dict) else 0,
+            },
             "transit": transit_trace,
             "full_markdown_test": (
                 {
@@ -32867,6 +32881,29 @@ def _beta_personal_memory_summary(value):
     if "{" in summary or "}" in summary or "```" in summary:
         raise ValueError("personal_memory_summary geçersiz")
     return summary
+
+
+def _beta_personal_memory_context(value):
+    """Validate the bounded, server-only structured memory context."""
+
+    if value is None or value == "":
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("personal_memory_context nesne olmalı")
+    allowed = {"user_memory_profile", "active_topics", "relevant_memories", "astrological_memory", "selected_topics"}
+    if set(value) - allowed:
+        raise ValueError("personal_memory_context alanı geçersiz")
+    normalized = {
+        "user_memory_profile": value.get("user_memory_profile") if isinstance(value.get("user_memory_profile"), dict) else {},
+        "active_topics": value.get("active_topics") if isinstance(value.get("active_topics"), list) else [],
+        "relevant_memories": value.get("relevant_memories") if isinstance(value.get("relevant_memories"), list) else [],
+        "astrological_memory": value.get("astrological_memory") if isinstance(value.get("astrological_memory"), list) else [],
+        "selected_topics": value.get("selected_topics") if isinstance(value.get("selected_topics"), list) else [],
+    }
+    encoded = json.dumps(normalized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > 8_000:
+        raise ValueError("personal_memory_context çok uzun")
+    return normalized
 
 
 def _beta_existing_comparison(conn, comparison_id, profile_id, chart_id, question):
@@ -33741,6 +33778,9 @@ def api_v2_beta_chat_compare():
         personal_memory_summary = _beta_personal_memory_summary(
             data.get("personal_memory_summary")
         )
+        personal_memory_context = _beta_personal_memory_context(
+            data.get("personal_memory_context")
+        )
         if _beta_is_rectification_question(question):
             return jsonify({
                 "ok": False,
@@ -33950,6 +33990,7 @@ def api_v2_beta_chat_compare():
             chart_id=chart_id,
             conversation_context=conversation_context,
             personal_memory_summary=personal_memory_summary,
+            personal_memory_context=personal_memory_context,
             include_full_markdown_sources=(
                 full_source_context_mode() and not app.config.get("TESTING")
             ),

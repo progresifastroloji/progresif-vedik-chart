@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
+from token_context_audit import record_request as record_token_audit, record_usage as record_token_usage
+
 
 CONTRACT_VERSION = "vedic-system-analysis-v5"
 MAX_METHODOLOGY_BYTES = 64 * 1024
@@ -41,6 +43,16 @@ NARRATIVE_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MIN_CHARS = 300
 NARRATIVE_MIN_PARAGRAPHS = 1
 PERSONAL_MEMORY_MAX_CHARS = 1_600
+PERSONAL_MEMORY_CONTEXT_MAX_CHARS = 8_000
+MEMORY_TYPES = {
+    "stable_fact",
+    "active_topic",
+    "event",
+    "preference",
+    "character_hypothesis",
+    "recurring_pattern",
+    "astrological_profile",
+}
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 SUPPORTED_RESPONSE_LANGUAGES = {"tr", "en"}
 COVERAGE_STATUSES = {"applied", "not_applicable", "missing"}
@@ -127,6 +139,52 @@ def normalize_personal_memory_update(value):
     if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", summary):
         return None
     return {"summary": summary, "changed": True}
+
+
+def normalize_memory_candidates(value):
+    """Keep optional hidden memory candidates typed, bounded and non-sensitive."""
+
+    if not isinstance(value, list):
+        return []
+    candidates = []
+    for raw in value[:8]:
+        if not isinstance(raw, dict):
+            continue
+        memory_type = str(raw.get("memory_type") or "").strip()
+        summary = str(raw.get("summary") or "").strip()
+        if memory_type not in MEMORY_TYPES or not summary or len(summary) > 1200:
+            continue
+        if "{" in summary or "}" in summary or "```" in summary:
+            continue
+        if (memory_type != "astrological_profile" and _PERSONAL_MEMORY_TECHNICAL_PATTERN.search(summary)) or _PERSONAL_MEMORY_SENSITIVE_PATTERN.search(summary):
+            continue
+        if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", summary):
+            continue
+        confidence = raw.get("confidence", 0.5)
+        try:
+            confidence = max(0.0, min(1.0, round(float(confidence), 2)))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        if memory_type in {"character_hypothesis", "recurring_pattern", "astrological_profile"}:
+            confidence = min(confidence, 0.75)
+            status = "hypothesis"
+        else:
+            status = "inactive" if raw.get("status") == "inactive" else "active"
+        try:
+            evidence_count = max(1, min(99, int(raw.get("evidence_count") or 1)))
+        except (TypeError, ValueError):
+            evidence_count = 1
+        candidates.append({
+            "memory_type": memory_type,
+            "category": re.sub(r"[^a-z0-9_]+", "_", str(raw.get("category") or "general").lower()).strip("_")[:40] or "general",
+            "topic": re.sub(r"[^a-z0-9_]+", "_", str(raw.get("topic") or "general").lower()).strip("_")[:80] or "general",
+            "summary": summary,
+            "confidence": confidence,
+            "evidence_count": evidence_count,
+            "status": status,
+            "supersedes_summary": str(raw.get("supersedes_summary") or "").strip()[:1200] or None,
+        })
+    return candidates
 RETRYABLE_PROVIDER_ERRORS = {
     "vertex_bridge_rate_limited",
     "vertex_bridge_upstream_unavailable",
@@ -682,6 +740,7 @@ def _narrative_request(
     guidance=None,
     response_language="tr",
     personal_memory_summary="",
+    personal_memory_context=None,
     direct_dual_output=False,
 ):
     """Build the client-facing call from validated analysis and active sources."""
@@ -713,6 +772,11 @@ def _narrative_request(
     }
     if personal_memory_summary:
         narrative_input["personal_memory_summary"] = str(personal_memory_summary).strip()[:PERSONAL_MEMORY_MAX_CHARS]
+    if isinstance(personal_memory_context, dict):
+        encoded_memory = _canonical_json(personal_memory_context)
+        if len(encoded_memory.encode("utf-8")) > PERSONAL_MEMORY_CONTEXT_MAX_CHARS:
+            raise MethodologyOrchestrationError("personal_memory_context_too_large", 413)
+        narrative_input["personal_memory_context"] = personal_memory_context
     if direct_dual_output:
         system_text = (
             "Sen Vedic AI'nin bütünlüklü durum yorumu ve rehberlik katmanısın. Aşağıdaki etkin rehberlik "
@@ -722,6 +786,7 @@ def _narrative_request(
             "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
             "counter_indicators array, missing_data array, limitations array}, follow_up_question string|null; memory_update yalnız "
+            "geriye dönük uyumluluk için, memory_candidates ise açık kullanıcı bilgileri için kullanılabilir. "
             "kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. simple_view.body ve pro_view.body doğal "
             "paragraf dizileri olsun. İki görünüm aynı bütünlüklü durum tespitini taşısın; Pro görünüm yalnız Aşama 1 "
             "kaydındaki yapılandırılmış destek, karşı gösterge, eksik veri ve sınırlamaları teknik mantığıyla açsın. "
@@ -817,7 +882,10 @@ def _narrative_request(
     user_text = (
         "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON opening_summary ve "
         "answer alanlarını zorunlu, follow_up_question alanını string|null, memory_update alanını ise yalnız yeni ve açık kullanıcı bilgisi varsa içersin. "
-        "memory_update {summary, changed} biçiminde sunucuya özel alandır; yanıtta bu alanı veya gizli hafızayı anma. "
+        "memory_candidates alanı array olsun; her satır memory_type, category, topic, summary, confidence, evidence_count, status ve gerekirse supersedes_summary taşısın. "
+        "stable_fact ve preference yalnız kullanıcının açıkça söylediği bilgidir; character_hypothesis ve recurring_pattern kesin gerçek değil, düşük/orta güvenli hipotezdir. "
+        "Astrological_profile yalnız daha önce doğrulanmış ve tekrar kullanılabilir kişi sentezi açıkça mevcutsa eklenebilir. Kullanıcının söylemediği yaşam olayını, kişilik hükmünü veya hassas veriyi kalıcı hafıza adayı yapma. "
+        "memory_update {summary, changed} ve memory_candidates sunucuya özel alanlardır; yanıtta bu alanlardan veya gizli hafızadan söz etme. "
         "opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
         f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
         + (
@@ -1066,6 +1134,7 @@ def _relaxed_narrative_response(payload):
         "pro_view": pro,
         "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
+        "memory_candidates": normalize_memory_candidates(value.get("memory_candidates")),
         "validation_bypassed": True,
     }
 
@@ -1933,7 +2002,7 @@ def validate_narrative_response(payload, analysis, evidence):
     if (
         not isinstance(value, dict)
         or not {"opening_summary", "answer"}.issubset(value)
-        or set(value) - {"opening_summary", "answer", "follow_up_question", "memory_update"}
+        or set(value) - {"opening_summary", "answer", "follow_up_question", "memory_update", "memory_candidates"}
     ):
         raise MethodologyOrchestrationError("methodology_narrative_schema_invalid", 502)
     opening_summary = str(value.get("opening_summary") or "").strip()
@@ -2080,6 +2149,7 @@ def validate_narrative_response(payload, analysis, evidence):
         "answer": answer,
         "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
+        "memory_candidates": normalize_memory_candidates(value.get("memory_candidates")),
     }
 
 
@@ -2137,6 +2207,7 @@ def _run_candidate(
     guidance=None,
     response_language="tr",
     personal_memory_summary="",
+    personal_memory_context=None,
     output_validation_mode="checked",
 ):
     base_request_id = f"{comparison_id}-{candidate['id']}"
@@ -2173,10 +2244,13 @@ def _run_candidate(
         )
         payload = None
         try:
+            record_token_audit(request_id, "technical", current_technical_request)
             returned_request_id, payload = model_call(request_id, current_technical_request)
             if returned_request_id != request_id or not isinstance(payload, dict):
                 raise MethodologyOrchestrationError("methodology_model_response_invalid", 502)
-            usage_calls.append(_usage_call(payload, request_id, "technical", attempt_index + 1))
+            usage_call = _usage_call(payload, request_id, "technical", attempt_index + 1)
+            usage_calls.append(usage_call)
+            record_token_usage(usage_call)
             analysis = (
                 _relaxed_methodology_response(payload, evidence)
                 if validation_mode == "bypass" or raw_output_mode
@@ -2315,6 +2389,7 @@ def _run_candidate(
         guidance,
         response_language,
         personal_memory_summary,
+        personal_memory_context,
         direct_dual_output=raw_output_mode,
     )
     current_narrative_request = narrative_request
@@ -2326,13 +2401,16 @@ def _run_candidate(
             else f"{base_request_id}-narrative-retry-{attempt_index}"
         )
         try:
+            record_token_audit(narrative_request_id, "narrative", current_narrative_request)
             returned_request_id, narrative_payload = model_call(
                 narrative_request_id,
                 current_narrative_request,
             )
             if returned_request_id != narrative_request_id or not isinstance(narrative_payload, dict):
                 raise MethodologyOrchestrationError("methodology_narrative_response_invalid", 502)
-            usage_calls.append(_usage_call(narrative_payload, narrative_request_id, "narrative", attempt_index + 1))
+            usage_call = _usage_call(narrative_payload, narrative_request_id, "narrative", attempt_index + 1)
+            usage_calls.append(usage_call)
+            record_token_usage(usage_call)
             narrative = (
                 _relaxed_narrative_response(narrative_payload)
                 if validation_mode == "bypass" or raw_output_mode
@@ -2357,6 +2435,7 @@ def _run_candidate(
                 },
                 "follow_up_question": narrative.get("follow_up_question") or "",
                 "memory_update": narrative.get("memory_update"),
+                "memory_candidates": narrative.get("memory_candidates") or [],
             }
             # The provider may describe indicators in the pro body but omit
             # the optional arrays. Keep the UI inventory complete by deriving
@@ -2561,6 +2640,9 @@ def run_methodology_comparison(
     evidence = {**compact_evidence(draft), "response_language": response_language}
     conversation_context = draft.get("conversation_context") or []
     personal_memory_summary = str(draft.get("personal_memory_summary") or "").strip()[:PERSONAL_MEMORY_MAX_CHARS]
+    personal_memory_context = draft.get("personal_memory_context")
+    if not isinstance(personal_memory_context, dict):
+        personal_memory_context = None
     evidence_json = _canonical_json(evidence)
     evidence_sha256 = _sha256(evidence_json)
     monotonic = clock or time.monotonic
@@ -2577,6 +2659,7 @@ def run_methodology_comparison(
                 guidance,
                 response_language,
                 personal_memory_summary,
+                personal_memory_context,
                 output_validation_mode,
             ),
             candidates,
@@ -2604,6 +2687,16 @@ def run_methodology_comparison(
         ),
         None,
     )
+    server_memory_candidates = next(
+        (
+            result.get("analysis", {}).get("memory_candidates") or []
+            for result in results
+            if isinstance(result, dict)
+            and isinstance(result.get("analysis"), dict)
+            and result.get("analysis", {}).get("memory_candidates")
+        ),
+        [],
+    )
     return {
         "contract_version": CONTRACT_VERSION,
         "validation_mode": methodology_validation_mode(),
@@ -2629,6 +2722,7 @@ def run_methodology_comparison(
         "candidate_count": len(results),
         "degraded_count": degraded,
         "server_memory_update": server_memory_update,
+        "server_memory_candidates": normalize_memory_candidates(server_memory_candidates),
     }
 
 
