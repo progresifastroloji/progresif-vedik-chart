@@ -53,6 +53,22 @@ MEMORY_TYPES = {
     "recurring_pattern",
     "astrological_profile",
 }
+MEMORY_CATEGORIES = {
+    "identity",
+    "career",
+    "projects",
+    "family",
+    "relationships",
+    "interests",
+    "goals",
+    "preferences",
+    "important_events",
+    "communication_preferences",
+    "astrological_context",
+    "health_sensitive",
+}
+MEMORY_OPERATIONS = {"NONE", "ADD", "UPDATE", "SUPERSEDE"}
+MEMORY_SENSITIVITIES = {"normal", "sensitive", "restricted"}
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 SUPPORTED_RESPONSE_LANGUAGES = {"tr", "en"}
 COVERAGE_STATUSES = {"applied", "not_applicable", "missing"}
@@ -185,6 +201,79 @@ def normalize_memory_candidates(value):
             "supersedes_summary": str(raw.get("supersedes_summary") or "").strip()[:1200] or None,
         })
     return candidates
+
+
+def normalize_memory_updates(value):
+    """Normalize the single-call, user-stated durable memory contract."""
+
+    if not isinstance(value, list):
+        return []
+    updates = []
+    for raw in value[:12]:
+        if not isinstance(raw, dict):
+            continue
+        operation = str(raw.get("operation") or "NONE").strip().upper()
+        if operation not in MEMORY_OPERATIONS or operation == "NONE":
+            continue
+        category = str(raw.get("category") or "").strip().lower()
+        fact = str(raw.get("fact") or "").strip()
+        if category not in MEMORY_CATEGORIES or not fact or len(fact) > 800:
+            continue
+        if "{" in fact or "}" in fact or "```" in fact:
+            continue
+        # Credentials and direct identifiers are never durable memory.
+        if re.search(r"(?:şifre|parola|password|api\s*key|token|secret|iban|kredi\s*kart|tc\s*kimlik)", fact, re.IGNORECASE):
+            continue
+        if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", fact):
+            continue
+        # Technical chart/evidence claims are not personal memory.
+        if re.search(r"(?:evidence\.|methodology|kanıt|harita|chart|gezegen|planet|nakshatra|nakşatra|dasha|daşa|transit|varga|astroloji)", fact, re.IGNORECASE):
+            continue
+        if category != "health_sensitive" and re.search(r"(?:sağlık|hastalık|teşhis|ilaç|dava|hukuk|mahkeme)", fact, re.IGNORECASE):
+            continue
+        try:
+            importance = max(0.0, min(1.0, round(float(raw.get("importance", 0.5)), 2)))
+        except (TypeError, ValueError):
+            importance = 0.5
+        try:
+            confidence = max(0.0, min(1.0, round(float(raw.get("confidence", 0.5)), 2)))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        sensitivity = str(raw.get("sensitivity") or "normal").strip().lower()
+        if sensitivity not in MEMORY_SENSITIVITIES:
+            sensitivity = "sensitive" if category == "health_sensitive" else "normal"
+        if category == "health_sensitive":
+            sensitivity = "sensitive" if sensitivity == "normal" else sensitivity
+        supersedes_fact = str(raw.get("supersedes_fact") or "").strip()[:800] or None
+        updates.append({
+            "operation": operation,
+            "category": category,
+            "fact": fact,
+            "importance": importance,
+            "confidence": confidence,
+            "sensitivity": sensitivity,
+            "supersedes_fact": supersedes_fact,
+        })
+    return updates
+
+
+def memory_updates_as_legacy_candidates(updates):
+    """Keep the pre-v1 server contract readable for older Web deployments."""
+
+    return [
+        {
+            "memory_type": "event" if item["category"] == "important_events" else "stable_fact",
+            "category": item["category"],
+            "topic": item["category"],
+            "summary": item["fact"],
+            "confidence": item["confidence"],
+            "evidence_count": 1,
+            "status": "active",
+            "supersedes_summary": item.get("supersedes_fact"),
+        }
+        for item in updates
+        if item["operation"] in {"ADD", "UPDATE", "SUPERSEDE"}
+    ]
 RETRYABLE_PROVIDER_ERRORS = {
     "vertex_bridge_rate_limited",
     "vertex_bridge_upstream_unavailable",
@@ -785,9 +874,10 @@ def _narrative_request(
             f"{language_name} dilinde yanıtla. Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
             "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
-            "counter_indicators array, missing_data array, limitations array}, follow_up_question string|null; memory_update yalnız "
-            "geriye dönük uyumluluk için, memory_candidates ise açık kullanıcı bilgileri için kullanılabilir. "
-            "kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. simple_view.body ve pro_view.body doğal "
+            "counter_indicators array, missing_data array, limitations array}, follow_up_question string|null; memory_updates "
+            "yalnız kullanıcının bu mesajda açıkça söylediği kalıcı kişisel bilgiler için kullanılabilir. "
+            "memory_updates sunucuya özel alandır; operation NONE|ADD|UPDATE|SUPERSEDE, category, fact, importance, "
+            "confidence ve sensitivity alanlarını taşımalıdır. Kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. simple_view.body ve pro_view.body doğal "
             "paragraf dizileri olsun. İki görünüm aynı bütünlüklü durum tespitini taşısın; Pro görünüm yalnız Aşama 1 "
             "kaydındaki yapılandırılmış destek, karşı gösterge, eksik veri ve sınırlamaları teknik mantığıyla açsın. "
             "Hiçbir görünüm için sabit paragraf, cümle veya karakter sınırı uygulama. evidence_path, dosya yolu, "
@@ -838,6 +928,9 @@ def _narrative_request(
         "personal_memory_summary sunucu tarafından hazırlanan gizli kişiselleştirme özetidir; kanıt değildir ve "
         "kullanıcıya bundan söz etme. Yalnız kullanıcının açıkça söylediği, istikrarlı tercih/hedef/bağlamı doğal "
         "bir devamlılık için kullan; modelin çıkardığı astrolojik, psikolojik veya hassas bilgileri ekleme. "
+        "personal_memory_context yalnız mevcut soruyla gerçekten ilgiliyse kullanılmalıdır; hafızadaki bilgileri listeleme veya mekanik biçimde tekrar etme, "
+        "gereksiz yere 'daha önce söylemiştiniz' deme. Yeni kullanıcı mesajı hafızadaki bilgiyle çelişiyorsa her zaman yeni mesajı esas al. "
+        "Hafızadan yeni bilgi üretme, eksik bilgiyi tahmin etme ve hafızadaki hassas bilgiyi ilgisiz bir konuya taşıma. "
         "opening_summary alanında cevabın ana sonucunu teknik kanıt listesine girmeden kısa ve anlaşılır biçimde özetle; "
         "bu alanda gezegen, ev, burç, nakshatra, dasha veya transit adı hiç kullanma. "
         "answer alanında bu özeti aynen tekrarlamadan ayrıntılı yoruma geç. İlk paragrafta kullanıcının asıl sorusuna "
@@ -881,11 +974,11 @@ def _narrative_request(
     )
     user_text = (
         "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON opening_summary ve "
-        "answer alanlarını zorunlu, follow_up_question alanını string|null, memory_update alanını ise yalnız yeni ve açık kullanıcı bilgisi varsa içersin. "
-        "memory_candidates alanı array olsun; her satır memory_type, category, topic, summary, confidence, evidence_count, status ve gerekirse supersedes_summary taşısın. "
-        "stable_fact ve preference yalnız kullanıcının açıkça söylediği bilgidir; character_hypothesis ve recurring_pattern kesin gerçek değil, düşük/orta güvenli hipotezdir. "
-        "Astrological_profile yalnız daha önce doğrulanmış ve tekrar kullanılabilir kişi sentezi açıkça mevcutsa eklenebilir. Kullanıcının söylemediği yaşam olayını, kişilik hükmünü veya hassas veriyi kalıcı hafıza adayı yapma. "
-        "memory_update {summary, changed} ve memory_candidates sunucuya özel alanlardır; yanıtta bu alanlardan veya gizli hafızadan söz etme. "
+        "answer alanlarını zorunlu, follow_up_question alanını string|null, memory_updates alanını ise array olarak üret. "
+        "memory_updates yalnız güncel kullanıcı mesajında açıkça söylenen, uzun süre anlamlı olabilecek bilgileri içersin. "
+        "Her kayıt operation NONE|ADD|UPDATE|SUPERSEDE, category (identity|career|projects|family|relationships|interests|goals|preferences|important_events|communication_preferences|astrological_context|health_sensitive), fact, importance, confidence ve sensitivity taşısın. "
+        "UPDATE veya SUPERSEDE için mümkünse supersedes_fact alanını ekle. Günlük küçük konuşma, anlık ruh hali, hava durumu, sıradan soru, model tahmini, astrolojik kanıt veya kullanıcının söylemediği yaşam olayını kaydetme. "
+        "Yeni kullanıcı mesajı hafızadaki bilgiyle çelişiyorsa yeni mesajı esas al; eski bilgi için SUPERSEDE üret. memory_updates sunucuya özel alandır; yanıtta bu alandan veya gizli hafızadan söz etme. "
         "opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
         f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
         + (
@@ -937,8 +1030,8 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "\n\nONARIM DENEMESİ: Önceki anlatı yanıtı doğrulama kapısından geçmedi. "
             f"Doğrulama hata kodu: {error_code or 'methodology_narrative_invalid'}. "
             "Bu kez yalnız DOĞRULANMIŞ AŞAMA 1 içindeki anlamı yeniden yaz. "
-            "Sadece JSON döndür; opening_summary ve answer zorunludur, yalnız açık kullanıcı bilgisi varsa memory_update "
-            "alanını {summary, changed} biçiminde ekleyebilirsin. Bu alan sunucuya özeldir ve kullanıcıya anılmaz. "
+            "Sadece JSON döndür; opening_summary ve answer zorunludur, memory_updates alanı açık kullanıcı bilgisi varsa array, "
+            "yoksa [] olsun. Her satır operation, category, fact, importance, confidence ve sensitivity taşısın. Bu alan sunucuya özeldir ve kullanıcıya anılmaz. "
             "opening_summary 1–3 tamamlanmış cümle olsun. answer en az 300 karakter ve "
             "en az iki doğal paragraf olsun; başlık, madde işareti veya etiket kullanma. "
             "İlk cümlede kullanıcının sorusuna doğrudan ve koşullu yanıt ver. "
@@ -1134,6 +1227,7 @@ def _relaxed_narrative_response(payload):
         "pro_view": pro,
         "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
+        "memory_updates": normalize_memory_updates(value.get("memory_updates")),
         "memory_candidates": normalize_memory_candidates(value.get("memory_candidates")),
         "validation_bypassed": True,
     }
@@ -2002,7 +2096,7 @@ def validate_narrative_response(payload, analysis, evidence):
     if (
         not isinstance(value, dict)
         or not {"opening_summary", "answer"}.issubset(value)
-        or set(value) - {"opening_summary", "answer", "follow_up_question", "memory_update", "memory_candidates"}
+        or set(value) - {"opening_summary", "answer", "follow_up_question", "memory_update", "memory_candidates", "memory_updates"}
     ):
         raise MethodologyOrchestrationError("methodology_narrative_schema_invalid", 502)
     opening_summary = str(value.get("opening_summary") or "").strip()
@@ -2149,6 +2243,7 @@ def validate_narrative_response(payload, analysis, evidence):
         "answer": answer,
         "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
+        "memory_updates": normalize_memory_updates(value.get("memory_updates")),
         "memory_candidates": normalize_memory_candidates(value.get("memory_candidates")),
     }
 
@@ -2435,6 +2530,7 @@ def _run_candidate(
                 },
                 "follow_up_question": narrative.get("follow_up_question") or "",
                 "memory_update": narrative.get("memory_update"),
+                "memory_updates": narrative.get("memory_updates") or [],
                 "memory_candidates": narrative.get("memory_candidates") or [],
             }
             # The provider may describe indicators in the pro body but omit
@@ -2524,6 +2620,7 @@ def _run_candidate(
                     "opening_summary": narrative["opening_summary"],
                     "summary": narrative["answer"],
                     "memory_update": narrative.get("memory_update"),
+                    "memory_updates": narrative.get("memory_updates") or [],
                 }
                 return {
                     "status": "completed",
@@ -2580,6 +2677,7 @@ def _run_candidate(
                         "opening_summary": narrative["opening_summary"],
                         "summary": narrative["answer"],
                         "memory_update": narrative.get("memory_update"),
+                        "memory_updates": narrative.get("memory_updates") or [],
                     }
                     return {
                         "status": "completed",
@@ -2697,6 +2795,16 @@ def run_methodology_comparison(
         ),
         [],
     )
+    server_memory_updates = next(
+        (
+            result.get("analysis", {}).get("memory_updates") or []
+            for result in results
+            if isinstance(result, dict)
+            and isinstance(result.get("analysis"), dict)
+            and result.get("analysis", {}).get("memory_updates")
+        ),
+        [],
+    )
     return {
         "contract_version": CONTRACT_VERSION,
         "validation_mode": methodology_validation_mode(),
@@ -2723,6 +2831,7 @@ def run_methodology_comparison(
         "degraded_count": degraded,
         "server_memory_update": server_memory_update,
         "server_memory_candidates": normalize_memory_candidates(server_memory_candidates),
+        "server_memory_updates": normalize_memory_updates(server_memory_updates),
     }
 
 

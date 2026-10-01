@@ -17,6 +17,8 @@ from methodology_orchestrator import (
     load_guidance_methodology,
     load_methodology_candidates,
     normalize_personal_memory_update,
+    normalize_memory_candidates,
+    normalize_memory_updates,
     ordered_full_markdown_mode,
     run_methodology_comparison,
     validate_methodology_response,
@@ -175,6 +177,58 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIsNone(normalize_personal_memory_update({"summary": "Satürn haritasında güçlü.", "changed": True}))
         self.assertIsNone(normalize_personal_memory_update({"summary": "API key: secret-value", "changed": True}))
 
+    def test_memory_candidates_separate_hypothesis_from_explicit_fact(self):
+        candidates = normalize_memory_candidates([
+            {
+                "memory_type": "stable_fact",
+                "category": "general",
+                "topic": "career",
+                "summary": "Kullanıcı bir uygulama geliştiriyor.",
+                "confidence": 0.95,
+            },
+            {
+                "memory_type": "character_hypothesis",
+                "category": "general",
+                "topic": "career",
+                "summary": "Projelerde yükü tek başına üstlenme eğilimi olabilir.",
+                "confidence": 0.95,
+            },
+        ])
+        self.assertEqual(candidates[0]["status"], "active")
+        self.assertEqual(candidates[1]["status"], "hypothesis")
+        self.assertEqual(candidates[1]["confidence"], 0.75)
+
+    def test_memory_updates_keep_operations_categories_and_reject_none(self):
+        updates = normalize_memory_updates([
+            {
+                "operation": "ADD",
+                "category": "career",
+                "fact": "Kullanıcı bir uygulama geliştiriyor.",
+                "importance": 0.85,
+                "confidence": 0.95,
+                "sensitivity": "normal",
+            },
+            {
+                "operation": "SUPERSEDE",
+                "category": "career",
+                "fact": "Kullanıcı artık danışmanlık yapıyor.",
+                "supersedes_fact": "Kullanıcı öğretmen olarak çalışıyor.",
+                "importance": 0.9,
+                "confidence": 0.98,
+                "sensitivity": "normal",
+            },
+            {"operation": "NONE", "category": "career", "fact": "Günlük hava sıcak."},
+        ])
+        self.assertEqual(len(updates), 2)
+        self.assertEqual(updates[0]["category"], "career")
+        self.assertEqual(updates[1]["operation"], "SUPERSEDE")
+        self.assertEqual(updates[1]["supersedes_fact"], "Kullanıcı öğretmen olarak çalışıyor.")
+        self.assertEqual(normalize_memory_updates([{
+            "operation": "ADD",
+            "category": "career",
+            "fact": "API key: secret-value",
+        }]), [])
+
     def test_narrative_accepts_hidden_memory_update_but_normalizes_it(self):
         analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
         payload = _narrative_payload()
@@ -187,6 +241,21 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         validated = validate_narrative_response(payload, analysis, compact_evidence(_draft()))
         self.assertEqual(validated["memory_update"]["changed"], True)
         self.assertIn("geri alınabilir", validated["memory_update"]["summary"])
+
+    def test_narrative_accepts_hidden_typed_memory_candidates(self):
+        analysis = validate_methodology_response(_payload(), compact_evidence(_draft()))
+        payload = _narrative_payload()
+        value = json.loads(payload["candidates"][0]["content"]["parts"][0]["text"])
+        value["memory_candidates"] = [{
+            "memory_type": "character_hypothesis",
+            "category": "general",
+            "topic": "career",
+            "summary": "Kontrolü kaybetmekten rahatsız olabileceğine dair tekrar eden işaretler var.",
+            "confidence": 0.55,
+        }]
+        payload["candidates"][0]["content"]["parts"][0]["text"] = json.dumps(value, ensure_ascii=False)
+        validated = validate_narrative_response(payload, analysis, compact_evidence(_draft()))
+        self.assertEqual(validated["memory_candidates"][0]["status"], "hypothesis")
 
     def test_personal_memory_summary_is_sent_only_to_narrative_prompt(self):
         draft = _draft()
