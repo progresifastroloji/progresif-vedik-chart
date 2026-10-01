@@ -120,20 +120,18 @@ _PERSONAL_MEMORY_TECHNICAL_PATTERN = re.compile(
     r"satürn|jüpiter|mars|venüs|merkür|rahu|ketu|güneş|astroloji)",
     re.IGNORECASE,
 )
-_PERSONAL_MEMORY_SENSITIVE_PATTERN = re.compile(
+_PERSONAL_MEMORY_SECRET_PATTERN = re.compile(
     r"(?:şifre|parola|password|api\s*key|token|secret|iban|kredi\s*kart|"
-    r"tc\s*kimlik|sağlık|hastalık|teşhis|ilaç|dava|hukuk|mahkeme|"
-    r"yatırım\s*tavsiyesi|borç\s*numarası)",
+    r"tc\s*kimlik|borç\s*numarası)",
     re.IGNORECASE,
 )
 
 
 def normalize_personal_memory_update(value):
-    """Return a safe, short user-stated memory update or None.
+    """Return a short user-stated memory update or None.
 
-    This is deliberately conservative: the field is optional, hidden from the
-    customer response, and must never become an astrology/evidence store or a
-    credential/sensitive-data store.
+    Private and sensitive personal details are allowed. The hidden field must
+    never become an astrology/evidence or credential/financial-secret store.
     """
 
     if isinstance(value, dict):
@@ -150,15 +148,15 @@ def normalize_personal_memory_update(value):
         return None
     if _PERSONAL_MEMORY_TECHNICAL_PATTERN.search(summary):
         return None
-    if _PERSONAL_MEMORY_SENSITIVE_PATTERN.search(summary):
+    if _PERSONAL_MEMORY_SECRET_PATTERN.search(summary):
         return None
-    if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", summary):
+    if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,})", summary):
         return None
     return {"summary": summary, "changed": True}
 
 
 def normalize_memory_candidates(value):
-    """Keep optional hidden memory candidates typed, bounded and non-sensitive."""
+    """Keep optional hidden memory candidates typed, bounded and secret-free."""
 
     if not isinstance(value, list):
         return []
@@ -172,9 +170,9 @@ def normalize_memory_candidates(value):
             continue
         if "{" in summary or "}" in summary or "```" in summary:
             continue
-        if (memory_type != "astrological_profile" and _PERSONAL_MEMORY_TECHNICAL_PATTERN.search(summary)) or _PERSONAL_MEMORY_SENSITIVE_PATTERN.search(summary):
+        if (memory_type != "astrological_profile" and _PERSONAL_MEMORY_TECHNICAL_PATTERN.search(summary)) or _PERSONAL_MEMORY_SECRET_PATTERN.search(summary):
             continue
-        if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", summary):
+        if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,})", summary):
             continue
         confidence = raw.get("confidence", 0.5)
         try:
@@ -221,15 +219,13 @@ def normalize_memory_updates(value):
             continue
         if "{" in fact or "}" in fact or "```" in fact:
             continue
-        # Credentials and direct identifiers are never durable memory.
-        if re.search(r"(?:şifre|parola|password|api\s*key|token|secret|iban|kredi\s*kart|tc\s*kimlik)", fact, re.IGNORECASE):
+        # Credentials and direct security/financial identifiers are never durable memory.
+        if _PERSONAL_MEMORY_SECRET_PATTERN.search(fact):
             continue
-        if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", fact):
+        if re.search(r"(?:sk-[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{20,})", fact):
             continue
         # Technical chart/evidence claims are not personal memory.
         if re.search(r"(?:evidence\.|methodology|kanıt|harita|chart|gezegen|planet|nakshatra|nakşatra|dasha|daşa|transit|varga|astroloji)", fact, re.IGNORECASE):
-            continue
-        if category != "health_sensitive" and re.search(r"(?:sağlık|hastalık|teşhis|ilaç|dava|hukuk|mahkeme)", fact, re.IGNORECASE):
             continue
         try:
             importance = max(0.0, min(1.0, round(float(raw.get("importance", 0.5)), 2)))
@@ -582,6 +578,45 @@ MODEL_PROMPT_NATAL_SECTION_IDS = {
     "active_planets",
     "topic_summaries",
 }
+MODEL_PROMPT_NATAL_SECTION_IDS_BY_TOPIC = {
+    "general": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "panchanga", "varga_tables", "shadbala",
+        "vimshopaka_bala", "bhava_bala", "ashtakavarga", "avasthas",
+        "bhava_chalit", "graha_yuddha", "kp", "jaimini", "yogas",
+        "doshas", "house_drishti", "planet_role_blocks", "chara_dasha",
+        "yogini_dasha", "career_packet", "life_events",
+    },
+    "wellbeing": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "panchanga", "varga_tables", "shadbala", "bhava_bala",
+        "ashtakavarga", "avasthas", "house_drishti",
+    },
+    "character": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "varga_tables", "shadbala", "vimshopaka_bala",
+        "bhava_bala", "ashtakavarga", "avasthas", "jaimini", "yogas",
+        "house_drishti",
+    },
+    "career": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "varga_tables", "shadbala", "vimshopaka_bala",
+        "bhava_bala", "ashtakavarga", "jaimini", "yogas", "career_packet",
+        "house_drishti",
+    },
+    "marriage": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "jaimini", "yogas", "doshas", "house_drishti", "planet_role_blocks",
+    },
+    "family": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "house_drishti", "planet_role_blocks",
+    },
+    "education": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "house_drishti",
+    },
+    "relocation": MODEL_PROMPT_NATAL_SECTION_IDS | {
+        "vedic_spine", "varga_tables", "shadbala", "bhava_bala", "ashtakavarga",
+        "yogas", "house_drishti",
+    },
+}
 MODEL_PROMPT_CHART_SUMMARY_KEYS = {
     "schema_version",
     "display_name",
@@ -632,17 +667,31 @@ def _model_prompt_evidence(evidence):
 
     natal_sections = prompt_evidence.get("natal_sections")
     if isinstance(natal_sections, list):
+        route = prompt_evidence.get("question_route") or {}
+        subject_topic = str(
+            prompt_evidence.get("subject_topic")
+            or route.get("primary_topic")
+            or prompt_evidence.get("topic")
+            or "general"
+        ).strip().lower()
+        allowed_section_ids = MODEL_PROMPT_NATAL_SECTION_IDS_BY_TOPIC.get(
+            subject_topic,
+            MODEL_PROMPT_NATAL_SECTION_IDS,
+        )
         prompt_evidence["natal_sections"] = [
             section
             for section in natal_sections
             if isinstance(section, dict)
-            and section.get("id") in MODEL_PROMPT_NATAL_SECTION_IDS
+            and section.get("id") in allowed_section_ids
         ]
 
     topic_packet = prompt_evidence.get("topic_packet")
     topic_evidence = topic_packet.get("evidence") if isinstance(topic_packet, dict) else None
     if isinstance(topic_evidence, dict):
         relevant_vargas = {"D1"}
+        for code in topic_packet.get("required_vargas") or []:
+            if isinstance(code, str) and code:
+                relevant_vargas.add(code)
         if isinstance(topic_evidence.get("vargas"), dict):
             relevant_vargas.update(topic_evidence["vargas"].keys())
         for planet in topic_evidence.get("planets") or []:
@@ -875,7 +924,9 @@ def _narrative_request(
             "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
             "counter_indicators array, missing_data array, limitations array}, follow_up_question string|null; memory_updates "
-            "yalnız kullanıcının bu mesajda açıkça söylediği kalıcı kişisel bilgiler için kullanılabilir. "
+            "kullanıcının bu mesajda açıkça verdiği ve gelecekteki kişiselleştirmede yararlı olacak her önemli bilgiyi içersin. "
+            "Özel isimler, ilişkiler, aile, sağlık ve stres, hukuki durumlar, iletişim bilgileri ve diğer hassas/özel kişisel ayrıntılar kaydedilebilir. "
+            "Parola, API anahtarı, erişim belirteci, secret, kredi kartı, IBAN, T.C. kimlik veya benzeri güvenlik ve finans sırlarını kaydetme. "
             "memory_updates sunucuya özel alandır; operation NONE|ADD|UPDATE|SUPERSEDE, category, fact, importance, "
             "confidence ve sensitivity alanlarını taşımalıdır. Kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. simple_view.body ve pro_view.body doğal "
             "paragraf dizileri olsun. İki görünüm aynı bütünlüklü durum tespitini taşısın; Pro görünüm yalnız Aşama 1 "
@@ -975,9 +1026,11 @@ def _narrative_request(
     user_text = (
         "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON opening_summary ve "
         "answer alanlarını zorunlu, follow_up_question alanını string|null, memory_updates alanını ise array olarak üret. "
-        "memory_updates yalnız güncel kullanıcı mesajında açıkça söylenen, uzun süre anlamlı olabilecek bilgileri içersin. "
+        "memory_updates güncel kullanıcı mesajında açıkça verilen ve gelecekteki kişiselleştirmede yararlı olacak her önemli bilgiyi içersin. "
+        "Özel isimler, ilişkiler, aile, sağlık ve stres, hukuki durumlar, iletişim bilgileri ve diğer hassas/özel kişisel ayrıntılar kaydedilebilir. "
+        "Parola, API anahtarı, erişim belirteci, secret, kredi kartı, IBAN, T.C. kimlik veya benzeri güvenlik ve finans sırlarını kaydetme. "
         "Her kayıt operation NONE|ADD|UPDATE|SUPERSEDE, category (identity|career|projects|family|relationships|interests|goals|preferences|important_events|communication_preferences|astrological_context|health_sensitive), fact, importance, confidence ve sensitivity taşısın. "
-        "UPDATE veya SUPERSEDE için mümkünse supersedes_fact alanını ekle. Günlük küçük konuşma, anlık ruh hali, hava durumu, sıradan soru, model tahmini, astrolojik kanıt veya kullanıcının söylemediği yaşam olayını kaydetme. "
+        "UPDATE veya SUPERSEDE için mümkünse supersedes_fact alanını ekle. Gelecekteki konuşmayı kişiselleştirmeyecek önemsiz dolgu, hava durumu, model tahmini, astrolojik kanıt veya kullanıcının söylemediği yaşam olayını kaydetme. "
         "Yeni kullanıcı mesajı hafızadaki bilgiyle çelişiyorsa yeni mesajı esas al; eski bilgi için SUPERSEDE üret. memory_updates sunucuya özel alandır; yanıtta bu alandan veya gizli hafızadan söz etme. "
         "opening_summary kısa bir sonuç özeti olsun; sabit cümle sayısı yoktur.\n\n"
         f"DOĞRULANMIŞ AŞAMA 1:\n{_canonical_json(narrative_input)}"
@@ -1030,8 +1083,9 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "\n\nONARIM DENEMESİ: Önceki anlatı yanıtı doğrulama kapısından geçmedi. "
             f"Doğrulama hata kodu: {error_code or 'methodology_narrative_invalid'}. "
             "Bu kez yalnız DOĞRULANMIŞ AŞAMA 1 içindeki anlamı yeniden yaz. "
-            "Sadece JSON döndür; opening_summary ve answer zorunludur, memory_updates alanı açık kullanıcı bilgisi varsa array, "
-            "yoksa [] olsun. Her satır operation, category, fact, importance, confidence ve sensitivity taşısın. Bu alan sunucuya özeldir ve kullanıcıya anılmaz. "
+            "Sadece JSON döndür; opening_summary ve answer zorunludur, memory_updates alanı gelecekteki kişiselleştirmede yararlı açık kullanıcı bilgisi varsa array, "
+            "yoksa [] olsun. Özel isim, ilişki, aile, sağlık/stres, hukuk, iletişim bilgisi ve diğer hassas kişisel ayrıntılar kaydedilebilir; parola, API anahtarı, erişim belirteci, kredi kartı, IBAN ve T.C. kimlik kaydedilmez. "
+            "Her satır operation, category, fact, importance, confidence ve sensitivity taşısın. Bu alan sunucuya özeldir ve kullanıcıya anılmaz. "
             "opening_summary 1–3 tamamlanmış cümle olsun. answer en az 300 karakter ve "
             "en az iki doğal paragraf olsun; başlık, madde işareti veya etiket kullanma. "
             "İlk cümlede kullanıcının sorusuna doğrudan ve koşullu yanıt ver. "
@@ -1651,6 +1705,51 @@ def _validate_weekly_transit_evidence(evidence):
             502,
         )
 
+
+def _validate_route_evidence_payload(evidence):
+    """Fail closed before Gemini when a timing route has only metadata."""
+
+    route = evidence.get("question_route") or {}
+    if not route.get("timing_required"):
+        return
+    transits = evidence.get("transits")
+    if not isinstance(transits, dict) or not transits.get("contract_version"):
+        raise MethodologyOrchestrationError("methodology_timing_evidence_missing", 409)
+    if not transits.get("daily_timing"):
+        raise MethodologyOrchestrationError("methodology_timing_evidence_missing", 409)
+
+    scope = str(route.get("time_scope") or "")
+    records = transits.get("daily_records") or []
+    instant_snapshot = transits.get("instant_snapshot") or {}
+    if scope in {"daily", "instant"} and not records and not instant_snapshot:
+        raise MethodologyOrchestrationError("methodology_timing_evidence_missing", 409)
+
+    try:
+        start = date.fromisoformat(str(route.get("target_start")))
+        end = date.fromisoformat(str(route.get("target_end")))
+        day_count = (end - start).days + 1
+    except (TypeError, ValueError):
+        day_count = None
+    if scope == "range" and day_count is not None and 1 <= day_count <= 7:
+        if len(records) != day_count or any(not row.get("panchanga") for row in records):
+            raise MethodologyOrchestrationError("methodology_timing_evidence_missing", 409)
+
+    subject_topic = str(evidence.get("subject_topic") or "").strip().lower()
+    if subject_topic == "wellbeing" and (scope in {"daily", "instant"} or day_count and day_count <= 7):
+        candidate_records = list(records)
+        if instant_snapshot:
+            candidate_records.append(instant_snapshot)
+        has_moon = any(
+            any(str(planet.get("name") or "").casefold() == "moon" for planet in row.get("planets") or [])
+            for row in candidate_records
+            if isinstance(row, dict)
+        )
+        has_panchanga = any(
+            bool(row.get("panchanga")) for row in candidate_records if isinstance(row, dict)
+        )
+        if not has_moon or not has_panchanga:
+            raise MethodologyOrchestrationError("methodology_timing_evidence_missing", 409)
+
 def _validate_wellbeing_language(summary, evidence_rows, evidence):
     if evidence.get("subject_topic") != "wellbeing":
         return
@@ -1897,7 +1996,7 @@ def _wellbeing_timing_fact(evidence):
         return None
     question_route = evidence.get("question_route") or {}
     scope = question_route.get("time_scope")
-    if scope not in {"daily", "instant"}:
+    if scope not in {"daily", "instant", "range"}:
         return None
 
     transits = evidence.get("transits") or {}
@@ -2736,6 +2835,7 @@ def run_methodology_comparison(
     guidance = load_guidance_methodology(candidates_root)
     response_language = normalize_response_language(draft.get("response_language"))
     evidence = {**compact_evidence(draft), "response_language": response_language}
+    _validate_route_evidence_payload(evidence)
     conversation_context = draft.get("conversation_context") or []
     personal_memory_summary = str(draft.get("personal_memory_summary") or "").strip()[:PERSONAL_MEMORY_MAX_CHARS]
     personal_memory_context = draft.get("personal_memory_context")

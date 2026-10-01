@@ -10,6 +10,7 @@ from methodology_orchestrator import (
     GUIDANCE_MANIFEST,
     MethodologyOrchestrationError,
     _model_request,
+    _validate_route_evidence_payload,
     _narrative_request,
     _narrative_repair_request,
     compact_evidence,
@@ -25,7 +26,6 @@ from methodology_orchestrator import (
     validate_narrative_response,
 )
 from vertex_bridge_client import VertexBridgeClientError
-from question_classifier import ALLOWED_TOPICS
 
 
 def _draft():
@@ -158,21 +158,28 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
 
         direct_system = direct["systemInstruction"]["parts"][0]["text"]
-        self.assertIn("vedic-guidance-skill-v1@1.7.0", direct_system)
+        self.assertIn("vedic-guidance-skill-v1@1.8.0", direct_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", direct_system)
-        self.assertIn("Farkında olmayabileceğiniz parça", direct_system)
-        self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", direct_system)
-        self.assertIn("ZORUNLU CÜMLE KAPISI", direct_system)
-        self.assertIn("başkalarının yükünü üstlendiniz", direct_system)
-        self.assertIn("zorlayacaktır", direct_system)
+        self.assertIn("kendisini zaman içinde tanıyan bir Vedik astrolog ve rehberle", direct_system)
+        self.assertIn("geçmiş konuşmalar", direct_system)
+        self.assertIn("Astrolojiyi Arka Planda Kullan", direct_system)
+        self.assertIn("geçmiş bilgi → kişi modeli → gerekiyorsa astrolojik analiz", direct_system)
+        self.assertIn("Özel isimler, ilişkiler, aile, sağlık ve stres", direct_system)
 
-    def test_personal_memory_update_is_conservative_and_optional(self):
+    def test_personal_memory_update_keeps_private_details_but_rejects_secrets(self):
         self.assertEqual(
             normalize_personal_memory_update({
                 "summary": "Kullanıcı karar verirken seçenekleri yazılı karşılaştırmayı tercih ediyor.",
                 "changed": True,
             })["summary"],
             "Kullanıcı karar verirken seçenekleri yazılı karşılaştırmayı tercih ediyor.",
+        )
+        self.assertEqual(
+            normalize_personal_memory_update({
+                "summary": "Kullanıcı Ayşe ile ilişkisinde stres yaşıyor ve ayse@example.com adresini kullanıyor.",
+                "changed": True,
+            })["summary"],
+            "Kullanıcı Ayşe ile ilişkisinde stres yaşıyor ve ayse@example.com adresini kullanıyor.",
         )
         self.assertIsNone(normalize_personal_memory_update({"summary": "Satürn haritasında güçlü.", "changed": True}))
         self.assertIsNone(normalize_personal_memory_update({"summary": "API key: secret-value", "changed": True}))
@@ -197,6 +204,16 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(candidates[0]["status"], "active")
         self.assertEqual(candidates[1]["status"], "hypothesis")
         self.assertEqual(candidates[1]["confidence"], 0.75)
+
+        private_candidate = normalize_memory_candidates([{
+            "memory_type": "stable_fact",
+            "category": "health_sensitive",
+            "topic": "wellbeing",
+            "summary": "Kullanıcı Mehmet ile ilgili hukuki süreç nedeniyle stres yaşadığını ve mehmet@example.com adresini kullandığını belirtiyor.",
+            "confidence": 0.95,
+        }])
+        self.assertEqual(len(private_candidate), 1)
+        self.assertIn("Mehmet", private_candidate[0]["summary"])
 
     def test_memory_updates_keep_operations_categories_and_reject_none(self):
         updates = normalize_memory_updates([
@@ -223,6 +240,14 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(updates[0]["category"], "career")
         self.assertEqual(updates[1]["operation"], "SUPERSEDE")
         self.assertEqual(updates[1]["supersedes_fact"], "Kullanıcı öğretmen olarak çalışıyor.")
+        private_updates = normalize_memory_updates([{
+            "operation": "ADD",
+            "category": "health_sensitive",
+            "fact": "Kullanıcı Ayşe ile ilişkisinde stres yaşadığını ve ayse@example.com adresini kullandığını belirtiyor.",
+            "sensitivity": "restricted",
+        }])
+        self.assertEqual(len(private_updates), 1)
+        self.assertEqual(private_updates[0]["sensitivity"], "restricted")
         self.assertEqual(normalize_memory_updates([{
             "operation": "ADD",
             "category": "career",
@@ -430,31 +455,23 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertTrue(all(candidate["status"] == "active" for candidate in candidates))
         self.assertTrue(all(candidate["document"].startswith("---\n") for candidate in candidates))
         document = candidates[0]["document"]
-        self.assertIn("rektifikasyonla doğrulanmış saat demektir", document)
-        self.assertIn("D1 ile varga okuma sırası", document)
-        self.assertIn("D11 finans kanıtına eklenmez", document)
-        self.assertIn("tam Ṣoḍaśavarga veya tam Vimśopaka tamamlandı denmez", document)
+        self.assertIn("Astrolojik analizde tek bir gösterge üzerinden sonuç üretme", document)
+        self.assertIn("karakter → karakterin konuyla ilişkisi → konudaki fiiliyat", document)
+        self.assertIn("D1 + D9 + konu vargası aynı yönde destekliyorsa", document)
+        self.assertIn("Transit: Güncel Tetikleme", document)
 
     def test_guidance_methodology_is_versioned_and_narrative_only(self):
         guidance = load_guidance_methodology()
 
         self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
-        self.assertEqual(guidance["version"], "1.7.0")
+        self.assertEqual(guidance["version"], "1.8.0")
         self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("runtime_stage: narrative_only", guidance["document"])
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", guidance["document"])
-        self.assertIn("en fazla tek kısa", guidance["document"])
-        self.assertIn("BÜTÜNLÜKLÜ SENTEZ YÖNTEMİ", guidance["document"])
-        self.assertIn("Farkında olmayabileceğiniz parça", guidance["document"])
-        self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", guidance["document"])
-        self.assertIn("ZORUNLU CÜMLE KAPISI", guidance["document"])
-        self.assertIn("her ikinci şahıs cümlesini yeniden denetle", guidance["document"])
-        self.assertIn("SAV/BAV", guidance["document"])
-        self.assertIn("Uygulanabilir Rehberlik", guidance["document"])
-        self.assertIn("Başlık, alt başlık, numaralı liste", guidance["document"])
-        self.assertIn("genel tavsiyeyi kişisel varga yorumu gibi sunma", guidance["document"])
-        self.assertIn("D11'i kazanç/servet kanıtı olarak kullanma", guidance["document"])
-        self.assertIn("highly rewarding", guidance["document"])
+        self.assertIn("kendisini zaman içinde tanıyan bir Vedik astrolog ve rehberle", guidance["document"])
+        self.assertIn("geçmiş konuşmalar", guidance["document"])
+        self.assertIn("Astrolojiyi Arka Planda Kullan", guidance["document"])
+        self.assertIn("geçmiş bilgi → kişi modeli → gerekiyorsa astrolojik analiz", guidance["document"])
 
     def test_analysis_runs_single_active_methodology_and_selects_it(self):
         calls = []
@@ -493,7 +510,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         )
         technical_request = calls[0][1]
         system_text = technical_request["systemInstruction"]["parts"][0]["text"]
-        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.10.0", system_text)
+        self.assertIn("METODOLOJİ KİMLİĞİ: vedic-system-methodology-v1@1.11.0", system_text)
         self.assertNotIn("vedic-guidance-skill-v1", system_text)
         user_text = technical_request["contents"][0]["parts"][0]["text"]
         self.assertIn("must_not_be_sent_for_natal_topic", user_text)
@@ -505,11 +522,10 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.7.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.8.0", narrative_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
-        self.assertIn("en fazla tek kısa ve sade dayanak cümlesini", narrative_system)
-        self.assertIn("SAV/BAV", narrative_system)
         self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
+        self.assertIn("Özel isimler, ilişkiler, aile, sağlık ve stres", narrative_text)
         self.assertEqual(
             narrative_request["generationConfig"]["maxOutputTokens"],
             8192,
@@ -569,22 +585,17 @@ class MethodologyOrchestratorTest(unittest.TestCase):
     def test_methodology_uses_customer_declaration_data_gate_without_event_file(self):
         document = load_methodology_candidates()[0]["document"]
 
-        self.assertIn("Eminim** / `exact`", document)
-        self.assertIn("Yaklaşık biliyorum** / `approximate`", document)
-        self.assertIn("Hiç bilmiyorum** / `unknown`", document)
-        self.assertNotIn("`rectified` (olay dosyası ile)", document)
-        self.assertNotIn("Kayıtlı olay yoksa `data: medium`", document)
-        self.assertIn("ana sohbet aynı olayları yeniden kanıt olarak istemez", document)
+        self.assertIn("Karakter Çekirdeği", document)
+        self.assertIn("Sorulan Konuyu Belirle", document)
+        self.assertIn("Model eksik veriyi kendisi hesaplamaz veya uydurmaz", document)
 
     def test_methodology_matches_current_artifacts_and_runtime_schema(self):
         document = load_methodology_candidates()[0]["document"]
 
-        self.assertIn("`natal-interpretation.md`", document)
-        self.assertIn("`transit-three-month.md`", document)
-        self.assertIn("`canonical-snapshot.json`", document)
-        self.assertIn("`manifest.json`", document)
-        self.assertIn("`topic_packet` fiziksel bir dosya değildir", document)
-        self.assertIn("Aşama 2 `opening_summary` ve `answer` alanları", document)
+        self.assertIn("Sorulan konunun D1’deki vaadini ara", document)
+        self.assertIn("Konu Vargasını İncele", document)
+        self.assertIn("Dasha: Fiiliyatın Tezahür Zamanı", document)
+        self.assertIn("Transit: Güncel Tetikleme", document)
         self.assertNotIn("Künye:", document)
         self.assertNotIn("FACT / ATOM", document)
         self.assertNotIn("RUL-*", document)
@@ -592,10 +603,10 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertNotIn("448 kural ACTIVE", document)
         self.assertNotIn("## Danışman modu", document)
         self.assertNotIn("## Genel harita kompozisyonu", document)
-        for topic in ALLOWED_TOPICS:
-            self.assertIn(f"### `{topic}`", document)
-        for stale_topic in ("P01-REL", "P01-MAR", "P02-BIZ", "P11-TIM"):
-            self.assertNotIn(stale_topic, document)
+        self.assertNotIn("P01-REL", document)
+        self.assertNotIn("P01-MAR", document)
+        self.assertNotIn("P02-BIZ", document)
+        self.assertNotIn("P11-TIM", document)
 
     def test_narrative_rejects_methodology_or_evidence_leak(self):
         answer = (
@@ -1394,13 +1405,11 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("simple_view.body", narrative_user)
         self.assertIn("pro_view.body", narrative_user)
         self.assertIn("aynı bütünlüklü durum tespitini", narrative_system)
-        self.assertIn("Karşı kanıtı formalite olarak ekleme", narrative_system)
-        self.assertIn("görünürleşme → sıkışma/zirve → gevşeme/yeni denge", narrative_system)
-        self.assertIn("Geliriniz kesildi", narrative_system)
-        self.assertIn("Her cümleyi ihtimal kipiyle zayıflatma", narrative_system)
-        self.assertIn("İkinci şahısla uydurma yaşam öyküsü kurma", narrative_system)
-        self.assertIn("Cümlenin öznesini doğrulanmış örüntü yap", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.7.0", narrative_system)
+        self.assertIn("kendisini zaman içinde tanıyan bir Vedik astrolog ve rehberle", narrative_system)
+        self.assertIn("geçmiş konuşmalar", narrative_system)
+        self.assertIn("Astrolojiyi Arka Planda Kullan", narrative_system)
+        self.assertIn("geçmiş bilgi → kişi modeli → gerekiyorsa astrolojik analiz", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.8.0", narrative_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
         self.assertIn("follow_up_question", narrative_system)
         self.assertEqual(
@@ -1934,6 +1943,68 @@ class MethodologyOrchestratorTest(unittest.TestCase):
 
         self.assertIn("KEEP-TIMING", prompt)
         self.assertIn("evidence.transits.daily_timing", prompt)
+
+    def test_route_aware_compact_context_keeps_topic_varga_layers(self):
+        candidate = load_methodology_candidates()[0]
+        evidence = {
+            "topic": "career",
+            "subject_topic": "career",
+            "question_route": {"primary_topic": "career", "timing_required": False},
+            "topic_packet": {
+                "required_vargas": ["D1", "D9", "D10"],
+                "evidence": {
+                    "vargas": {
+                        "D1": {"marker": "KEEP-D1"},
+                        "D9": {"marker": "KEEP-D9"},
+                        "D10": {"marker": "KEEP-D10"},
+                    },
+                    "planets": [{
+                        "name": "Sun",
+                        "varga_status": {
+                            "D1": {"marker": "KEEP-PLANET-D1"},
+                            "D9": {"marker": "KEEP-PLANET-D9"},
+                            "D10": {"marker": "KEEP-PLANET-D10"},
+                            "D24": {"marker": "DROP-PLANET-D24"},
+                        },
+                    }],
+                },
+            },
+            "natal_sections": [
+                {"id": "career_packet", "content": "KEEP-CAREER-PACKET"},
+                {"id": "panchanga", "content": "DROP-UNRELATED-PANCHANGA"},
+            ],
+            "transits": {"contract_version": "vedic-compact-transit-evidence-v2"},
+        }
+        request, _ = _model_request(candidate, evidence)
+        prompt = request["contents"][0]["parts"][0]["text"]
+
+        self.assertIn("KEEP-D10", prompt)
+        self.assertIn("KEEP-PLANET-D10", prompt)
+        self.assertIn("KEEP-CAREER-PACKET", prompt)
+        self.assertNotIn("DROP-PLANET-D24", prompt)
+        self.assertNotIn("DROP-UNRELATED-PANCHANGA", prompt)
+
+    def test_timing_route_fails_closed_when_only_transit_metadata_exists(self):
+        evidence = {
+            "subject_topic": "wellbeing",
+            "question_route": {
+                "primary_topic": "wellbeing",
+                "time_scope": "range",
+                "timing_required": True,
+                "target_start": "2026-09-30",
+                "target_end": "2026-10-06",
+            },
+            "active_dasha": {"status": "available"},
+            "transits": {
+                "contract_version": "vedic-compact-transit-evidence-v2",
+                "event_data_status": "not_available",
+                "daily_timing": [{"date": "2026-09-30"}],
+                "daily_records": [],
+            },
+        }
+        with self.assertRaises(MethodologyOrchestrationError) as raised:
+            _validate_route_evidence_payload(evidence)
+        self.assertEqual(raised.exception.code, "methodology_timing_evidence_missing")
 
     def test_long_time_series_catalog_is_bounded_and_keeps_array_root(self):
         candidate = load_methodology_candidates()[0]
