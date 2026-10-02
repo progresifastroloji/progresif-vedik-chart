@@ -15,6 +15,9 @@ from app import (
     _beta_db,
     _beta_load_json,
     _pwa_full_markdown_documents,
+    _astro_test_sanitize_source,
+    _astro_test_personal_methodology,
+    _astro_test_split_response,
     _strip_natal_model_instructions,
     app,
 )
@@ -34,6 +37,21 @@ CHART_ID = "77777777-7777-5777-8777-777777777777"
 
 
 class PwaArtifactEndpointTest(unittest.TestCase):
+    def test_astro_test_keeps_natural_answer_and_separate_evidence(self):
+        answer, evidence = _astro_test_split_response(
+            "[ANALİZ]\nÖrüntü burada birleşiyor.\n[/ANALİZ]\n[KANIT]\nD1 ve transit.\n[/KANIT]"
+        )
+        self.assertEqual(answer, "Örüntü burada birleşiyor.")
+        self.assertEqual(evidence, "D1 ve transit.")
+
+    def test_personal_methodology_requires_exact_sha256_and_size(self):
+        content = "Önce D1, sonra transit oku."
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        parsed = _astro_test_personal_methodology({"content": content, "sha256": digest, "version": 2})
+        self.assertEqual(parsed["byte_size"], len(content.encode()))
+        with self.assertRaises(ValueError):
+            _astro_test_personal_methodology({"content": content, "sha256": "0" * 64})
+
     def setUp(self):
         self._old_beta_db_path = app.config["BETA_DB_PATH"]
         self._old_user_data_root = app.config["USER_DATA_ROOT"]
@@ -240,7 +258,7 @@ class PwaArtifactEndpointTest(unittest.TestCase):
         for code in selected:
             item = next(row for row in prepare.get_json()["manifest"]["artifacts"] if row["code"] == code)
             exact_content = (root / item["filename"]).read_text(encoding="utf-8")
-            self.assertIn(exact_content, prompt)
+            self.assertIn(_astro_test_sanitize_source(code, exact_content), prompt)
 
     def test_astro_test_rejects_wrong_file_count_and_other_owner(self):
         invalid_count = self.client.post(
@@ -249,7 +267,7 @@ class PwaArtifactEndpointTest(unittest.TestCase):
                 "owner_user_id": OWNER_USER_ID,
                 "profile_id": OWNER_USER_ID,
                 "chart_id": CHART_ID,
-                "selected_file_ids": ["main_chart", "career", "health"],
+                "selected_file_ids": ["main_chart", "career"],
                 "question": "Analiz et.",
             },
         )
