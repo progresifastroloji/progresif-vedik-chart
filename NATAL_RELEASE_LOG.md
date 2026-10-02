@@ -8,7 +8,7 @@ Değişmeden kalacaklar: mevcut rehberlik kişiliği, API uçları, dış doğru
 
 Kaynak: canlı Railway accurate-victory / production / vedic-api, progresifastroloji/progresif-vedik-chart claude/vedic-chart-app-a4HZU @3b6dddb. Temiz ayrı çalışma kopyası codex/natal-character-evidence. Ana kopyalardaki önceki değişiklikler korunuyor.
 
-Durum: ilk yayın ve gerçek soru kabulü doğrulandı. Son canlı dosya incelemesinde kalan iki sunum kusuru düzeltildi; bu küçük ekin yayını ve yeni dosya doğrulaması sıradaki adımdır.
+Durum: uygulama, iki kontrollü yayın, güncel dosya bütünlüğü ve gerçek canlı soru doğrulandı. Son anlatıdaki ev konumu/lordluk ifade hatası ile sınırlı disk alanı ayrı kalan bulgulardır.
 Kök nedenler: tarihsel snapshot güncellenmeden dosyalanıyor; eksik profesyonel güç statüsü zayıf diye varsayılıyor; ilk alt başlık siliniyor; aynı kanıt çok kez tekrarlanıyor.
 
 ## Yerel doğrulama
@@ -37,4 +37,11 @@ Kök nedenler: tarihsel snapshot güncellenmeden dosyalanıyor; eksik profesyone
 - Omurga özet tablosu artık ayrık nakşatra zincirinin benzersiz adımlarını ve döngü hedefini gösteriyor. Eski JSON lord_chain tüketicileri değişmedi. Evidence revision v2 eski dosyanın yeniden üretilmesini sağlar.
 - Son paket regresyonları 8/8 geçti; kayıtsız/boş/gerçek olay ayrımı, dört öncelik, zincir tekrarının olmaması, byte/hash/33 bölüm kontrolleri dahil. Artifact tekrar kullanımı ve gerçek bağlam boyutu 2/2 geçti.
 
-Sıradaki: son iki sunum düzeltmesini seçerek kaydet/gönder, Railway yayını sonrası yeni dosya ve soru yolunu doğrula; nihai yayın durumu Web proje kayıtlarında tutulacak.
+## Nihai doğrulama
+- Son kod `1b28b0a`, Railway `2eab7ea2-6bec-4c32-b355-ed5684906687` ACTIVE. Web Cloudflare `4fe5b9e4` %100 trafikte ayrıca panelden doğrulandı.
+- Aynı doğum bilgileriyle kendi profilinin normal yeniden hazırlama yolu kullanıldı; compact_natal_v1 v2 dosyası hem Railway hem Supabase üzerinden ready oldu. Kaynak dosya 98.729 bayt, 33 bölüm / 107 tablo, boş veya yalnız yokluk satırı taşıyan tablo 0. Manifestte tüm bölüm baytları ve hashler doğrulandı; dört öncelik ve ayrı zincirler korunuyor.
+- Son kaynak SHA256 `802fb0393a642600a0f18f05f64e10505c58f3c224e68f8304a5a1ad7a86e61d`. Kullanıcı bilgisayarındaki 07_natal-interpretation_CANLI_20261002.txt son dosyadır.
+- Son gerçek soru işi `88ad3759-badc-43d1-8c57-9814fe32a07d` answered/completed; 38.412 ms; teknik/anlatı birer çağrı; 58.238 token. Dört nakşatra Pro metninde ve somut öneriler Sade metninde kullanıldı. İki görünüm tam olarak 08_natal-son-canli-yorumlar-20261002.md, ekran 09_natal-son-canli-kabul-20261002.jpg dosyasında korunuyor; kişisel belgeler Git'e alınmadı.
+- Son Pro metinde “8. ve 6. ev lordlukları” ifadesi hatalıdır: bunlar Satürn/Venüsün konumları; doğru lordluklar 1./2. ve 5./10. Kaynak Aktif Gezegen Teknik Özeti doğru. Metin değiştirilmeden bulgu işaretlendi; bu görevde yeni anlatı filtresi/model/çıktı modu seçilmedi ve kusursuz anlatı iddia edilmiyor.
+- Son boş alan 42 MB. Kalıcı kapasite genişletme veya ödeme uygulanmadı. Önceden mevcut altı geniş API test uyumsuzluğu da giderilmiş sayılmıyor.
+- Son operasyon kaydı ayrı codex/natal-character-evidence dalına gönderilir; çalışan kodun üretim kaynağı 1b28b0a olarak kalır. Web proje kayıtları aynı doğrulanmış durumu içerir.
