@@ -5780,9 +5780,9 @@ class ChartApiV2Test(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["birth"]["time_confidence_label"], "eminim")
+        self.assertEqual(data["birth"]["time_confidence_label"], "biliniyor, rektifikasyonlu")
         self.assertTrue(data["data_quality"]["accepted_as_rectified"])
-        self._assert_rectified_vargas_confidence(data)
+        self._assert_rectified_vargas_confidence(data, expected_status="rectified_time_supported")
         self.assertEqual(data["analysis_modules"]["health"]["status"], "ready")
 
     def test_transits_can_use_user_selected_reference_datetime(self):
@@ -8465,7 +8465,7 @@ class ChartApiV2Test(unittest.TestCase):
                 )
                 self.assertIn("astroseek_verified", external_person_text)
                 self.assertNotIn("pending_astroseek_crosscheck", external_person_text)
-                self.assertIn("- Müşteri saat beyanı: rektifiye", external_person_text)
+                self.assertIn("- Müşteri saat beyanı: biliniyor, rektifikasyonlu", external_person_text)
                 self.assertIn(
                     "Uzman rektifikasyon kaynağı: Dış/onaylı rektifikasyon",
                     external_person_text,

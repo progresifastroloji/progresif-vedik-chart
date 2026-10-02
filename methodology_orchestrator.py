@@ -296,10 +296,10 @@ CANDIDATE_MANIFEST = (
     {
         "id": "vedic-system-methodology-v1",
         "title": "Vedik Analiz Sistem Metodolojisi",
-        "version": "1.11.0",
+        "version": "1.12.0",
         "status": "active",
         "filename": "SYSTEM_METHODOLOGY.txt",
-        "sha256": "f9014f1330296325a932fd3b06051488a159731e6762836ca13ba31207570629",
+        "sha256": "7dd52901f62eb2f21d3daa4680c34ec40d781dbbd4c2d9dd5773a005c2856d94",
     },
 )
 

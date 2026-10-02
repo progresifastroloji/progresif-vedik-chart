@@ -1,6 +1,6 @@
 ---
 document: SYSTEM_METHODOLOGY
-version: 1.11.0
+version: 1.12.0
 language: tr
 runtime_profile: compact_natal_v1
 analysis_contract: vedic-system-analysis-v5
@@ -22,6 +22,8 @@ Analiz sırasında astrolojik verileri kullanıcıya sıralamak için değil, ki
 ---
 
 ## 2.1 Karakter Çekirdeği
+
+Natal omurgada öncelikle yükselen, yükselen lordu, Ay ve Güneş birlikte değerlendirilir. Bu dört göstergenin nakşatra ve pada anlamları kişinin karakterini anlamak için önceliklidir. API içindeki genel nakşatra anlamlarını ev, yöneticilik, gezegen gücü, drishti ve D9 koşullarıyla sentezle; yalnız nakşatra adına dayanarak kişiye hüküm verme. Güneşin evini, nakşatrasını, nakşatra lordunu ve dispozitörünü de karakter çekirdeğine kat.
 
 Sorunun öznesi kişinin kendisi, karakteri, davranışları, tercihleri, eğilimleri veya tekrar eden yaşam örüntüleriyse önce kişinin karakter çekirdeğini değerlendir.
 
