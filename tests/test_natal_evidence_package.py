@@ -80,6 +80,11 @@ class NatalEvidencePackageTest(unittest.TestCase):
         self.assertLess(content.index("D9 Navamsha Full Tablo"), content.index("D2 Hora Full Tablo"))
         self.assertNotIn("Kartografi Çekirdeği", content)
         self.assertNotIn("Okunmuş Teknik Zincir", content)
+        self.assertNotIn("Moon → Moon", content)
+        self.assertIn("Lagna → Moon → Mars", content)
+        events_section = content.split("## 32. Kayıtlı Yaşam Olayları\n", 1)[1].split("## 33.", 1)[0]
+        self.assertNotIn("|", events_section)
+        self.assertIn("veri kaynağı", events_section)
         legacy = _build_natal_markdown(self.chart, "Test", "PWA")
         self.assertLess(legacy.index("Karakter önceliği"), legacy.index("## Lagna\n"))
         for name in ("Shravana", "Magha", "Dhanishta", "Rohini"):
@@ -94,6 +99,21 @@ class NatalEvidencePackageTest(unittest.TestCase):
         self.assertNotIn("|", empty)
         timing = _beta_selected_natal_sections(self.chart, "career", timing_mode=True)
         self.assertIn("varga_confidence", [s["id"] for s in timing])
+
+    def test_registered_events_are_preserved_but_absence_is_not_a_table(self):
+        content, _ = _build_natal_interpretation_package_markdown(
+            self.chart, "Test", "PWA", rectification_record={"events": []},
+        )
+        section = content.split("## 32. Kayıtlı Yaşam Olayları\n", 1)[1].split("## 33.", 1)[0]
+        self.assertNotIn("|", section)
+        self.assertIn("Kayıtlı yaşam olayı yok", section)
+        content, _ = _build_natal_interpretation_package_markdown(
+            self.chart, "Test", "PWA", rectification_record={"events": [
+                {"date": "2026-01-01", "label": "Test olayı", "documented": True}
+            ]},
+        )
+        section = content.split("## 32. Kayıtlı Yaşam Olayları\n", 1)[1].split("## 33.", 1)[0]
+        self.assertIn("| 2026-01-01 | Test olayı |", section)
 
     def test_cache_expires_at_short_period_boundary(self):
         chart = copy.deepcopy(self.chart)

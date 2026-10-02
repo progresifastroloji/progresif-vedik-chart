@@ -111,7 +111,7 @@ app.config["USER_DATA_ROOT"] = os.environ.get(
 PWA_ARTIFACT_SCHEMA_VERSION = "vedic-pwa-artifacts-v3"
 PWA_ARTIFACT_MANIFEST_VERSION = "vedic-pwa-artifact-manifest-v2"
 PWA_ARTIFACT_GENERATOR_REVISION = "compact-natal-20260826-3"
-NATAL_EVIDENCE_REVISION = "natal-character-20261002-v1"
+NATAL_EVIDENCE_REVISION = "natal-character-20261002-v2"
 PWA_ARTIFACT_PROFILE_COMPACT = "compact_natal_v1"
 PWA_ARTIFACT_PROFILE_LEGACY = "legacy_full_v2"
 PWA_ARTIFACT_LEGACY_SCHEMA_VERSIONS = (
@@ -15637,12 +15637,15 @@ def _expert_vedic_spine_rows(chart):
     rows = []
     for anchor in spine.get("anchors") or []:
         position = anchor.get("position") or {}
-        chain = anchor.get("lord_chain") or []
+        structured_chain = anchor.get("nakshatra_lord_chain") or {}
+        chain = structured_chain.get("steps") or anchor.get("lord_chain") or []
         chain_text = " → ".join(
-            str(item.get("planet") or item.get("nakshatra_lord") or item.get("sign_lord") or "")
+            str(item.get("planet") or item.get("point") or item.get("nakshatra_lord") or item.get("sign_lord") or "")
             for item in chain
             if item
         )
+        if structured_chain.get("termination") == "cycle":
+            chain_text += f" (döngü: {structured_chain.get('terminal_planet')})"
         rows.append([
             anchor.get("anchor", ""),
             position.get("planet") or "Lagna",
@@ -15697,7 +15700,7 @@ def _expert_vedic_spine_markdown(chart):
         "- Zincirler API tarafından hesaplanmış konum, burç yöneticisi ve nakshatra lordu verilerinden oluşturulur; model yeni hesap yapmaz.",
         "",
         _markdown_table(
-            ["Çapa", "Gezegen", "Burç", "Ev", "Nakshatra", "Pada", "Nakshatra Lordu", "Burç Lordu", "Lord Zinciri"],
+            ["Çapa", "Gezegen", "Burç", "Ev", "Nakshatra", "Pada", "Nakshatra Lordu", "Burç Lordu", "Nakşatra Lordu Zinciri"],
             _expert_vedic_spine_rows(chart),
         ),
         "",
@@ -30581,12 +30584,15 @@ def _pwa_natal_sections(chart, person_name, group_name, rectification_record=Non
     planet_blocks = []
     for planet_name, planet_label in PLANET_ROLE_PACKAGE_ORDER:
         planet_blocks.extend(_natal_planet_sections(chart, planet_name, planet_label))
-    life_events = _markdown_table(
-        ["Tarih", "Olay", "Tür", "Konu", "Güven", "Belgeli", "Kaynak", "Önem"],
-        _session_event_rows(rectification_record),
-    )
-    if not rectification_record:
-        life_events = "- Yaşam olayı veri kaynağı bu PWA üretim yoluna bağlı değildir; kayıt uydurulmaz.\n\n" + life_events
+    if (rectification_record or {}).get("events"):
+        life_events = _markdown_table(
+            ["Tarih", "Olay", "Tür", "Konu", "Güven", "Belgeli", "Kaynak", "Önem"],
+            _session_event_rows(rectification_record),
+        )
+    elif rectification_record:
+        life_events = "- Kayıtlı yaşam olayı yok; olay tablosu için kaynak veri bulunmuyor."
+    else:
+        life_events = "- Yaşam olayı veri kaynağı bu PWA üretim yoluna bağlı değildir; kayıt uydurulmaz."
     validation_registry = (meta.get("calculation_validation_registry") or _calculation_validation_registry())
 
     sections = [
