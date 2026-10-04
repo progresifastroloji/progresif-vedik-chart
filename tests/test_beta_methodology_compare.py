@@ -30,7 +30,9 @@ from app import (
     _beta_compact_transit_evidence,
     _beta_claim_chat_job,
     _beta_process_chat_job,
+    _build_transit_dasha_cross_reference,
     _normalize_important_sky_events,
+    _transit_pack_cross_reference_rows,
 )
 from methodology_orchestrator import (
     MAX_PROMPT_BYTES,
@@ -1121,6 +1123,102 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertLess(len(_canonical_json(request).encode("utf-8")), MAX_PROMPT_BYTES)
         self.assertEqual(transit_pack.call_args.kwargs["period"], "range")
         self.assertEqual(transit_pack.call_args.kwargs["end_date"], "2026-08-02")
+
+    def test_dasha_transit_cross_reference_exposes_bidirectional_activation_details(self):
+        chart = {
+            "planets": [{
+                "name": "Saturn",
+                "sign": "Oğlak",
+                "sign_en": "Capricorn",
+                "sign_index": 9,
+                "longitude": 280.0,
+                "degree": 10.0,
+                "degree_str": "10°00'",
+                "house": 1,
+                "nakshatra": {"name": "Shravana", "pada": 2, "lord": "Moon"},
+            }],
+        }
+        transit_planets = [{
+            "name": "Saturn",
+            "sign": "Pisces",
+            "sign_tr": "Balık",
+            "sign_index": 11,
+            "degree": 4.5,
+            "degree_str": "4°30'",
+            "nakshatra": {"name": "Uttara Bhadrapada", "pada": 1, "lord": "Saturn"},
+            "motion": {"retrograde": True, "speed": -0.04, "speed_status": "retrograde"},
+            "house_from_natal_lagna": 3,
+            "house_from_natal_moon": 5,
+            "natal_planets_in_sign": [],
+        }, {
+            "name": "Jupiter",
+            "sign": "Pisces",
+            "sign_tr": "Balık",
+            "sign_index": 11,
+            "degree": 6.0,
+            "degree_str": "6°00'",
+            "nakshatra": {"name": "Uttara Bhadrapada", "pada": 1, "lord": "Saturn"},
+            "motion": {"retrograde": False, "speed": 0.12, "speed_status": "normal"},
+            "house_from_natal_lagna": 3,
+            "house_from_natal_moon": 5,
+            "natal_planets_in_sign": [],
+        }]
+        natal_contacts = [{
+            "transit_planet": "Saturn",
+            "natal_planet": "Saturn",
+            "contact_type": "degree_orb",
+            "orb": 1.0,
+            "sign": "Pisces",
+            "transit_degree_str": "4°30'",
+            "natal_degree_str": "10°00'",
+            "house_from_lagna": 3,
+            "house_from_moon": 5,
+        }, {
+            "transit_planet": "Jupiter",
+            "natal_planet": "Saturn",
+            "contact_type": "same_sign",
+            "orb": 6.0,
+            "sign": "Pisces",
+            "transit_degree_str": "6°00'",
+            "natal_degree_str": "10°00'",
+            "house_from_lagna": 3,
+            "house_from_moon": 5,
+        }]
+        dashas = {
+            "vimshottari": {
+                "current_active": {
+                    "maha": {"lord": "Saturn", "actual_start": "2026-01-01", "actual_end": "2045-01-01"},
+                    "path": ["Saturn"],
+                },
+            },
+        }
+
+        cross_reference = _build_transit_dasha_cross_reference(
+            chart,
+            transit_planets,
+            natal_contacts,
+            dashas,
+        )
+        row = cross_reference["rows"][0]
+
+        self.assertEqual(row["transit"]["degree_str"], "4°30'")
+        self.assertEqual(row["transit"]["nakshatra_lord"], "Saturn")
+        self.assertTrue(row["transit"]["retrograde"])
+        self.assertEqual(row["transit"]["speed"], -0.04)
+        self.assertEqual(row["natal"]["sign_tr"], "Oğlak")
+        self.assertEqual(row["natal"]["nakshatra"], "Shravana")
+        self.assertEqual(row["contact_summary"]["incoming_transit_planets"], ["Saturn", "Jupiter"])
+        self.assertEqual(row["contact_summary"]["own_transit_contact_count"], 1)
+        self.assertEqual(row["contact_summary"]["incoming_transit_contact_count"], 2)
+        self.assertEqual(row["contact_summary"]["incoming_transit_contact_types"], {"degree_orb": 1, "same_sign": 1})
+        self.assertIn("Saturn, Jupiter", row["activation_summary"])
+
+        markdown_row = _transit_pack_cross_reference_rows({"dasha_cross_reference": cross_reference})[0]
+        self.assertEqual(markdown_row[3], "4°30'")
+        self.assertEqual(markdown_row[4], "Uttara Bhadrapada")
+        self.assertEqual(markdown_row[12], "Saturn, Jupiter")
+        self.assertIn("degree_orb: 1", markdown_row[13])
+        self.assertIn("same_sign: 1", markdown_row[14])
 
 
 if __name__ == "__main__":

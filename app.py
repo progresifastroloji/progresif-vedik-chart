@@ -3490,6 +3490,45 @@ def _transit_name_for_dasha_lord(lord):
     return lord
 
 
+def _dasha_contact_type_counts(contacts):
+    counts = {}
+    for contact in contacts:
+        contact_type = contact.get("contact_type") or "unknown"
+        counts[contact_type] = counts.get(contact_type, 0) + 1
+    return counts
+
+
+def _dasha_contact_type_summary(counts):
+    if not counts:
+        return "yok"
+    return ", ".join(
+        f"{contact_type}: {count}"
+        for contact_type, count in sorted(counts.items())
+    )
+
+
+def _dasha_activation_summary(lord, contacts_as_transit, contacts_to_natal_lord):
+    own_count = len(contacts_as_transit)
+    incoming_count = len(contacts_to_natal_lord)
+    incoming_planets = []
+    for contact in contacts_to_natal_lord:
+        planet = contact.get("transit_planet")
+        if planet and planet not in incoming_planets:
+            incoming_planets.append(planet)
+
+    own_text = (
+        f"Transit {lord} kaynaklı natal temaslar: {own_count}"
+        if own_count
+        else f"Transit {lord} kaynaklı natal temas yok"
+    )
+    incoming_text = (
+        f"natal {lord} konumuna gelen transitler: {', '.join(incoming_planets)} ({incoming_count} temas)"
+        if incoming_planets
+        else f"natal {lord} konumuna gelen transit yok ({incoming_count} temas)"
+    )
+    return f"{own_text}; {incoming_text}."
+
+
 def _build_transit_dasha_cross_reference(chart, transit_planets, natal_contacts, dashas):
     active = dashas.get("vimshottari", {}).get("current_active", {}) if dashas else {}
     active_rows = []
@@ -3516,6 +3555,16 @@ def _build_transit_dasha_cross_reference(chart, transit_planets, natal_contacts,
             contact for contact in natal_contacts
             if contact["natal_planet"] == lord
         ]
+        transit_motion = (transit.get("motion") or {}) if transit else {}
+        transit_nakshatra = (transit.get("nakshatra") or {}) if transit else {}
+        natal_nakshatra = (natal.get("nakshatra") or {}) if natal else {}
+        own_contact_types = _dasha_contact_type_counts(contacts_as_transit)
+        incoming_contact_types = _dasha_contact_type_counts(contacts_to_natal_lord)
+        incoming_transit_planets = []
+        for contact in contacts_to_natal_lord:
+            contact_planet = contact.get("transit_planet")
+            if contact_planet and contact_planet not in incoming_transit_planets:
+                incoming_transit_planets.append(contact_planet)
 
         active_rows.append({
             "level": level,
@@ -3526,19 +3575,47 @@ def _build_transit_dasha_cross_reference(chart, transit_planets, natal_contacts,
                 "available": transit is not None,
                 "sign": transit.get("sign") if transit else None,
                 "sign_tr": transit.get("sign_tr") if transit else None,
+                "sign_index": transit.get("sign_index") if transit else None,
+                "degree": transit.get("degree") if transit else None,
                 "degree_str": transit.get("degree_str") if transit else None,
+                "nakshatra": transit_nakshatra.get("name"),
+                "nakshatra_pada": transit_nakshatra.get("pada"),
+                "nakshatra_lord": transit_nakshatra.get("lord"),
+                "retrograde": transit_motion.get("retrograde"),
+                "speed": transit_motion.get("speed"),
+                "speed_status": transit_motion.get("speed_status"),
                 "house_from_natal_lagna": transit.get("house_from_natal_lagna") if transit else None,
                 "house_from_natal_moon": transit.get("house_from_natal_moon") if transit else None,
                 "natal_planets_in_sign": transit.get("natal_planets_in_sign", []) if transit else [],
             },
             "natal": {
                 "available": natal is not None,
+                "name": lord,
                 "sign": natal.get("sign_en") if natal else None,
+                "sign_tr": natal.get("sign") if natal else None,
+                "sign_index": natal.get("sign_index") if natal else None,
+                "longitude": natal.get("longitude") if natal else None,
+                "degree": natal.get("degree") if natal else None,
                 "house": natal.get("house") if natal else None,
                 "degree_str": natal.get("degree_str") if natal else None,
+                "nakshatra": natal_nakshatra.get("name"),
+                "nakshatra_pada": natal_nakshatra.get("pada"),
+                "nakshatra_lord": natal_nakshatra.get("lord"),
             },
             "contacts_as_transit": contacts_as_transit,
             "contacts_to_natal_lord": contacts_to_natal_lord,
+            "contact_summary": {
+                "own_transit_contact_count": len(contacts_as_transit),
+                "own_transit_contact_types": own_contact_types,
+                "incoming_transit_contact_count": len(contacts_to_natal_lord),
+                "incoming_transit_contact_types": incoming_contact_types,
+                "incoming_transit_planets": incoming_transit_planets,
+            },
+            "activation_summary": _dasha_activation_summary(
+                lord,
+                contacts_as_transit,
+                contacts_to_natal_lord,
+            ),
         })
 
     return {
@@ -3602,9 +3679,9 @@ def _build_transits(chart, dashas=None, transit_reference=None):
         "degree_str": dms_str(ketu_longitude % 30.0),
         "nakshatra": get_nakshatra(ketu_longitude),
         "motion": {
-            "retrograde": True,
+            "retrograde": rahu["motion"]["retrograde"],
             "speed": rahu["motion"]["speed"],
-            "speed_status": "retrograde",
+            "speed_status": rahu["motion"]["speed_status"],
         },
         "house_from_natal_lagna": ((ketu_sign_index - chart["lagna"]["sign_index"]) % 12) + 1,
         "house_from_natal_moon": ((ketu_sign_index - moon["sign_index"]) % 12) + 1,
@@ -24275,6 +24352,31 @@ def _transit_pack_nakshatra_label(day, name):
     return f"{name_text}{pada_text}{lord_text}"
 
 
+def _transit_pack_natal_lord_label(natal):
+    if not natal:
+        return "yok"
+    parts = [
+        natal.get("sign_tr") or natal.get("sign") or "",
+        natal.get("degree_str") or "",
+    ]
+    if natal.get("house") is not None:
+        parts.append(f"Ev {natal.get('house')}")
+    return " ".join(part for part in parts if part).strip() or "yok"
+
+
+def _transit_pack_natal_lord_nakshatra_label(natal):
+    if not natal or not natal.get("nakshatra"):
+        return "yok"
+    pada = natal.get("nakshatra_pada")
+    lord = natal.get("nakshatra_lord")
+    parts = [natal.get("nakshatra")]
+    if pada is not None:
+        parts.append(f"Pada {pada}")
+    if lord:
+        parts.append(f"({lord})")
+    return " ".join(parts)
+
+
 def _transit_pack_contact_label(contact):
     orb = contact.get("orb")
     orb_text = f" {round(orb, 2)}°" if isinstance(orb, (int, float)) else ""
@@ -24371,13 +24473,26 @@ def _transit_pack_cross_reference_rows(day):
             row.get("level"),
             row.get("lord"),
             row.get("transit", {}).get("sign"),
-            row.get("transit", {}).get("house_from_natal_lagna"),
-            row.get("transit", {}).get("house_from_natal_moon"),
-            len(row.get("contacts_as_transit", [])),
-            len(row.get("contacts_to_natal_lord", [])),
+            row.get("transit", {}).get("degree_str"),
+            row.get("transit", {}).get("nakshatra"),
+            row.get("transit", {}).get("nakshatra_pada"),
+            row.get("transit", {}).get("nakshatra_lord"),
+            "retro" if row.get("transit", {}).get("retrograde") else "direkt",
+            row.get("transit", {}).get("speed"),
+            row.get("transit", {}).get("speed_status"),
+            _transit_pack_natal_lord_label(row.get("natal", {})),
+            _transit_pack_natal_lord_nakshatra_label(row.get("natal", {})),
+            ", ".join(row.get("contact_summary", {}).get("incoming_transit_planets", [])) or "yok",
+            _dasha_contact_type_summary(
+                row.get("contact_summary", {}).get("own_transit_contact_types", {})
+            ),
+            _dasha_contact_type_summary(
+                row.get("contact_summary", {}).get("incoming_transit_contact_types", {})
+            ),
+            row.get("activation_summary"),
         ]
         for row in day.get("dasha_cross_reference", {}).get("rows", [])
-    ] or [["status", "not_available", "", "", "", "", ""]]
+    ] or [["status", "not_available", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]]
 
 
 def _transit_pack_contact_rows(day):
@@ -24653,7 +24768,14 @@ def _build_transit_pack_markdown(pack):
             "#### Dasha Transit Kesişimi",
             "",
             _markdown_table(
-                ["Seviye", "Lord", "Transit Burç", "Lagna Ev", "Ay Ev", "Transit Temas", "Natal Lord Temas"],
+                [
+                    "Seviye", "Daśā Lord", "Transit Burç", "Transit Derece",
+                    "Transit Nakshatra", "Pada", "Nakshatra Lordu", "Yön",
+                    "Transit Hızı", "Hız Durumu", "Natal Lord Konumu",
+                    "Natal Lord Nakshatrası", "Natal Lorduna Gelen Transitler",
+                    "Kendi Transit Temasları", "Natal Lord Temasları",
+                    "Aktivasyon Özeti",
+                ],
                 _transit_pack_cross_reference_rows(day),
             ),
             "",

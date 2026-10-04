@@ -286,7 +286,7 @@ def calculate_chart(year, month, day, hour, minute, tz_offset, lat, lon, second=
         "sign_en": SIGNS_EN[ketu_sign_idx],
         "degree": ketu_degree,
         "degree_str": dms_str(ketu_degree),
-        "retrograde": True,
+        "retrograde": is_retrograde(rahu_data["speed"]),
         "speed": rahu_data["speed"],
         "house": ketu_house,
         "nakshatra": ketu_nak,

@@ -4783,6 +4783,19 @@ class ChartApiV2Test(unittest.TestCase):
             transit_names,
             {"Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn", "Rahu (True)", "Ketu"},
         )
+        transit_by_name = {planet["name"]: planet for planet in transits["planets"]}
+        self.assertEqual(
+            transit_by_name["Ketu"]["motion"]["retrograde"],
+            transit_by_name["Rahu (True)"]["motion"]["retrograde"],
+        )
+        self.assertEqual(
+            transit_by_name["Ketu"]["motion"]["speed"],
+            transit_by_name["Rahu (True)"]["motion"]["speed"],
+        )
+        self.assertEqual(
+            transit_by_name["Ketu"]["motion"]["speed_status"],
+            transit_by_name["Rahu (True)"]["motion"]["speed_status"],
+        )
         expected_transit_keys = {
             "id",
             "name",
