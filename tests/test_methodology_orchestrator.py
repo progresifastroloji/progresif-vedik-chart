@@ -158,7 +158,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             )
 
         direct_system = direct["systemInstruction"]["parts"][0]["text"]
-        self.assertIn("vedic-guidance-skill-v1@1.8.0", direct_system)
+        self.assertIn("vedic-guidance-skill-v1@1.8.2", direct_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", direct_system)
         self.assertIn("kendisini zaman içinde tanıyan bir Vedik astrolog ve rehberle", direct_system)
         self.assertIn("geçmiş konuşmalar", direct_system)
@@ -464,7 +464,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         guidance = load_guidance_methodology()
 
         self.assertEqual(guidance["id"], "vedic-guidance-skill-v1")
-        self.assertEqual(guidance["version"], "1.8.0")
+        self.assertEqual(guidance["version"], "1.8.2")
         self.assertEqual(guidance["sha256"], GUIDANCE_MANIFEST["sha256"])
         self.assertIn("runtime_stage: narrative_only", guidance["document"])
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", guidance["document"])
@@ -522,7 +522,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("Yarınki iş görüşmem nasıl geçer?", narrative_text)
         self.assertIn("Ay etkisini de açıklar mısın?", narrative_text)
         self.assertIn("TEKNİK METODOLOJİ BELGESİ", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.8.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.8.2", narrative_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
         self.assertIn("'Uygulanabilir Rehberlik' diye bir bölüm açma", narrative_system)
         self.assertIn("Özel isimler, ilişkiler, aile, sağlık ve stres", narrative_text)
@@ -1409,7 +1409,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("geçmiş konuşmalar", narrative_system)
         self.assertIn("Astrolojiyi Arka Planda Kullan", narrative_system)
         self.assertIn("geçmiş bilgi → kişi modeli → gerekiyorsa astrolojik analiz", narrative_system)
-        self.assertIn("vedic-guidance-skill-v1@1.8.0", narrative_system)
+        self.assertIn("vedic-guidance-skill-v1@1.8.2", narrative_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
         self.assertIn("follow_up_question", narrative_system)
         self.assertEqual(
