@@ -306,10 +306,10 @@ CANDIDATE_MANIFEST = (
 GUIDANCE_MANIFEST = {
     "id": "vedic-guidance-skill-v1",
     "title": "Vedik Bütünlüklü Durum Yorumu ve Rehberlik Metodolojisi",
-    "version": "1.8.0",
+    "version": "1.8.2",
     "status": "active",
     "filename": "VEDIC_GUIDANCE_METHODOLOGY.txt",
-    "sha256": "4e2c129ced1b7ad32d2b2b66aaf98fcaac666eef0df42f7e7bf5287337f6d0b7",
+    "sha256": "f715d3ea052c9abc14fcb95589b2ad4d843204159f366deb0ad53f0b4b21d780",
 }
 
 
@@ -972,15 +972,22 @@ def _narrative_request(
         "conversation_context aynı açık sayfadaki önceki soru-cevaplarıdır; anlatımın devamlılığını "
         "korumak için kullan fakat oradan yeni astrolojik teknik iddia çıkarma. Yalnız güncel soruyu yanıtla. "
         "Tonun sıcak, samimi ve yargılamayan olsun; kullanıcıya tepeden konuşma veya aşırı resmî kalma. "
+        "Türkçe yanıtların genel hitabı sabit olarak ‘sen’ olsun; kullanıcı farklı yazsa bile ‘siz/sizin/size’ biçimine dönme. "
         "Kullanıcının açıkça verdiği hedef veya bağlamı, cevabı daha insani ve ilgili kılmak için doğal biçimde kullan; "
         "kişiyi tanıyormuş gibi hassas çıkarım yapma. follow_up_question yalnız cevabın içinden doğal olarak çıkan ve "
         "sonraki analizi gerçekten kişiselleştirecek tek bir kısa soruysa dolu olsun; gerek yoksa null döndür. "
         "Jenerik devam çağrısı veya birden fazla soru üretme. "
+        "Yanıtı sohbet gibi kur: önce sorunun doğrudan ve koşullu cevabını ver, sonra bunu taşıyan göstergeleri tek bir ana anlam içinde yorumla; "
+        "analizi ayrı ayrı sonuçların veya teknik maddelerin dökümüne çevirme. Kullanıcı 'uymadı', 'öyle değil' veya 'bende böyle değil' diyerek seni düzeltirse "
+        "önceki varsayımı savunma; onu geri çek, mümkün olan farklı görünümleri açıkla ve en fazla bir doğal soru sor. "
+        "'Benim hakkımda ne biliyorsun?' sorusunda kullanıcının konuşmada açıkça söylediği bilgileri haritadan türetilen koşullu yorumlardan açıkça ayır; "
+        "harita yorumunu yaşanmış biyografik gerçek gibi sunma. Her yanıtta en fazla bir öncelikli, küçük ve uygulanabilir öneri ver. "
+        "opening_summary içinde söylediğini answer alanında mekanik biçimde tekrarlama; anlamı koruyacak doğal uzunlukta konuş ve sabit uzunluk dayatma. "
         "personal_memory_summary sunucu tarafından hazırlanan gizli kişiselleştirme özetidir; kanıt değildir ve "
         "kullanıcıya bundan söz etme. Yalnız kullanıcının açıkça söylediği, istikrarlı tercih/hedef/bağlamı doğal "
         "bir devamlılık için kullan; modelin çıkardığı astrolojik, psikolojik veya hassas bilgileri ekleme. "
         "personal_memory_context yalnız mevcut soruyla gerçekten ilgiliyse kullanılmalıdır; hafızadaki bilgileri listeleme veya mekanik biçimde tekrar etme, "
-        "gereksiz yere 'daha önce söylemiştiniz' deme. Yeni kullanıcı mesajı hafızadaki bilgiyle çelişiyorsa her zaman yeni mesajı esas al. "
+        "gereksiz yere 'daha önce söylemiştin' deme. Yeni kullanıcı mesajı hafızadaki bilgiyle çelişiyorsa her zaman yeni mesajı esas al. "
         "Hafızadan yeni bilgi üretme, eksik bilgiyi tahmin etme ve hafızadaki hassas bilgiyi ilgisiz bir konuya taşıma. "
         "opening_summary alanında cevabın ana sonucunu teknik kanıt listesine girmeden kısa ve anlaşılır biçimde özetle; "
         "bu alanda gezegen, ev, burç, nakshatra, dasha veya transit adı hiç kullanma. "
@@ -1089,6 +1096,10 @@ def _narrative_repair_request(request, payload=None, error_code=None):
             "opening_summary 1–3 tamamlanmış cümle olsun. answer en az 300 karakter ve "
             "en az iki doğal paragraf olsun; başlık, madde işareti veya etiket kullanma. "
             "İlk cümlede kullanıcının sorusuna doğrudan ve koşullu yanıt ver. "
+            "Yanıtı tek bir ana anlam etrafında kur; ayrı ayrı sonuç veya teknik madde dökümü yapma. "
+            "Kullanıcı seni düzeltirse önceki varsayımı geri çek, alternatif görünümleri açıkla ve en fazla bir doğal soru sor. "
+            "'Benim hakkımda ne biliyorsun?' sorusunda açıkça söylenmiş bilgileri harita yorumundan ayır; harita yorumunu biyografik gerçek gibi sunma. "
+            "En fazla bir öncelikli, küçük ve uygulanabilir öneri ver; opening_summary anlamını answer içinde mekanik biçimde tekrarlama ve sabit uzunluk dayatma. "
             "Teknik terim, kanıt yolu, metodoloji adı, yeni tarih/derece veya kaynakta olmayan "
             "meslek/olay ekleme. Para, sağlık, hukuk ve ilişki konularında garanti, kesin sonuç, "
             "kayıp/kriz hükmü veya teşhis dili kullanma. Doğrulanmış analiz eksikse bunu açıkça "
@@ -1315,76 +1326,76 @@ def _fallback_narrative_response(evidence):
 
     templates = {
         "character": (
-            "Kendinizi tek bir özellikle tanımlamak yerine, tekrar eden güçlü yönleriniz ile zorlandığınız kullanım biçimlerini birlikte gözlemlemek daha açıklayıcıdır.",
-            "Doğal olarak kolay üstlendiğiniz sorumlulukları, çevrenizden sık aldığınız geri bildirimleri ve baskı altında değişen davranışlarınızı ayrı ayrı not edin. Böylece size gerçekten ait olan kapasiteyi, yalnızca alışkanlıkla sürdürdüğünüz rollerden ayırabilirsiniz.",
+            "Kendini tek bir özellikle tanımlamak yerine, tekrar eden güçlü yönlerin ile zorlandığın kullanım biçimlerini birlikte gözlemlemek daha açıklayıcıdır.",
+            "Doğal olarak kolay üstlendiğin sorumlulukları, çevrenden sık aldığın geri bildirimleri ve baskı altında değişen davranışlarını ayrı ayrı not al. Böylece sana gerçekten ait olan kapasiteyi, yalnızca alışkanlıkla sürdürdüğün rollerden ayırabilirsin.",
         ),
         "career": (
             "Mesleki ilerlemede en sağlıklı yön, sorumlulukları ve başarı ölçütlerini netleştirip geri alınabilir adımlarla ilerlemektir.",
-            "Yeni bir iş, görev veya ortaklık gündeme geldiğinde yetkiyi, gelir paylaşımını, teslim tarihlerini ve ayrılma koşullarını baştan yazılı hale getirin. Belirsiz kalan noktalar netleşmeden büyük bir taahhüt vermeyin.",
+            "Yeni bir iş, görev veya ortaklık gündeme geldiğinde yetkiyi, gelir paylaşımını, teslim tarihlerini ve ayrılma koşullarını baştan yazılı hale getir. Belirsiz kalan noktalar netleşmeden büyük bir taahhüt verme.",
         ),
         "marriage": (
             "Yakın ilişkilerde acele bir sonuca varmak yerine karşılıklılık, sınırlar ve davranışların sürekliliği üzerinden ilerlemek daha koruyucudur.",
-            "Beklentilerinizi açıkça konuşun ve sözlerle davranışların zaman içinde ne kadar örtüştüğünü gözlemleyin. Kendi ihtiyaçlarınızı bastırmadan, diğer kişinin sınırlarını da varsaymadan doğrudan iletişim kurun.",
+            "Beklentilerini açıkça konuş ve sözlerle davranışların zaman içinde ne kadar örtüştüğünü gözlemle. Kendi ihtiyaçlarını bastırmadan, diğer kişinin sınırlarını da varsaymadan doğrudan iletişim kur.",
         ),
         "wealth": (
             "Maddi konularda hızlı kazanç arayışından çok nakit akışını, yükümlülükleri ve kayıp sınırını görünür kılmak daha güvenli bir temel oluşturur.",
-            "Gelir, zorunlu gider, borç ve birikim kalemlerini ayrı izleyin; yatırım veya büyük harcama kararını tek bir beklentiye bağlamayın. Tutar ve risk içeren kararlarda bağımsız finansal görüş alın.",
+            "Gelir, zorunlu gider, borç ve birikim kalemlerini ayrı izle; yatırım veya büyük harcama kararını tek bir beklentiye bağlama. Tutar ve risk içeren kararlarda bağımsız finansal görüş al.",
         ),
         "health": (
             "Bedensel iyi oluş konusunda en güvenli yaklaşım, belirtileri küçümsemeden düzenli takip etmek ve astrolojik yorumu tıbbi değerlendirmenin yerine koymamaktır.",
-            "Uyku, enerji, ağrı, beslenme ve günlük işlevdeki değişimleri tarihleriyle kaydedin. Yeni, şiddetli veya kalıcı bir belirti varsa gecikmeden uygun bir sağlık uzmanına başvurun; burada verilen çerçeveyi tanı ya da tedavi olarak kullanmayın.",
+            "Uyku, enerji, ağrı, beslenme ve günlük işlevdeki değişimleri tarihleriyle kaydet. Yeni, şiddetli veya kalıcı bir belirti varsa gecikmeden uygun bir sağlık uzmanına başvur; burada verilen çerçeveyi tanı ya da tedavi olarak kullanma.",
         ),
         "family": (
             "Aile ve ebeveynlik alanında yükleri görünür kılmak, konuşulmayan beklentileri varsaymak yerine açıkça paylaşmak dengeyi güçlendirir.",
-            "Bakım, ev düzeni, maddi sorumluluk ve karar yetkisini kimlerin üstlendiğini birlikte gözden geçirin. Herkes adına karar vermeden ihtiyaçları tek tek sorun ve çözümü küçük, takip edilebilir görevler halinde paylaşın.",
+            "Bakım, ev düzeni, maddi sorumluluk ve karar yetkisini kimlerin üstlendiğini birlikte gözden geçir. Herkes adına karar vermeden ihtiyaçları tek tek sor ve çözümü küçük, takip edilebilir görevler halinde paylaş.",
         ),
         "education": (
             "Eğitim ve uzmanlaşmada en verimli yön, tek bir hedef seçip çalışma düzenini ölçülebilir küçük adımlara bölmektir.",
-            "Hedeflediğiniz sınavı, programı veya beceriyi somut bir çıktı ile tanımlayın; haftalık çalışma süresi, deneme sonucu ve eksik konu gibi göstergeleri takip edin. Plan işlemiyorsa hedefi değil önce yöntemi ve çalışma yükünü düzeltin.",
+            "Hedeflediğin sınavı, programı veya beceriyi somut bir çıktı ile tanımla; haftalık çalışma süresi, deneme sonucu ve eksik konu gibi göstergeleri takip et. Plan işlemiyorsa hedefi değil önce yöntemi ve çalışma yükünü düzelt.",
         ),
         "relocation": (
             "Taşınma ve yerleşim kararında istek kadar bütçe, hukuki koşullar, gündelik düzen ve geri dönüş seçeneğini birlikte değerlendirmek gerekir.",
-            "Yer, maliyet, iş veya okul erişimi, sözleşme şartları ve destek ağı için ayrı bir kontrol listesi hazırlayın. Kalıcı karar vermeden önce mümkünse kısa süreli deneme yapın ve mülk ya da sözleşme adımında uzman görüşü alın.",
+            "Yer, maliyet, iş veya okul erişimi, sözleşme şartları ve destek ağı için ayrı bir kontrol listesi hazırla. Kalıcı karar vermeden önce mümkünse kısa süreli deneme yap ve mülk ya da sözleşme adımında uzman görüşü al.",
         ),
         "legal": (
             "Hukuki bir konuda varsayımla ilerlemek yerine belgeyi, süreyi, yükümlülüğü ve yetkili profesyonel görüşünü merkeze almak gerekir.",
-            "Sözleşme, yazışma, ödeme ve son tarihleri tek yerde toplayın; sözlü anlaşmayı yeterli saymayın. Hak kaybı veya uyuşmazlık ihtimali varsa karar vermeden önce konunun uzmanı bir hukukçudan görüş alın.",
+            "Sözleşme, yazışma, ödeme ve son tarihleri tek yerde topla; sözlü anlaşmayı yeterli sayma. Hak kaybı veya uyuşmazlık ihtimali varsa karar vermeden önce konunun uzmanı bir hukukçudan görüş al.",
         ),
         "spiritual": (
-            "Ruhsal yönünüzü kesin bir kimlik veya kader hükmüyle tanımlamak yerine, hangi pratiklerin sizi daha dürüst ve dengeli kıldığını deneyim üzerinden görmek daha anlamlıdır.",
-            "Düzenli fakat küçük bir meditasyon, tefekkür veya günlük tutma pratiği seçin. Uygulamanın sizi gündelik sorumluluklardan uzaklaştırıp uzaklaştırmadığını ve ilişkilerinizde daha açık, sabırlı bir tutuma destek olup olmadığını gözlemleyin.",
+            "Ruhsal yönünü kesin bir kimlik veya kader hükmüyle tanımlamak yerine, hangi pratiklerin seni daha dürüst ve dengeli kıldığını deneyim üzerinden görmek daha anlamlıdır.",
+            "Düzenli fakat küçük bir meditasyon, tefekkür veya günlük tutma pratiği seç. Uygulamanın seni gündelik sorumluluklardan uzaklaştırıp uzaklaştırmadığını ve ilişkilerinde daha açık, sabırlı bir tutuma destek olup olmadığını gözlemle.",
         ),
         "wellbeing": (
             "Şu anki duygusal yükü tek bir nedene bağlamak yerine beden, çevre, düşünce ve günlük koşulları birlikte gözlemlemek daha sağlıklı bir başlangıçtır.",
-            "Uyku, beslenme, günlük yük, çevresel gerilim ve tekrar eden düşünceleri kısa notlarla izleyin. Yoğun sıkıntı sürüyor, günlük işlevinizi bozuyor veya güvenliğinizle ilgili kaygı yaratıyorsa bir ruh sağlığı uzmanından destek alın.",
+            "Uyku, beslenme, günlük yük, çevresel gerilim ve tekrar eden düşünceleri kısa notlarla izle. Yoğun sıkıntı sürüyor, günlük işlevini bozuyor veya güvenliğinle ilgili kaygı yaratıyorsa bir ruh sağlığı uzmanından destek al.",
         ),
         "varshaphala": (
-            "Yıllık döngüyü kesin olay listesi gibi değil, hangi yaşam alanlarının daha bilinçli plan ve takip istediğini gösteren bir değerlendirme çerçevesi olarak kullanın.",
-            "Önünüzdeki yılı iş, sağlık, ilişki, para, yerleşim ve kişisel gelişim başlıklarına ayırın. Her başlık için tek bir gerçekçi hedef, ölçülebilir bir kontrol noktası ve koşullar değişirse kullanacağınız bir yedek plan belirleyin.",
+            "Yıllık döngüyü kesin olay listesi gibi değil, hangi yaşam alanlarının daha bilinçli plan ve takip istediğini gösteren bir değerlendirme çerçevesi olarak kullan.",
+            "Önündeki yılı iş, sağlık, ilişki, para, yerleşim ve kişisel gelişim başlıklarına ayır. Her başlık için tek bir gerçekçi hedef, ölçülebilir bir kontrol noktası ve koşullar değişirse kullanacağın bir yedek plan belirle.",
         ),
         "general": (
-            "Sorunuz birden fazla yaşam alanını kapsıyorsa, hepsi için tek bir sonuç üretmek yerine öncelikleri ve karar koşullarını ayrı ayrı ele almak daha sağlıklıdır.",
-            "Önceliklerinizi, sizi zorlayan koşulları ve kontrol edebildiğiniz adımları kısa bir listede toplayın. Her alan için beklenen sonucu, sorumluyu ve yeniden değerlendirme ölçütünü ayrı tanımlayın.",
+            "Sorun birden fazla yaşam alanını kapsıyorsa, hepsi için tek bir sonuç üretmek yerine öncelikleri ve karar koşullarını ayrı ayrı ele almak daha sağlıklıdır.",
+            "Önceliklerini, seni zorlayan koşulları ve kontrol edebildiğin adımları kısa bir listede topla. Her alan için beklenen sonucu, sorumluyu ve yeniden değerlendirme ölçütünü ayrı tanımla.",
         ),
     }
     opening, first_paragraph = templates.get(topic, templates["general"])
     paragraphs = [first_paragraph]
     paragraphs.append(
-        "Kararı tek seferde kesinleştirmek yerine küçük bir deneme, açık geri bildirim ve yeniden değerlendirme döngüsü kurun. Netleşmeyen noktaları açıklığa kavuşmadan geri dönüşü zor bir taahhüde çevirmeyin."
+        "Kararı tek seferde kesinleştirmek yerine küçük bir deneme, açık geri bildirim ve yeniden değerlendirme döngüsü kur. Netleşmeyen noktaları açıklığa kavuşmadan geri dönüşü zor bir taahhüde çevirme."
     )
     if timing_requested:
         paragraphs.append(
-            "Sorunuzdaki dönem boyunca önemli kararları tek bir güne yüklemeyin; hazırlık, uygulama ve kontrol adımlarını ayırın. Her aşamada gerçek koşulları yeniden değerlendirip gerekirse planı güncelleyin."
+            "Sorundaki dönem boyunca önemli kararları tek bir güne yükleme; hazırlık, uygulama ve kontrol adımlarını ayır. Her aşamada gerçek koşulları yeniden değerlendirip gerekirse planı güncelle."
         )
     else:
         paragraphs.append(
-            "İlk adımı küçük ve ölçülebilir seçin; sonucu gözlemledikten sonra bir sonraki adımı belirleyin. Böylece kararınız varsayımdan çok yaşanmış veriye dayanır."
+            "İlk adımı küçük ve ölçülebilir seç; sonucu gözlemledikten sonra bir sonraki adımı belirle. Böylece kararın varsayımdan çok yaşanmış veriye dayanır."
         )
 
     if topic == "wellbeing" and _wellbeing_timing_fact(evidence):
         paragraphs.insert(
             1,
-            "Bugünün gökyüzü ritmi ve Ay'ın güncel bağlamı, duygularınızı kesin bir nedene bağlamadan gözlemlemek için kısa süreli bir arka plan olarak ele alınabilir.",
+            "Bugünün gökyüzü ritmi ve Ay'ın güncel bağlamı, duygularını kesin bir nedene bağlamadan gözlemlemek için kısa süreli bir arka plan olarak ele alınabilir.",
         )
 
     return {
