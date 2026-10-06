@@ -888,6 +888,23 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         self.assertEqual(routing["selected"]["time_scope"], "instant")
         self.assertNotIn("path", routing["selected"])
 
+    def test_bypass_fallback_routes_recent_wellbeing_to_short_timing_window(self):
+        routing = _beta_question_route(
+            "Son günlerde niye bu kadar isteksizim?",
+            {"birth": {"timezone_id": "Europe/Istanbul"}},
+            "recent-wellbeing-fallback-test",
+            mode_override="bypass",
+        )
+
+        selected = routing["selected"]
+        self.assertEqual(selected["primary_topic"], "wellbeing")
+        self.assertEqual(selected["time_scope"], "range")
+        self.assertTrue(selected["timing_required"])
+        self.assertEqual(
+            date.fromisoformat(selected["target_end"]),
+            date.fromisoformat(selected["target_start"]) + timedelta(days=6),
+        )
+
     @patch("app.call_vertex_bridge")
     def test_gemini_only_router_bypasses_keyword_and_server_overrides(self, bridge_call):
         app.config["QUESTION_ROUTER_MODE"] = "gemini_only"
@@ -984,6 +1001,10 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
                     mode_override="bypass",
                 )
                 self.assertEqual(routing["selected"]["primary_topic"], expected)
+                self.assertEqual(
+                    routing["route_consistency"]["selected"]["status"],
+                    "consistent",
+                )
 
         neutral = _beta_question_route(
             "Bu konuda bana ne söyleyebilirsin?",
@@ -996,6 +1017,32 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
             mode_override="bypass",
         )
         self.assertEqual(neutral["selected"]["primary_topic"], "general")
+
+    def test_bypass_router_applies_the_same_contract_to_all_requested_views(self):
+        cases = {
+            "Yıllık Varshaphala haritam bu yılı nasıl anlatıyor?": ("varshaphala", "none"),
+            "Genel sağlık durumumda neye dikkat etmeliyim?": ("health", "none"),
+            "Sağlık öngörümde önümüzdeki dönemde ne görünüyor?": ("health", "range"),
+            "İlişki öngörümde önümüzdeki dönemde neye dikkat etmeliyim?": ("marriage", "range"),
+            "Kariyer öngörümde önümüzdeki dönemde hangi fırsatlar öne çıkıyor?": ("career", "range"),
+        }
+        for index, (question, expected) in enumerate(cases.items()):
+            with self.subTest(question=question):
+                routing = _beta_question_route(
+                    question,
+                    {"birth": {"timezone_id": "Europe/Istanbul"}},
+                    f"bypass-contract-all-views-{index}",
+                    mode_override="bypass",
+                )
+                selected = routing["selected"]
+                self.assertEqual(
+                    (selected["primary_topic"], selected["time_scope"]),
+                    expected,
+                )
+                self.assertEqual(
+                    routing["route_consistency"]["selected"]["status"],
+                    "consistent",
+                )
 
     def test_extended_api_subjects_receive_real_topic_packets(self):
         chart = {

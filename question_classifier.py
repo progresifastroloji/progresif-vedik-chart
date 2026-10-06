@@ -59,6 +59,15 @@ ALLOWED_SENSITIVITY = {
 }
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
 
+QUESTION_INTENTS = {
+    "natal_explanation",
+    "current_state",
+    "guidance",
+    "forecast",
+    "compatibility",
+    "annual_analysis",
+}
+
 IMPORTANT_SKY_EVENT_PHRASES = (
     "ay tutulması", "ay tutulmasi", "güneş tutulması", "gunes tutulmasi",
     "tutulma", "eclipse", "gökyüzündeki önemli",
@@ -94,6 +103,7 @@ TOPIC_PATTERNS = {
         r"(?<!\w)işe\s+(?:gir\w*|başla\w*|basla\w*)",
         r"(?<!\w)yeni\s+işe\s+(?:başla\w*|basla\w*)",
         r"(?<!\w)iş\s+(?:bul\w*|ara\w*)",
+        r"(?<!\w)uygulama\s+iş\w*", r"(?<!\w)uygulama\s+is\w*",
         r"(?<!\w)işyer\w*", r"(?<!\w)iş\s+hayat\w*",
         r"(?<!\w)iş\s+görüş\w*", r"(?<!\w)iş\s+değiş\w*",
         r"(?<!\w)iş\s+ortak\w*", r"(?<!\w)çalışma\s+hayat\w*",
@@ -157,7 +167,9 @@ TOPIC_PATTERNS = {
         r"(?<!\w)motivasyon\w*", r"(?<!\w)sinirli\w*", r"(?<!\w)öfke\w*",
         r"(?<!\w)ofke\w*", r"(?<!\w)üzgün\w*", r"(?<!\w)uzgun\w*",
         r"(?<!\w)stres\w*", r"(?<!\w)bunal\w*", r"(?<!\w)huzursuz\w*",
-        r"(?<!\w)keyifsiz\w*", r"(?<!\w)duygu\w*", r"(?<!\w)ruh\s+hali\w*",
+        r"(?<!\w)keyifsiz\w*", r"(?<!\w)isteksiz\w*", r"(?<!\w)enerji\w*",
+        r"(?<!\w)odaklanam\w*", r"(?<!\w)garip\w*", r"(?<!\w)duygu\w*",
+        r"(?<!\w)ruh\s+hali\w*",
     ),
     "varshaphala": (
         r"(?<!\w)varshaphala\w*", r"(?<!\w)varṣaphala\w*",
@@ -167,6 +179,19 @@ TOPIC_PATTERNS = {
         r"(?<!\w)dogum\s+gunumden\s+sonraki\s+yil\w*",
     ),
 }
+
+# The transit artifact selector is forward-oriented.  These phrases describe
+# a short current-state window, so the server selects the current day plus the
+# next six covered days.  Keeping this contract here makes the model route and
+# deterministic fallback use the same bounded window.
+RECENT_CONTEXT_DAYS = 7
+RECENT_TIME_PHRASES = (
+    "son günlerde", "son gunlerde", "birkaç gündür", "bir kac gundur",
+    "son birkaç gündür", "son bir kaç gündür", "son bir kac gundur",
+    "bu aralar", "son zamanlarda", "şu sıralar", "su siralar",
+    "bugünlerde", "bugunlerde", "son hafta", "bu hafta",
+    "son birkaç hafta", "son bir kaç hafta", "son bir kac hafta",
+)
 
 
 def _question_text(question):
@@ -230,6 +255,93 @@ def event_evidence_for_question(question):
     return evidence
 
 
+def infer_question_intent(question):
+    """Return a bounded, server-observed intent without making an astrological claim."""
+
+    text = _question_text(question)
+    topic = detect_explicit_topic(question)
+    if topic == "varshaphala":
+        return "annual_analysis"
+    if topic == "marriage" and re.search(
+        r"\b(?:uyum|sinastri|partnerimle|eşimle|esimle|uyumlu\w*)\b",
+        text,
+        flags=re.UNICODE,
+    ):
+        return "compatibility"
+    if re.search(
+        r"\b(?:öngörü\w*|ongoru\w*|gelece\w*|ileride|ne\s+zaman|olacak\s+m[ıi]|"
+        r"gerçekleş\w*|gercekles\w*|etkileyecek|önümüzdeki|onumuzdeki)\b",
+        text,
+        flags=re.UNICODE,
+    ):
+        return "forecast"
+    if (
+        any(
+            phrase in text
+            for phrase in (
+                "şu anda", "su anda", "şu an", "su an", "tam şimdi",
+                "şu sıralar", "su siralar", "bu aralar", "bugün",
+                "bugun", "son günlerde", "son gunlerde",
+            )
+        )
+        or any(
+            token in text.split()
+            for token in ("hissediyorum", "hissediyorum", "neden", "gerginim", "mutsuzum")
+        )
+    ):
+        return "current_state"
+    if re.search(
+        r"\b(?:neye\s+dikkat|nasıl\s+(?:davran|yönet|yonet|ilerle|ele)|"
+        r"ne\s+yap(?:abilirim|malıyım|maliyim)|öner\w*|oner\w*|tutum|"
+        r"odaklan\w*|dikkat\s+et\w*|tutum\w*)\b",
+        text,
+        flags=re.UNICODE,
+    ):
+        return "guidance"
+    return "natal_explanation"
+
+
+def route_diagnostics(route, question, now_iso):
+    """Compare a route with all deterministic server-side route obligations.
+
+    This is diagnostic metadata only. It does not grant the model chart, file,
+    or evidence-selection authority.
+    """
+
+    if not isinstance(route, dict):
+        return {
+            "status": "invalid",
+            "question_intent": infer_question_intent(question),
+            "repaired_fields": [],
+            "missing_required_evidence": [],
+        }
+    expected = normalize_classification(dict(route), question, now_iso)
+    repaired_fields = []
+    for field in (
+        "primary_topic", "time_scope", "timing_required", "target_start",
+        "target_end", "target_datetime", "sensitivity",
+    ):
+        if route.get(field) != expected.get(field):
+            repaired_fields.append(field)
+    required = set(_required_evidence_for(
+        expected.get("primary_topic"), expected.get("time_scope")
+    ))
+    supplied = set(route.get("required_evidence") or [])
+    missing_required_evidence = sorted(required - supplied)
+    if missing_required_evidence:
+        repaired_fields.append("required_evidence")
+    return {
+        "status": "consistent" if not repaired_fields else "repair_required",
+        "question_intent": infer_question_intent(question),
+        "explicit_topics": sorted(explicit_topics_for_question(question)),
+        "selected_topic": route.get("primary_topic"),
+        "selected_time_scope": route.get("time_scope"),
+        "selected_sensitivity": route.get("sensitivity"),
+        "repaired_fields": sorted(set(repaired_fields)),
+        "missing_required_evidence": missing_required_evidence,
+    }
+
+
 def _explicit_weekly_range(question, now_iso):
     """Return the calendar week explicitly requested by the user, if any.
 
@@ -271,17 +383,30 @@ def _explicit_weekly_range(question, now_iso):
     return start.isoformat(), end.isoformat()
 
 
+def _explicit_recent_range(question, now_iso):
+    """Return the bounded current window selected by the transit artifact."""
+
+    text = _question_text(question)
+    if not any(phrase in text for phrase in RECENT_TIME_PHRASES):
+        return None
+    current_day = datetime.fromisoformat(str(now_iso).replace("Z", "+00:00")).date()
+    return current_day.isoformat(), (
+        current_day + timedelta(days=RECENT_CONTEXT_DAYS - 1)
+    ).isoformat()
+
+
 def enforce_explicit_time_scope(value, question, now_iso):
     """Enforce only explicit calendar timing; never change the topic choice."""
 
     if not isinstance(value, dict):
         return value
     weekly_range = _explicit_weekly_range(question, now_iso)
+    recent_range = _explicit_recent_range(question, now_iso)
     forward_range = _explicit_forward_month_range(question, now_iso)
-    if not weekly_range and not forward_range:
+    if not weekly_range and not recent_range and not forward_range:
         return value
     normalized = dict(value)
-    start, end = weekly_range or forward_range
+    start, end = weekly_range or recent_range or forward_range
     normalized["time_scope"] = "range"
     normalized["timing_required"] = True
     normalized["target_start"] = start
@@ -369,6 +494,7 @@ def normalize_classification(value, question, now_iso):
             "sinir", "öfke", "ofke", "üzgün", "uzgun", "üzünt", "uzuntu",
             "stres", "bunal", "huzursuz", "kızgın", "kizgin", "sıkınt",
             "sikinti", "keyifsiz", "yorgun", "dalgın", "dalgin",
+            "isteksiz", "enerji", "odaklanam", "garip",
         ))
         for token in tokens
     )
@@ -381,11 +507,12 @@ def normalize_classification(value, question, now_iso):
     explicit_instant = (
         any(
             phrase in question_text
-            for phrase in ("şu anda", "su anda", "tam şimdi")
+            for phrase in ("şu anda", "su anda", "şu an", "su an", "tam şimdi")
         )
         or "şimdi" in tokens
     )
     explicit_daily = "bugün" in tokens or "bugun" in tokens
+    explicit_recent_range = _explicit_recent_range(question, now_iso)
     explicit_period_request = any(
         phrase in question_text
         for phrase in (
@@ -397,12 +524,15 @@ def normalize_classification(value, question, now_iso):
         r"\b(?:evlenebilir|gerçekleşir|gerceklesir|etkileyecek|etkiler|olacak\s+mı|olacak\s+mi|ne\s+zaman)\b",
         question_text,
     ))
+    forecast_intent = infer_question_intent(question) == "forecast"
     primary_topic = str(normalized.get("primary_topic") or "").strip()
     if explicit_instant:
         normalized["time_scope"] = "instant"
     elif explicit_daily:
         normalized["time_scope"] = "daily"
-    elif (future_modal or explicit_period_request) and normalized.get("time_scope") == "none":
+    elif explicit_recent_range:
+        normalized["time_scope"] = "range"
+    elif (future_modal or explicit_period_request or forecast_intent) and normalized.get("time_scope") == "none" and primary_topic != "varshaphala":
         normalized["time_scope"] = "range"
     elif event_evidence and normalized.get("time_scope") == "none":
         # A named sky event is a timing request even without an exact date.
@@ -455,11 +585,15 @@ def normalize_classification(value, question, now_iso):
         evidence_set.update(event_evidence)
         normalized["required_evidence"] = sorted(evidence_set)
 
-    if (
-        primary_topic == "wellbeing"
-        and normalized.get("sensitivity") in {None, "", "standard", "medical"}
-    ):
-        normalized["sensitivity"] = "mental_wellbeing"
+    sensitivity_defaults = {
+        "health": "medical",
+        "wealth": "financial",
+        "legal": "legal",
+        "wellbeing": "mental_wellbeing",
+    }
+    expected_sensitivity = sensitivity_defaults.get(primary_topic)
+    if expected_sensitivity and normalized.get("sensitivity") in {None, "", "standard", "medical"}:
+        normalized["sensitivity"] = expected_sensitivity
     return enforce_explicit_time_scope(normalized, question, now_iso)
 
 

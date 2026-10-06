@@ -9,6 +9,9 @@ from question_classifier import (
     detect_explicit_topic,
     enforce_explicit_time_scope,
     event_evidence_for_question,
+    infer_question_intent,
+    normalize_classification,
+    route_diagnostics,
     validate_classification,
 )
 
@@ -52,6 +55,139 @@ def _model_payload(value):
 
 
 class QuestionClassifierTest(unittest.TestCase):
+    def test_question_intent_covers_annual_guidance_current_and_forecast_questions(self):
+        cases = {
+            "Yıllık Varshaphala haritam bu yılı nasıl anlatıyor?": "annual_analysis",
+            "Şu sıralar genel sağlığımda neye dikkat etmeliyim?": "current_state",
+            "İlişkilerimde hangi tutuma dikkat etmem iyi olur?": "guidance",
+            "Kariyer öngörümde önümüzdeki dönemde ne görünüyor?": "forecast",
+            "Partnerimle uyumumuzu nasıl değerlendirebilirim?": "compatibility",
+            "Doğum haritamda karakterimin ana teması nedir?": "natal_explanation",
+        }
+        for question, expected in cases.items():
+            with self.subTest(question=question):
+                self.assertEqual(infer_question_intent(question), expected)
+
+    def test_general_topic_normalization_applies_sensitivity_defaults(self):
+        now = "2026-09-30T12:00:00+03:00"
+        cases = {
+            "Genel sağlık durumum hakkında ne görünüyor?": ("health", "medical"),
+            "Maddi durumum ve gelir düzenim nasıl?": ("wealth", "financial"),
+            "Hukuki sürecimde hangi göstergeler öne çıkıyor?": ("legal", "legal"),
+            "Ruh halim neden bu kadar gergin?": ("wellbeing", "mental_wellbeing"),
+        }
+        for question, expected in cases.items():
+            with self.subTest(question=question):
+                result = normalize_classification(
+                    _classification(
+                        primary_topic="general",
+                        time_scope="none",
+                        timing_required=False,
+                        sensitivity="standard",
+                        required_evidence=[],
+                    ),
+                    question,
+                    now,
+                )
+                self.assertEqual(
+                    (result["primary_topic"], result["sensitivity"]),
+                    expected,
+                )
+
+    def test_forecast_intent_requires_range_for_all_life_topics(self):
+        result = normalize_classification(
+            _classification(
+                primary_topic="career",
+                time_scope="none",
+                timing_required=False,
+                required_evidence=[],
+            ),
+            "Kariyer öngörümde önümüzdeki dönemde hangi fırsatlar öne çıkıyor?",
+            "2026-09-30T12:00:00+03:00",
+        )
+
+        self.assertEqual(result["primary_topic"], "career")
+        self.assertEqual(result["time_scope"], "range")
+        self.assertTrue(result["timing_required"])
+        self.assertEqual(result["target_start"], "2026-09-30")
+        self.assertEqual(result["target_end"], "2026-12-30")
+
+    def test_route_diagnostics_reports_missing_route_obligations(self):
+        route = _classification(
+            primary_topic="health",
+            time_scope="none",
+            timing_required=False,
+            sensitivity="standard",
+            required_evidence=["natal_core"],
+        )
+        diagnostics = route_diagnostics(
+            route,
+            "Sağlık öngörümde önümüzdeki dönemde neye dikkat etmeliyim?",
+            "2026-09-30T12:00:00+03:00",
+        )
+
+        self.assertEqual(diagnostics["status"], "repair_required")
+        self.assertEqual(diagnostics["question_intent"], "forecast")
+        self.assertIn("time_scope", diagnostics["repaired_fields"])
+        self.assertIn("sensitivity", diagnostics["repaired_fields"])
+        self.assertIn("required_evidence", diagnostics["repaired_fields"])
+        self.assertIn("transits", diagnostics["missing_required_evidence"])
+
+    def test_recent_and_current_wellbeing_phrases_require_bounded_timing_context(self):
+        now = "2026-09-30T12:00:00+03:00"
+        cases = {
+            "Son günlerde niye bu kadar isteksizim?": ("range", "2026-09-30", "2026-10-06"),
+            "Bu aralar çok isteksizim, neden?": ("range", "2026-09-30", "2026-10-06"),
+            "Şu an niye bu kadar huzursuzum?": ("instant", None, None),
+            "Bugün neden bu kadar isteksizim?": ("daily", "2026-09-30", "2026-09-30"),
+        }
+        for question, (scope, start, end) in cases.items():
+            with self.subTest(question=question):
+                result = normalize_classification(
+                    _classification(
+                        primary_topic="general",
+                        time_scope="none",
+                        timing_required=False,
+                        required_evidence=[],
+                    ),
+                    question,
+                    now,
+                )
+                self.assertEqual(result["primary_topic"], "wellbeing")
+                self.assertEqual(result["time_scope"], scope)
+                self.assertTrue(result["timing_required"])
+                self.assertEqual(result["target_start"], start)
+                self.assertEqual(result["target_end"], end)
+
+    def test_topic_and_timing_contract_covers_requested_positive_and_negative_questions(self):
+        now = "2026-09-30T12:00:00+03:00"
+        positive = {
+            "Beni genel olarak analiz et. Nasıl biriyim?": ("general", "none"),
+            "Şu an yaptığım uygulama işi benim için doğru bir yön mü?": ("career", "instant"),
+            "İlişkilerimde neden hep aynı sorunları yaşıyorum?": ("marriage", "none"),
+            "Son günlerde ilişkiler konusunda neden bu kadar gerginim?": ("marriage", "range"),
+        }
+        negative = {
+            "Nasıl biriyim?": ("general", "none"),
+            "İlişkilerde genel yapım nasıl?": ("marriage", "none"),
+            "Kariyer potansiyelim nedir?": ("career", "none"),
+        }
+        for question, expected in {**positive, **negative}.items():
+            with self.subTest(question=question):
+                result = normalize_classification(
+                    _classification(
+                        primary_topic="general",
+                        time_scope="none",
+                        timing_required=False,
+                        required_evidence=[],
+                    ),
+                    question,
+                    now,
+                )
+                self.assertEqual(
+                    (result["primary_topic"], result["time_scope"]),
+                    expected,
+                )
     def test_api_subject_inventory_is_available_to_the_question_contract(self):
         self.assertEqual(
             ALLOWED_TOPICS,

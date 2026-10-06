@@ -1404,6 +1404,37 @@ def _fallback_narrative_response(evidence):
     }
 
 
+def _fallback_dual_views(narrative, technical_analysis):
+    """Keep the public dual-view contract on every safe fallback path."""
+
+    opening = str(narrative.get("opening_summary") or "").strip()
+    answer = str(narrative.get("answer") or "").strip()
+    supporting = [
+        row.get("claim", "")
+        for row in technical_analysis.get("supporting_evidence", [])
+        if isinstance(row, dict) and str(row.get("claim") or "").strip()
+    ]
+    challenging = [
+        row.get("claim", "")
+        for row in technical_analysis.get("challenging_evidence", [])
+        if isinstance(row, dict) and str(row.get("claim") or "").strip()
+    ]
+    common = {
+        "headline": opening,
+        "body": [answer] if answer else [],
+    }
+    return {
+        "simple_view": dict(common),
+        "pro_view": {
+            **common,
+            "used_indicators": supporting,
+            "counter_indicators": challenging,
+            "missing_data": list(technical_analysis.get("missing_layers") or []),
+            "limitations": list(technical_analysis.get("limitations") or []),
+        },
+    }
+
+
 def _fallback_methodology_analysis(evidence, error_code):
     """Create an explicitly incomplete technical shell without new claims."""
 
@@ -2572,6 +2603,7 @@ def _run_candidate(
                 "technical_summary": technical_analysis["summary"],
                 "opening_summary": narrative["opening_summary"],
                 "summary": narrative["answer"],
+                **_fallback_dual_views(narrative, technical_analysis),
             },
             "validation_mode": validation_mode,
             "narrative_fallback": True,
@@ -2729,6 +2761,7 @@ def _run_candidate(
                     "technical_summary": technical_analysis["summary"],
                     "opening_summary": narrative["opening_summary"],
                     "summary": narrative["answer"],
+                    **_fallback_dual_views(narrative, technical_analysis),
                     "memory_update": narrative.get("memory_update"),
                     "memory_updates": narrative.get("memory_updates") or [],
                 }
@@ -2786,6 +2819,7 @@ def _run_candidate(
                         "technical_summary": technical_analysis["summary"],
                         "opening_summary": narrative["opening_summary"],
                         "summary": narrative["answer"],
+                        **_fallback_dual_views(narrative, technical_analysis),
                         "memory_update": narrative.get("memory_update"),
                         "memory_updates": narrative.get("memory_updates") or [],
                     }

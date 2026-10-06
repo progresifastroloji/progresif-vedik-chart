@@ -37,6 +37,8 @@ from question_classifier import (
     detect_explicit_topic,
     enforce_explicit_time_scope,
     event_evidence_for_question,
+    normalize_classification,
+    route_diagnostics,
 )
 from topic_pack_contract import (
     package_contract_markdown,
@@ -31815,11 +31817,12 @@ def _beta_question_route(
     mode_override=None,
 ):
     now_iso = _beta_question_now(chart)
-    legacy = enforce_explicit_time_scope(
+    legacy = normalize_classification(
         _beta_legacy_question_route(question),
         question,
         now_iso,
     )
+    legacy_diagnostics = route_diagnostics(legacy, question, now_iso)
     mode = (
         str(mode_override).strip().lower()
         if mode_override is not None
@@ -31828,7 +31831,9 @@ def _beta_question_route(
     if mode not in {"off", "shadow", "active", "gemini_only", "bypass"}:
         raise ValueError("Geçerli soru yönlendirici modu gerekli")
     model = None
+    model_repaired = False
     error_code = None
+    model_diagnostics = None
     if mode not in {"off", "bypass"}:
         try:
             model = classify_question(
@@ -31839,9 +31844,22 @@ def _beta_question_route(
                 conversation_context=conversation_context,
                 apply_server_normalization=mode != "gemini_only",
             )
-            # Keep Gemini's topic decision, but never let an explicit calendar
-            # phrase remove the transit evidence required by the question.
-            model = enforce_explicit_time_scope(model, question, now_iso)
+            # Keep Gemini's semantic decision in the explicit experimental
+            # ``gemini_only`` mode, while still repairing bounded time
+            # omissions. Normal production modes additionally apply the
+            # server's explicit-topic normalizer.
+            raw_model = model
+            raw_model_diagnostics = route_diagnostics(raw_model, question, now_iso)
+            model = (
+                enforce_explicit_time_scope(model, question, now_iso)
+                if mode == "gemini_only"
+                else normalize_classification(model, question, now_iso)
+            )
+            model_repaired = model != raw_model
+            model_diagnostics = {
+                "raw": raw_model_diagnostics,
+                "normalized": route_diagnostics(model, question, now_iso),
+            }
         except Exception as exc:
             error_code = (
                 exc.code
@@ -31870,7 +31888,12 @@ def _beta_question_route(
         if mode in {"active", "gemini_only"} and model
         else legacy
     )
-    selected = enforce_explicit_time_scope(selected, question, now_iso)
+    selected = (
+        enforce_explicit_time_scope(selected, question, now_iso)
+        if mode == "gemini_only"
+        else normalize_classification(selected, question, now_iso)
+    )
+    selected_diagnostics = route_diagnostics(selected, question, now_iso)
     status = (
         "classifier_bypassed"
         if bypass is not None
@@ -31889,10 +31912,23 @@ def _beta_question_route(
         "model": model,
         "selected": selected,
         "error_code": error_code,
+        "route_consistency": {
+            "explicit_time_repaired": bool(
+                model_repaired
+                and model is not None
+                and model.get("timing_required")
+            ),
+            "model_repaired": model_repaired,
+            "legacy": legacy_diagnostics,
+            "model": model_diagnostics,
+            "selected": selected_diagnostics,
+        },
         "agreement": bool(
             model
             and model.get("primary_topic") == legacy.get("primary_topic")
             and model.get("time_scope") == legacy.get("time_scope")
+            and model.get("timing_required") == legacy.get("timing_required")
+            and model.get("sensitivity") == legacy.get("sensitivity")
         ),
     }
 
@@ -32253,6 +32289,49 @@ def _beta_require_mandatory_evidence(draft):
     transits = evidence.get("transits")
     if not isinstance(transits, dict) or not transits.get("contract_version"):
         raise MethodologyOrchestrationError("transit_evidence_refresh_required", 409)
+    route = draft.get("question_route") or {}
+    if not route.get("timing_required"):
+        return
+    if not transits.get("daily_timing"):
+        raise MethodologyOrchestrationError("transit_evidence_refresh_required", 409)
+
+    scope = str(route.get("time_scope") or "")
+    daily_records = transits.get("daily_records") or []
+    instant_snapshot = transits.get("instant_snapshot") or {}
+    if scope in {"daily", "instant"} and not daily_records and not instant_snapshot:
+        raise MethodologyOrchestrationError("transit_evidence_refresh_required", 409)
+    try:
+        start = date.fromisoformat(str(route.get("target_start")))
+        end = date.fromisoformat(str(route.get("target_end")))
+        day_count = (end - start).days + 1
+    except (TypeError, ValueError):
+        day_count = None
+    if scope == "range" and day_count is not None and 1 <= day_count <= 7:
+        if len(daily_records) != day_count or any(
+            not row.get("panchanga") for row in daily_records
+        ):
+            raise MethodologyOrchestrationError("transit_evidence_refresh_required", 409)
+    if str(draft.get("subject_topic") or "").strip().lower() == "wellbeing":
+        rows = list(daily_records)
+        if instant_snapshot:
+            rows.append(instant_snapshot)
+        if scope in {"daily", "instant"} or (day_count is not None and day_count <= 7):
+            has_moon = any(
+                any(
+                    str(planet.get("name") or "").casefold() == "moon"
+                    for planet in row.get("planets") or []
+                )
+                for row in rows
+                if isinstance(row, dict)
+            )
+            has_panchanga = any(
+                bool(row.get("panchanga")) for row in rows if isinstance(row, dict)
+            )
+            if not has_moon or not has_panchanga:
+                raise MethodologyOrchestrationError(
+                    "transit_evidence_refresh_required",
+                    409,
+                )
 
 
 def _refresh_runtime_dasha(chart, reference_dt_utc, *, strict=False):
