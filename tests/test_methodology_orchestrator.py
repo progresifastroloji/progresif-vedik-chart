@@ -133,6 +133,26 @@ def _narrative_payload(answer=None, opening_summary=None, follow_up_question=Non
 
 
 class MethodologyOrchestratorTest(unittest.TestCase):
+    def test_provider_stages_are_measured_without_additional_calls_or_prompt_changes(self):
+        calls = []
+
+        def model_call(request_id, request):
+            calls.append((request_id, request))
+            return request_id, _narrative_payload() if "-narrative" in request_id else _payload()
+
+        with patch("methodology_orchestrator.time.perf_counter", side_effect=[1, 3, 5, 8]):
+            result = run_methodology_comparison(_draft(), "stage-timing-test", model_call)
+        candidate = result["methodology_results"][0]
+        self.assertEqual(candidate["status"], "completed")
+        self.assertEqual(len(calls), 2)
+        timings = candidate["stage_timings"]
+        self.assertEqual(timings["technical_ms"], 2000)
+        self.assertEqual(timings["narrative_ms"], 3000)
+        self.assertEqual([call["request_id"] for call in timings["calls"]], [call[0] for call in calls])
+        evidence = {**compact_evidence(_draft()), "response_language": "tr"}
+        expected, _ = _model_request(load_methodology_candidates()[0], evidence, [], "tr")
+        self.assertEqual(calls[0][1], expected)
+
     def test_utf8_memory_above_old_budget_reaches_narrative_unchanged(self):
         from app import _beta_personal_memory_context
         context = {

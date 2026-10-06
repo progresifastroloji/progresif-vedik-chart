@@ -2892,22 +2892,36 @@ def run_methodology_comparison(
     evidence_json = _canonical_json(evidence)
     evidence_sha256 = _sha256(evidence_json)
     monotonic = clock or time.monotonic
+
+    def run_measured_candidate(candidate):
+        calls = []
+
+        def measured_call(request_id, request):
+            started = time.perf_counter()
+            try:
+                return model_call(request_id, request)
+            finally:
+                calls.append({
+                    "request_id": request_id,
+                    "stage": "narrative" if "-narrative" in request_id else "technical",
+                    "duration_ms": max(round((time.perf_counter() - started) * 1000), 0),
+                })
+
+        result = _run_candidate(
+            candidate, comparison_id, evidence, evidence_sha256, measured_call,
+            monotonic, conversation_context, guidance, response_language,
+            personal_memory_summary, personal_memory_context, output_validation_mode,
+        )
+        result["stage_timings"] = {
+            "technical_ms": sum(call["duration_ms"] for call in calls if call["stage"] == "technical"),
+            "narrative_ms": sum(call["duration_ms"] for call in calls if call["stage"] == "narrative"),
+            "calls": calls,
+        }
+        return result
+
     with ThreadPoolExecutor(max_workers=len(candidates), thread_name_prefix="vedic-methodology") as executor:
         results = list(executor.map(
-            lambda candidate: _run_candidate(
-                candidate,
-                comparison_id,
-                evidence,
-                evidence_sha256,
-                model_call,
-                monotonic,
-                conversation_context,
-                guidance,
-                response_language,
-                personal_memory_summary,
-                personal_memory_context,
-                output_validation_mode,
-            ),
+            run_measured_candidate,
             candidates,
         ))
 

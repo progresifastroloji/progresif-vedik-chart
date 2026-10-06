@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import sqlite3
+import time
 import uuid
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
@@ -30945,7 +30946,27 @@ def _pwa_artifact_existing_manifest(
     return manifest
 
 
-PWA_TRANSIT_RUNTIME_CACHE_CONTRACT = "vedic-transit-runtime-cache-v1"
+PWA_TRANSIT_RUNTIME_CACHE_CONTRACT = "vedic-transit-runtime-cache-v2"
+
+
+def _pwa_transit_source_sha256(chart):
+    """Hash calculation inputs, not the freshly refreshed current dasha.
+
+    _pwa_transit_pack recalculates the natal chart and each day's dasha from
+    birth input. Runtime dasha/spine timestamps are not calculation inputs.
+    Ownership, generator version and requested coverage are checked separately.
+    """
+    birth = chart.get("birth") or {}
+    events = chart.get("important_sky_events")
+    if events is None:
+        events = chart.get("sky_events")
+    source = {
+        "birth": birth,
+        "important_sky_events": events,
+    }
+    return _pwa_artifact_sha256(json.dumps(
+        source, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ))
 
 
 def _pwa_transit_pack(
@@ -31012,12 +31033,6 @@ def _pwa_write_transit_runtime_cache(
     root = _pwa_artifact_set_root(owner_user_id, chart_id, artifact_profile).resolve()
     if path.parent != root or path.name != "transit-three-month.runtime.json":
         raise ValueError("Transit çalışma önbelleği yolu güvenli değil")
-    canonical_chart = json.dumps(
-        chart,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
     payload = {
         "contract_version": PWA_TRANSIT_RUNTIME_CACHE_CONTRACT,
         "generator_revision": PWA_ARTIFACT_GENERATOR_REVISION,
@@ -31025,7 +31040,7 @@ def _pwa_write_transit_runtime_cache(
         "profile_id": profile_id,
         "chart_id": chart_id,
         "artifact_profile": artifact_profile,
-        "canonical_chart_sha256": _pwa_artifact_sha256(canonical_chart),
+        "transit_source_sha256": _pwa_transit_source_sha256(chart),
         "created_at": _beta_now(),
         "pack": transit_pack,
     }
@@ -31050,12 +31065,6 @@ def _pwa_read_transit_runtime_cache(
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    canonical_chart = json.dumps(
-        chart,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
     if (
         not isinstance(payload, dict)
         or payload.get("contract_version") != PWA_TRANSIT_RUNTIME_CACHE_CONTRACT
@@ -31064,7 +31073,7 @@ def _pwa_read_transit_runtime_cache(
         or payload.get("profile_id") != profile_id
         or payload.get("chart_id") != chart_id
         or payload.get("artifact_profile") != artifact_profile
-        or payload.get("canonical_chart_sha256") != _pwa_artifact_sha256(canonical_chart)
+        or payload.get("transit_source_sha256") != _pwa_transit_source_sha256(chart)
         or not isinstance(payload.get("pack"), dict)
     ):
         return None
@@ -34742,6 +34751,7 @@ def api_v2_beta_chat_compare():
                 **_beta_public_methodology_response(comparison),
             })
         failed_stage = "evidence_preparation"
+        evidence_started = time.perf_counter()
         draft = _beta_build_chat_draft(
             question,
             chart,
@@ -34772,6 +34782,7 @@ def api_v2_beta_chat_compare():
             else call_vertex_bridge
         )
         failed_stage = "model_generation"
+        evidence_preparation_ms = max(round((time.perf_counter() - evidence_started) * 1000), 0)
         comparison = run_methodology_comparison(
             draft,
             comparison_id,
@@ -34785,6 +34796,7 @@ def api_v2_beta_chat_compare():
         comparison["context_trace"] = draft.get("context_trace")
         comparison["question_route"] = draft.get("question_route")
         comparison["routing_comparison"] = draft.get("routing_comparison")
+        comparison["execution_timings"] = {"evidence_preparation_ms": evidence_preparation_ms}
 
         failed_stage = "result_record"
         with closing(_beta_db()) as conn:

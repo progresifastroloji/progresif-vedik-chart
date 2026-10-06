@@ -152,6 +152,52 @@ class TransitQuestionRoutingTest(unittest.TestCase):
         self.assertFalse(regenerated)
         build_pack.assert_not_called()
 
+    @patch("app._pwa_transit_pack")
+    def test_current_dasha_refresh_does_not_rebuild_identical_transit_days(self, build_pack):
+        self._write_manifest()
+        stored = _pack()
+        _pwa_write_transit_runtime_cache(
+            OWNER_ID, PROFILE_ID, CHART_ID, PWA_ARTIFACT_DEFAULT_PROFILE,
+            self.chart, stored,
+        )
+        refreshed = json.loads(json.dumps(self.chart))
+        refreshed["dashas"]["vimshottari"]["current_active"]["reference_datetime_utc"] = "2026-08-15T12:01:00Z"
+        refreshed["vedic_spine"] = {"generated_at": "2026-08-15T12:01:00Z"}
+        pack, source, regenerated = _pwa_get_or_create_transit_runtime_cache(
+            OWNER_ID, PROFILE_ID, CHART_ID, PWA_ARTIFACT_DEFAULT_PROFILE,
+            refreshed, "Test", "2026-08-15", "2026-08-15",
+        )
+        self.assertEqual(pack, stored)
+        self.assertEqual(source, "stored_runtime_artifact")
+        self.assertFalse(regenerated)
+        build_pack.assert_not_called()
+
+    @patch("app._pwa_transit_pack")
+    def test_birth_events_and_coverage_changes_still_regenerate_transits(self, build_pack):
+        self._write_manifest()
+        for label, change, end in [
+            ("birth", lambda c: c["birth"].update(time="12:01"), "2026-08-15"),
+            ("timezone", lambda c: c["birth"].update(timezone_id="UTC"), "2026-08-15"),
+            ("events", lambda c: c.update(important_sky_events=[{"date": "2026-08-15"}]), "2026-08-15"),
+            ("coverage", lambda c: None, "2026-12-15"),
+        ]:
+            with self.subTest(label=label):
+                _pwa_write_transit_runtime_cache(
+                    OWNER_ID, PROFILE_ID, CHART_ID, PWA_ARTIFACT_DEFAULT_PROFILE,
+                    self.chart, _pack(),
+                )
+                changed = json.loads(json.dumps(self.chart))
+                change(changed)
+                build_pack.reset_mock()
+                build_pack.return_value = _pack()
+                _, source, regenerated = _pwa_get_or_create_transit_runtime_cache(
+                    OWNER_ID, PROFILE_ID, CHART_ID, PWA_ARTIFACT_DEFAULT_PROFILE,
+                    changed, "Test", "2026-08-15", end,
+                )
+                self.assertEqual(source, "runtime_artifact_regenerated")
+                self.assertTrue(regenerated)
+                build_pack.assert_called_once()
+
     @patch("app._beta_instant_transit_pack")
     @patch("app._pwa_get_or_create_transit_runtime_cache")
     def test_instant_question_reads_day_and_calculates_only_one_snapshot(
