@@ -55,6 +55,31 @@ def _model_payload(value):
 
 
 class QuestionClassifierTest(unittest.TestCase):
+    def test_explicit_calendar_day_is_preserved_in_all_normalization_paths(self):
+        route = _classification(primary_topic="general", time_scope="none", timing_required=False, required_evidence=[])
+        for normalize in (normalize_classification, enforce_explicit_time_scope):
+            for question, expected in (
+                ("06.10.2026 Salı günü için kişiselleştirilmiş derin analiz yapmanı istiyorum.", "2026-10-06"),
+                ("07.10.2026 günü kariyerimde neye dikkat edeyim?", "2026-10-07"),
+                ("2028-02-29 için günlük yorum istiyorum.", "2028-02-29"),
+            ):
+                with self.subTest(normalizer=normalize.__name__, question=question):
+                    result = normalize(route, question, "2026-10-06T12:00:00+03:00")
+                    self.assertEqual(result["time_scope"], "daily")
+                    self.assertEqual((result["target_start"], result["target_end"]), (expected, expected))
+                    self.assertIn("moon_and_panchanga", result["required_evidence"])
+                    self.assertTrue(result["timing_required"])
+
+    def test_calendar_day_does_not_replace_birth_date_or_explicit_range(self):
+        route = _classification(primary_topic="general", time_scope="none", timing_required=False, required_evidence=[])
+        self.assertEqual(normalize_classification(route, "01.01.2000 günü doğdum, karakterim nasıl?", "2026-10-06T12:00:00+03:00")["time_scope"], "none")
+        result = normalize_classification(route, "06.10.2026 için önümüzdeki üç ayı yorumla.", "2026-10-06T12:00:00+03:00")
+        self.assertEqual(result["time_scope"], "range")
+        self.assertEqual(result["target_end"], "2027-01-05")
+        with self.assertRaises(QuestionClassificationError) as caught:
+            normalize_classification(route, "31.02.2026 günü için yorum istiyorum.", "2026-10-06T12:00:00+03:00")
+        self.assertEqual(caught.exception.code, "question_classifier_explicit_date_invalid")
+
     def test_question_intent_covers_annual_guidance_current_and_forecast_questions(self):
         cases = {
             "Yıllık Varshaphala haritam bu yılı nasıl anlatıyor?": "annual_analysis",

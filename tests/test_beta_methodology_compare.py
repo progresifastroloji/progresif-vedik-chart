@@ -390,6 +390,41 @@ class BetaMethodologyCompareEndpointTest(unittest.TestCase):
         app.config["QUESTION_ROUTER_ACTIVE_USER_IDS"] = self._old_router_users
         self._tmp.cleanup()
 
+    @patch("app.full_source_context_mode", return_value=False)
+    @patch("app.run_methodology_comparison")
+    @patch("app._beta_question_route")
+    def test_compare_preserves_classifier_error_before_generation(self, routing, generation, _full):
+        routing.side_effect = QuestionClassificationError("question_classifier_target_start_required")
+        response = self.client.post("/api/v2/beta/chat/compare", json={
+            "comparison_id": "classifier-error-regression",
+            "profile_id": PROFILE_ID,
+            "chart_id": CHART_ID,
+            "question": "06.10.2026 Salı günü için kişiselleştirilmiş derin analiz yapmanı istiyorum.",
+        })
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["error_code"], "question_classifier_target_start_required")
+        generation.assert_not_called()
+        with closing(_beta_db()) as conn:
+            row = conn.execute("SELECT status,response_json FROM beta_methodology_comparisons WHERE id=?", ("classifier-error-regression",)).fetchone()
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(json.loads(row["response_json"])["error"], "question_classifier_target_start_required")
+
+    @patch("app.full_source_context_mode", return_value=False)
+    @patch("app.run_methodology_comparison")
+    @patch("app._beta_build_chat_draft")
+    def test_compare_reports_evidence_preparation_failure_stage(self, draft, generation, _full):
+        draft.side_effect = RuntimeError("synthetic preparation failure")
+        with self.assertLogs(app.logger, level="ERROR") as logs:
+            response = self.client.post("/api/v2/beta/chat/compare", json={
+                "comparison_id": "preparation-stage-regression",
+                "profile_id": PROFILE_ID,
+                "chart_id": CHART_ID,
+                "question": "Kariyer potansiyelim nedir?",
+            })
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("id=preparation-stage-regression stage=evidence_preparation", " ".join(logs.output))
+        generation.assert_not_called()
+
     def test_strict_chat_rebuilds_missing_spine_and_includes_transits_for_general(self):
         chart = _beta_build_chart(
             {"id": PROFILE_ID, "name": "Test"},

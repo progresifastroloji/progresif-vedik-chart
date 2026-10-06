@@ -23,6 +23,7 @@ import swisseph as swe
 from natal_evidence import nakshatra_character
 from flask import Flask, render_template, request, jsonify, send_file
 from methodology_orchestrator import (
+    PERSONAL_MEMORY_CONTEXT_MAX_BYTES,
     CANDIDATE_MANIFEST,
     MethodologyOrchestrationError,
     full_source_context_mode,
@@ -33314,8 +33315,8 @@ def _beta_personal_memory_context(value):
         "selected_topics": value.get("selected_topics") if isinstance(value.get("selected_topics"), list) else [],
     }
     encoded = json.dumps(normalized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    if len(encoded) > 8_000:
-        raise ValueError("personal_memory_context çok uzun")
+    if len(encoded) > PERSONAL_MEMORY_CONTEXT_MAX_BYTES:
+        raise MethodologyOrchestrationError("personal_memory_context_too_large", 413)
     return normalized
 
 
@@ -34518,10 +34519,12 @@ def api_v2_beta_chat_compare():
     """Run selected evidence through the single active system methodology."""
 
     comparison_id = None
+    failed_stage = "request_validation"
     try:
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             raise ValueError("Geçerli karşılaştırma isteği gerekli")
+        comparison_id = _beta_comparison_id(data.get("comparison_id"))
         question = str(data.get("question") or "").strip()
         if not question:
             raise ValueError("question boş olamaz")
@@ -34544,8 +34547,7 @@ def api_v2_beta_chat_compare():
                 "error_code": "rectification_not_available_in_customer_api",
                 "message": "Rektifikasyon uzman servisi ana müşteri API'sinden ayrıdır.",
             }), 422
-        comparison_id = _beta_comparison_id(data.get("comparison_id"))
-
+        failed_stage = "chart_load"
         with closing(_beta_db()) as conn:
             chart_id, profile_id, chart, stored_owner_user_id = _beta_load_chart(
                 conn,
@@ -34642,6 +34644,7 @@ def api_v2_beta_chat_compare():
             )
             conn.commit()
 
+        failed_stage = "question_routing"
         routing = _beta_question_route(
             question,
             chart,
@@ -34664,6 +34667,7 @@ def api_v2_beta_chat_compare():
                 )
             except ValueError as exc:
                 raise MethodologyOrchestrationError(str(exc), 422) from exc
+        failed_stage = "route_record"
         _beta_record_question_route(
             comparison_id,
             profile_id,
@@ -34737,6 +34741,7 @@ def api_v2_beta_chat_compare():
                 "usage": usage,
                 **_beta_public_methodology_response(comparison),
             })
+        failed_stage = "evidence_preparation"
         draft = _beta_build_chat_draft(
             question,
             chart,
@@ -34766,6 +34771,7 @@ def api_v2_beta_chat_compare():
             if chat_editorial_mode in {"raw", "dual_direct", "guided_direct"}
             else call_vertex_bridge
         )
+        failed_stage = "model_generation"
         comparison = run_methodology_comparison(
             draft,
             comparison_id,
@@ -34780,6 +34786,7 @@ def api_v2_beta_chat_compare():
         comparison["question_route"] = draft.get("question_route")
         comparison["routing_comparison"] = draft.get("routing_comparison")
 
+        failed_stage = "result_record"
         with closing(_beta_db()) as conn:
             updated_at = _beta_now()
             conn.execute(
@@ -34817,12 +34824,16 @@ def api_v2_beta_chat_compare():
         }), 200 if ok else 502
 
     except (KeyError, TypeError, ValueError) as exc:
+        error_code = str(exc) if str(exc).startswith("full_markdown_source_") else "chat_compare_invalid"
+        app.logger.exception("Chat comparison failed id=%s stage=%s code=%s", comparison_id, failed_stage, error_code)
         return jsonify({
             "ok": False,
             "status": "invalid_request",
+            "error_code": error_code,
             "error": str(exc),
         }), 400
-    except MethodologyOrchestrationError as exc:
+    except (MethodologyOrchestrationError, QuestionClassificationError) as exc:
+        app.logger.exception("Chat comparison failed id=%s stage=%s code=%s", comparison_id, failed_stage, exc.code)
         if comparison_id:
             try:
                 with closing(_beta_db()) as conn:
@@ -34841,9 +34852,9 @@ def api_v2_beta_chat_compare():
             "ok": False,
             "status": "comparison_failed",
             "error_code": exc.code,
-        }), exc.http_status
+        }), getattr(exc, "http_status", 422)
     except Exception:
-        app.logger.exception("Beta metodoloji karşılaştırması beklenmedik hatayla durdu")
+        app.logger.exception("Chat comparison failed id=%s stage=%s code=methodology_orchestration_failed", comparison_id, failed_stage)
         if comparison_id:
             try:
                 with closing(_beta_db()) as conn:

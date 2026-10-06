@@ -395,6 +395,22 @@ def _explicit_recent_range(question, now_iso):
     ).isoformat()
 
 
+def _explicit_calendar_day(question):
+    text = _question_text(question)
+    if re.search(r"\b(?:doğdum|dogdum|doğum|dogum|born|birth)\b", text):
+        return None
+    if re.search(r"\d{1,2}:\d{2}", text):
+        return None
+    matches = list(re.finditer(r"(?<![\d.\-])(?:\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{2}-\d{2})(?![\d.\-])", text))
+    if len(matches) != 1 or not re.search(r"\b(?:günü|gunu|tarihinde|için|icin|on)\b", text):
+        return None
+    raw = matches[0].group()
+    try:
+        return (datetime.strptime(raw, "%d.%m.%Y").date() if "." in raw else date.fromisoformat(raw)).isoformat()
+    except ValueError as exc:
+        raise QuestionClassificationError("question_classifier_explicit_date_invalid") from exc
+
+
 def enforce_explicit_time_scope(value, question, now_iso):
     """Enforce only explicit calendar timing; never change the topic choice."""
 
@@ -403,11 +419,13 @@ def enforce_explicit_time_scope(value, question, now_iso):
     weekly_range = _explicit_weekly_range(question, now_iso)
     recent_range = _explicit_recent_range(question, now_iso)
     forward_range = _explicit_forward_month_range(question, now_iso)
-    if not weekly_range and not recent_range and not forward_range:
+    calendar_day = _explicit_calendar_day(question)
+    if not weekly_range and not recent_range and not forward_range and not calendar_day:
         return value
     normalized = dict(value)
-    start, end = weekly_range or recent_range or forward_range
-    normalized["time_scope"] = "range"
+    scope = "range" if weekly_range or recent_range or forward_range else "daily"
+    start, end = weekly_range or recent_range or forward_range or (calendar_day, calendar_day)
+    normalized["time_scope"] = scope
     normalized["timing_required"] = True
     normalized["target_start"] = start
     normalized["target_end"] = end
@@ -416,7 +434,7 @@ def enforce_explicit_time_scope(value, question, now_iso):
     evidence = normalized.get("required_evidence")
     if isinstance(evidence, list) and primary_topic in ALLOWED_TOPICS:
         normalized["required_evidence"] = sorted(
-            set(evidence) | _required_evidence_for(primary_topic, "range")
+            set(evidence) | _required_evidence_for(primary_topic, scope)
         )
     return normalized
 
@@ -431,7 +449,7 @@ def _explicit_forward_month_range(question, now_iso):
     }
     match = re.search(
         r"\b(?:önümüzdeki|onumuzdeki|gelecek)\s+"
-        r"(?P<count>[1-6]|bir|iki|üç|uc|dört|dort|beş|bes|altı|alti)\s+ay(?:da|de)?\b",
+        r"(?P<count>[1-6]|bir|iki|üç|uc|dört|dort|beş|bes|altı|alti)\s+ay(?:da|de|ı|i)?\b",
         text,
     )
     if not match:

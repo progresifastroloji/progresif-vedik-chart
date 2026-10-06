@@ -43,7 +43,10 @@ NARRATIVE_MAX_OUTPUT_TOKENS = 8192
 NARRATIVE_MIN_CHARS = 300
 NARRATIVE_MIN_PARAGRAPHS = 1
 PERSONAL_MEMORY_MAX_CHARS = 1_600
-PERSONAL_MEMORY_CONTEXT_MAX_CHARS = 8_000
+# Selected memories also appear in the bounded profile/topic projections.
+# Keep those existing views intact; use the same UTF-8 budget at both entry
+# and narrative boundaries, below the independent 1 MiB provider limit.
+PERSONAL_MEMORY_CONTEXT_MAX_BYTES = 64 * 1024
 MEMORY_TYPES = {
     "stable_fact",
     "active_topic",
@@ -912,7 +915,7 @@ def _narrative_request(
         narrative_input["personal_memory_summary"] = str(personal_memory_summary).strip()[:PERSONAL_MEMORY_MAX_CHARS]
     if isinstance(personal_memory_context, dict):
         encoded_memory = _canonical_json(personal_memory_context)
-        if len(encoded_memory.encode("utf-8")) > PERSONAL_MEMORY_CONTEXT_MAX_CHARS:
+        if len(encoded_memory.encode("utf-8")) > PERSONAL_MEMORY_CONTEXT_MAX_BYTES:
             raise MethodologyOrchestrationError("personal_memory_context_too_large", 413)
         narrative_input["personal_memory_context"] = personal_memory_context
     if direct_dual_output:

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from methodology_orchestrator import (
+    PERSONAL_MEMORY_CONTEXT_MAX_BYTES,
     CANDIDATE_MANIFEST,
     GUIDANCE_MANIFEST,
     MethodologyOrchestrationError,
@@ -132,6 +133,29 @@ def _narrative_payload(answer=None, opening_summary=None, follow_up_question=Non
 
 
 class MethodologyOrchestratorTest(unittest.TestCase):
+    def test_utf8_memory_above_old_budget_reaches_narrative_unchanged(self):
+        from app import _beta_personal_memory_context
+        context = {
+            "user_memory_profile": {}, "active_topics": [],
+            "relevant_memories": [{"summary": "ş" * 4000}],
+            "astrological_memory": [], "selected_topics": ["general"],
+        }
+        self.assertGreater(len(json.dumps(context, ensure_ascii=False).encode()), 8000)
+        accepted = _beta_personal_memory_context(context)
+        self.assertEqual(accepted, context)
+        evidence = compact_evidence(_draft())
+        analysis = validate_methodology_response(_payload(), evidence)
+        narrative, _ = _narrative_request(load_methodology_candidates()[0], evidence, analysis, personal_memory_context=accepted)
+        self.assertIn("ş" * 4000, json.dumps(narrative, ensure_ascii=False))
+        oversized = {**context, "relevant_memories": [{"summary": "ş" * PERSONAL_MEMORY_CONTEXT_MAX_BYTES}]}
+        for validate in (
+            _beta_personal_memory_context,
+            lambda value: _narrative_request(load_methodology_candidates()[0], evidence, analysis, personal_memory_context=value),
+        ):
+            with self.assertRaises(MethodologyOrchestrationError) as caught:
+                validate(oversized)
+            self.assertEqual(caught.exception.code, "personal_memory_context_too_large")
+
     def test_gemini_38_generation_config_uses_supported_fields(self):
         candidate = load_methodology_candidates()[0]
         evidence = compact_evidence(_draft())
