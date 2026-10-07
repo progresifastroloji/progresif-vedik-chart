@@ -23,6 +23,7 @@ from methodology_orchestrator import (
     normalize_memory_updates,
     ordered_full_markdown_mode,
     run_methodology_comparison,
+    _normalized_follow_up_question,
     validate_methodology_response,
     validate_narrative_response,
 )
@@ -1398,6 +1399,20 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertTrue(analysis["validation_bypassed"])
         self.assertEqual(analysis["opening_summary"], "Bu özet iki cümlede kalır.")
 
+    def test_follow_up_question_prefers_conversation_over_meta_or_yes_no_prompts(self):
+        natural = "Bu konunun hangi tarafını biraz daha açmak istersin?"
+        self.assertEqual(_normalized_follow_up_question(natural), natural)
+
+        generic_continuation = "Daha başka ne öğrenmek istersin?"
+        self.assertEqual(_normalized_follow_up_question(generic_continuation), generic_continuation)
+
+        for rejected in (
+            "Bu yanıtı kişiselleştirmek için hangi tarafını açalım?",
+            "Bu hafta karşına çıkacak talepleri yönetmek uygulanabilir mi?",
+            "Bunu sonraki yorumlarda hatırlamamı ister misin?",
+        ):
+            self.assertEqual(_normalized_follow_up_question(rejected), "")
+
     def test_chat_raw_output_mode_pauses_semantic_gates_without_short_output(self):
         calls = []
         requests = []
@@ -1456,6 +1471,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("vedic-guidance-skill-v1@1.8.2", narrative_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
         self.assertIn("follow_up_question", narrative_system)
+        self.assertIn("doğal sohbet devam sorusu", narrative_system)
+        self.assertIn("evet-hayır sorularını varsayılan yapma", narrative_system)
         self.assertEqual(
             requests[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
             "MEDIUM",

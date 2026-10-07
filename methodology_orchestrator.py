@@ -934,7 +934,10 @@ def _narrative_request(
             "confidence ve sensitivity alanlarını taşımalıdır. Kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. simple_view.body ve pro_view.body doğal "
             "paragraf dizileri olsun. İki görünüm aynı bütünlüklü durum tespitini taşısın; Pro görünüm yalnız Aşama 1 "
             "kaydındaki yapılandırılmış destek, karşı gösterge, eksik veri ve sınırlamaları teknik mantığıyla açsın. "
-            "Hiçbir görünüm için sabit paragraf, cümle veya karakter sınırı uygulama. evidence_path, dosya yolu, "
+            "Hiçbir görünüm için sabit paragraf, cümle veya karakter sınırı uygulama. follow_up_question tek bir doğal "
+            "sohbet devam sorusu olsun; mevcut cevabın içindeki veya doğrudan ilişkili bir noktayı biraz daha açsın. "
+            "Profil, hafıza veya kişisel bilgi toplamak için soru sorma; sorunun önüne 'Bu yanıtı kişiselleştirmek için' "
+            "gibi bir açıklama koyma ve evet-hayır sorularını varsayılan yapma. evidence_path, dosya yolu, "
             "gizli alan, yeni hesaplama veya anlatıdan türetilmiş kanıt yazma."
             "\n\nETKİN REHBERLİK BECERİSİ KİMLİĞİ: "
             f"{guidance['id']}@{guidance['version']}\n"
@@ -977,9 +980,11 @@ def _narrative_request(
         "Tonun sıcak, samimi ve yargılamayan olsun; kullanıcıya tepeden konuşma veya aşırı resmî kalma. "
         "Türkçe yanıtların genel hitabı sabit olarak ‘sen’ olsun; kullanıcı farklı yazsa bile ‘siz/sizin/size’ biçimine dönme. "
         "Kullanıcının açıkça verdiği hedef veya bağlamı, cevabı daha insani ve ilgili kılmak için doğal biçimde kullan; "
-        "kişiyi tanıyormuş gibi hassas çıkarım yapma. follow_up_question yalnız cevabın içinden doğal olarak çıkan ve "
-        "sonraki analizi gerçekten kişiselleştirecek tek bir kısa soruysa dolu olsun; gerek yoksa null döndür. "
-        "Jenerik devam çağrısı veya birden fazla soru üretme. "
+        "kişiyi tanıyormuş gibi hassas çıkarım yapma. follow_up_question tek bir doğal sohbet devam sorusu olsun: "
+        "mevcut cevabın içindeki veya doğrudan ilişkili bir noktayı biraz daha açmaya davet etsin. "
+        "Bu soru kullanıcıdan profil, hafıza veya kişisel bilgi toplamak için değil, konuşmayı sürdürmek için sorulur. "
+        "Sorunun önüne 'Bu yanıtı kişiselleştirmek için' veya benzeri bir açıklama/etiket koyma. "
+        "Tek soru sor; açık uçlu 'hangi tarafı', 'neyi' veya 'nasıl' biçimlerini tercih et, evet-hayır sorularını varsayılan yapma. "
         "Yanıtı sohbet gibi kur: önce sorunun doğrudan ve koşullu cevabını ver, sonra bunu taşıyan göstergeleri tek bir ana anlam içinde yorumla; "
         "analizi ayrı ayrı sonuçların veya teknik maddelerin dökümüne çevirme. Kullanıcı 'uymadı', 'öyle değil' veya 'bende böyle değil' diyerek seni düzeltirse "
         "önceki varsayımı savunma; onu geri çek, mümkün olan farklı görünümleri açıkla ve en fazla bir doğal soru sor. "
@@ -1235,7 +1240,7 @@ def _relaxed_methodology_response(payload, evidence):
 
 
 def _normalized_follow_up_question(value):
-    """Return one safe, optional conversation question without rewriting it."""
+    """Return one safe conversation question without rewriting it."""
 
     if value is None:
         return ""
@@ -1246,6 +1251,12 @@ def _normalized_follow_up_question(value):
         or question.count("?") != 1
         or not question.endswith("?")
         or re.search(r"(?:evidence\.|methodology|kanıt yolu|json|sha-?256)", question, re.IGNORECASE)
+        or re.search(
+            r"(?:kişiselleştirmek için|kişiselleştirme için|hafızaya|hatırlamamı|hatırlamam|hatırla|kaydet|profilini|seni daha iyi tanımak)",
+            question,
+            re.IGNORECASE,
+        )
+        or re.search(r"(?:mı|mi|mu|mü|mısın|misin|musun|müsün)\s*\?$", question, re.IGNORECASE)
     ):
         return ""
     return question
