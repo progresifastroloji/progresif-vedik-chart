@@ -23,7 +23,6 @@ from methodology_orchestrator import (
     normalize_memory_updates,
     ordered_full_markdown_mode,
     run_methodology_comparison,
-    _normalized_follow_up_question,
     validate_methodology_response,
     validate_narrative_response,
 )
@@ -96,7 +95,7 @@ def _payload(summary="Teknik özet"):
     }
 
 
-def _narrative_payload(answer=None, opening_summary=None, follow_up_question=None):
+def _narrative_payload(answer=None, opening_summary=None):
     opening_summary = opening_summary or (
         "Kariyerinizde kalıcı başarı, tek bir alanda derinleştiğinizde daha güçlü biçimde görünür olabilir. "
         "En belirgin üstünlüğünüz, sorumluluk alırken karmaşayı düzene çevirebilmenizdir. "
@@ -118,8 +117,6 @@ def _narrative_payload(answer=None, opening_summary=None, follow_up_question=Non
         "opening_summary": opening_summary,
         "answer": answer,
     }
-    if follow_up_question is not None:
-        value["follow_up_question"] = follow_up_question
     return {
         "candidates": [{"content": {"parts": [{"text": json.dumps(value)}]}}],
         "usageMetadata": {
@@ -1399,20 +1396,6 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertTrue(analysis["validation_bypassed"])
         self.assertEqual(analysis["opening_summary"], "Bu özet iki cümlede kalır.")
 
-    def test_follow_up_question_prefers_conversation_over_meta_or_yes_no_prompts(self):
-        natural = "Bu konunun hangi tarafını biraz daha açmak istersin?"
-        self.assertEqual(_normalized_follow_up_question(natural), natural)
-
-        generic_continuation = "Daha başka ne öğrenmek istersin?"
-        self.assertEqual(_normalized_follow_up_question(generic_continuation), generic_continuation)
-
-        for rejected in (
-            "Bu yanıtı kişiselleştirmek için hangi tarafını açalım?",
-            "Bu hafta karşına çıkacak talepleri yönetmek uygulanabilir mi?",
-            "Bunu sonraki yorumlarda hatırlamamı ister misin?",
-        ):
-            self.assertEqual(_normalized_follow_up_question(rejected), "")
-
     def test_chat_raw_output_mode_pauses_semantic_gates_without_short_output(self):
         calls = []
         requests = []
@@ -1430,7 +1413,6 @@ class MethodologyOrchestratorTest(unittest.TestCase):
             return request_id, _narrative_payload(
                 opening_summary="Ham özet",
                 answer="Gemini'nin ham cevabı.",
-                follow_up_question="Bu örüntünün günlük hayatındaki en görünür karşılığı hangisi?",
             )
 
         result = run_methodology_comparison(
@@ -1451,10 +1433,7 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertEqual(system_result["narrative_attempt_count"], 1)
         self.assertTrue(system_result["analysis"]["validation_bypassed"])
         self.assertEqual(system_result["analysis"]["summary"], "Gemini'nin ham cevabı.")
-        self.assertEqual(
-            system_result["analysis"]["follow_up_question"],
-            "Bu örüntünün günlük hayatındaki en görünür karşılığı hangisi?",
-        )
+        self.assertNotIn("follow_up_question", system_result["analysis"])
         narrative_system = requests[1]["systemInstruction"]["parts"][0]["text"]
         narrative_user = requests[1]["contents"][0]["parts"][0]["text"]
         self.assertIn("VEDIC_TR_NARRATIVE_V1", narrative_system)
@@ -1470,9 +1449,8 @@ class MethodologyOrchestratorTest(unittest.TestCase):
         self.assertIn("geçmiş bilgi → kişi modeli → gerekiyorsa astrolojik analiz", narrative_system)
         self.assertIn("vedic-guidance-skill-v1@1.8.2", narrative_system)
         self.assertIn("source_skill: synthesize-vedic-situation-guidance", narrative_system)
-        self.assertIn("follow_up_question", narrative_system)
-        self.assertIn("doğal sohbet devam sorusu", narrative_system)
-        self.assertIn("evet-hayır sorularını varsayılan yapma", narrative_system)
+        self.assertNotIn("follow_up_question", narrative_system)
+        self.assertNotIn("doğal sohbet devam sorusu", narrative_system)
         self.assertEqual(
             requests[1]["generationConfig"]["thinkingConfig"]["thinkingLevel"],
             "MEDIUM",

@@ -926,7 +926,7 @@ def _narrative_request(
             f"{language_name} dilinde yanıtla. Aynı teknik analizden iki ayrı görünüm üret ve yalnız JSON döndür. "
             "JSON alanları: opening_summary kısa sonuç, answer sade görünümün geriye dönük metni, "
             "simple_view {headline, body array}, pro_view {headline, body array, used_indicators array, "
-            "counter_indicators array, missing_data array, limitations array}, follow_up_question string|null; memory_updates "
+            "counter_indicators array, missing_data array, limitations array}; memory_updates "
             "kullanıcının bu mesajda açıkça verdiği ve gelecekteki kişiselleştirmede yararlı olacak her önemli bilgiyi içersin. "
             "Özel isimler, ilişkiler, aile, sağlık ve stres, hukuki durumlar, iletişim bilgileri ve diğer hassas/özel kişisel ayrıntılar kaydedilebilir. "
             "Parola, API anahtarı, erişim belirteci, secret, kredi kartı, IBAN, T.C. kimlik veya benzeri güvenlik ve finans sırlarını kaydetme. "
@@ -934,10 +934,7 @@ def _narrative_request(
             "confidence ve sensitivity alanlarını taşımalıdır. Kullanıcının açıkça verdiği kalıcı bir tercih varsa eklenebilir. simple_view.body ve pro_view.body doğal "
             "paragraf dizileri olsun. İki görünüm aynı bütünlüklü durum tespitini taşısın; Pro görünüm yalnız Aşama 1 "
             "kaydındaki yapılandırılmış destek, karşı gösterge, eksik veri ve sınırlamaları teknik mantığıyla açsın. "
-            "Hiçbir görünüm için sabit paragraf, cümle veya karakter sınırı uygulama. follow_up_question tek bir doğal "
-            "sohbet devam sorusu olsun; mevcut cevabın içindeki veya doğrudan ilişkili bir noktayı biraz daha açsın. "
-            "Profil, hafıza veya kişisel bilgi toplamak için soru sorma; sorunun önüne 'Bu yanıtı kişiselleştirmek için' "
-            "gibi bir açıklama koyma ve evet-hayır sorularını varsayılan yapma. evidence_path, dosya yolu, "
+            "Hiçbir görünüm için sabit paragraf, cümle veya karakter sınırı uygulama. evidence_path, dosya yolu, "
             "gizli alan, yeni hesaplama veya anlatıdan türetilmiş kanıt yazma."
             "\n\nETKİN REHBERLİK BECERİSİ KİMLİĞİ: "
             f"{guidance['id']}@{guidance['version']}\n"
@@ -980,14 +977,10 @@ def _narrative_request(
         "Tonun sıcak, samimi ve yargılamayan olsun; kullanıcıya tepeden konuşma veya aşırı resmî kalma. "
         "Türkçe yanıtların genel hitabı sabit olarak ‘sen’ olsun; kullanıcı farklı yazsa bile ‘siz/sizin/size’ biçimine dönme. "
         "Kullanıcının açıkça verdiği hedef veya bağlamı, cevabı daha insani ve ilgili kılmak için doğal biçimde kullan; "
-        "kişiyi tanıyormuş gibi hassas çıkarım yapma. follow_up_question tek bir doğal sohbet devam sorusu olsun: "
-        "mevcut cevabın içindeki veya doğrudan ilişkili bir noktayı biraz daha açmaya davet etsin. "
-        "Bu soru kullanıcıdan profil, hafıza veya kişisel bilgi toplamak için değil, konuşmayı sürdürmek için sorulur. "
-        "Sorunun önüne 'Bu yanıtı kişiselleştirmek için' veya benzeri bir açıklama/etiket koyma. "
-        "Tek soru sor; açık uçlu 'hangi tarafı', 'neyi' veya 'nasıl' biçimlerini tercih et, evet-hayır sorularını varsayılan yapma. "
+        "kişiyi tanıyormuş gibi hassas çıkarım yapma. "
         "Yanıtı sohbet gibi kur: önce sorunun doğrudan ve koşullu cevabını ver, sonra bunu taşıyan göstergeleri tek bir ana anlam içinde yorumla; "
         "analizi ayrı ayrı sonuçların veya teknik maddelerin dökümüne çevirme. Kullanıcı 'uymadı', 'öyle değil' veya 'bende böyle değil' diyerek seni düzeltirse "
-        "önceki varsayımı savunma; onu geri çek, mümkün olan farklı görünümleri açıkla ve en fazla bir doğal soru sor. "
+        "önceki varsayımı savunma; onu geri çek ve mümkün olan farklı görünümleri açıkla. "
         "'Benim hakkımda ne biliyorsun?' sorusunda kullanıcının konuşmada açıkça söylediği bilgileri haritadan türetilen koşullu yorumlardan açıkça ayır; "
         "harita yorumunu yaşanmış biyografik gerçek gibi sunma. Her yanıtta en fazla bir öncelikli, küçük ve uygulanabilir öneri ver. "
         "opening_summary içinde söylediğini answer alanında mekanik biçimde tekrarlama; anlamı koruyacak doğal uzunlukta konuş ve sabit uzunluk dayatma. "
@@ -1040,7 +1033,7 @@ def _narrative_request(
     )
     user_text = (
         "Aşağıdaki doğrulanmış teknik analiz ve etkin tam kaynaklardan kullanıcı cevabını üret. JSON opening_summary ve "
-        "answer alanlarını zorunlu, follow_up_question alanını string|null, memory_updates alanını ise array olarak üret. "
+        "answer alanlarını zorunlu, memory_updates alanını ise array olarak üret. "
         "memory_updates güncel kullanıcı mesajında açıkça verilen ve gelecekteki kişiselleştirmede yararlı olacak her önemli bilgiyi içersin. "
         "Özel isimler, ilişkiler, aile, sağlık ve stres, hukuki durumlar, iletişim bilgileri ve diğer hassas/özel kişisel ayrıntılar kaydedilebilir. "
         "Parola, API anahtarı, erişim belirteci, secret, kredi kartı, IBAN, T.C. kimlik veya benzeri güvenlik ve finans sırlarını kaydetme. "
@@ -1239,29 +1232,6 @@ def _relaxed_methodology_response(payload, evidence):
     }
 
 
-def _normalized_follow_up_question(value):
-    """Return one safe conversation question without rewriting it."""
-
-    if value is None:
-        return ""
-    question = str(value).strip()
-    if (
-        not (12 <= len(question) <= 240)
-        or "\n" in question
-        or question.count("?") != 1
-        or not question.endswith("?")
-        or re.search(r"(?:evidence\.|methodology|kanıt yolu|json|sha-?256)", question, re.IGNORECASE)
-        or re.search(
-            r"(?:kişiselleştirmek için|kişiselleştirme için|hafızaya|hatırlamamı|hatırlamam|hatırla|kaydet|profilini|seni daha iyi tanımak)",
-            question,
-            re.IGNORECASE,
-        )
-        or re.search(r"(?:mı|mi|mu|mü|mısın|misin|musun|müsün)\s*\?$", question, re.IGNORECASE)
-    ):
-        return ""
-    return question
-
-
 def _relaxed_narrative_response(payload):
     """Keep a parseable narrative response without semantic/length gates."""
 
@@ -1304,7 +1274,6 @@ def _relaxed_narrative_response(payload):
         "answer": simple_answer,
         "simple_view": simple,
         "pro_view": pro,
-        "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
         "memory_updates": normalize_memory_updates(value.get("memory_updates")),
         "memory_candidates": normalize_memory_candidates(value.get("memory_candidates")),
@@ -2251,7 +2220,7 @@ def validate_narrative_response(payload, analysis, evidence):
     if (
         not isinstance(value, dict)
         or not {"opening_summary", "answer"}.issubset(value)
-        or set(value) - {"opening_summary", "answer", "follow_up_question", "memory_update", "memory_candidates", "memory_updates"}
+        or set(value) - {"opening_summary", "answer", "memory_update", "memory_candidates", "memory_updates"}
     ):
         raise MethodologyOrchestrationError("methodology_narrative_schema_invalid", 502)
     opening_summary = str(value.get("opening_summary") or "").strip()
@@ -2396,7 +2365,6 @@ def validate_narrative_response(payload, analysis, evidence):
     return {
         "opening_summary": opening_summary,
         "answer": answer,
-        "follow_up_question": _normalized_follow_up_question(value.get("follow_up_question")),
         "memory_update": normalize_personal_memory_update(value.get("memory_update")),
         "memory_updates": normalize_memory_updates(value.get("memory_updates")),
         "memory_candidates": normalize_memory_candidates(value.get("memory_candidates")),
@@ -2684,7 +2652,6 @@ def _run_candidate(
                     "headline": narrative["opening_summary"],
                     "body": [narrative["answer"]],
                 },
-                "follow_up_question": narrative.get("follow_up_question") or "",
                 "memory_update": narrative.get("memory_update"),
                 "memory_updates": narrative.get("memory_updates") or [],
                 "memory_candidates": narrative.get("memory_candidates") or [],
